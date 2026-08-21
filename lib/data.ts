@@ -1,6 +1,5 @@
 // ============================================================
-// SHIFT MANAGEMENT HUB — Mock data layer (CENTRAL prototype)
-// Frontend-only. No backend / database.
+// SHIFT MANAGEMENT HUB — Data Layer
 // ============================================================
 
 export type ShiftStatus =
@@ -29,6 +28,10 @@ export const STATUS_ORDER: ShiftStatus[] = [
   "cuti",
 ]
 
+// ============================================================
+// EMPLOYEE
+// ============================================================
+
 export type Employee = {
   id: string
   name: string
@@ -38,6 +41,10 @@ export type Employee = {
   aktif: boolean
 }
 
+// ============================================================
+// STORE
+// ============================================================
+
 export type Store = {
   id: string
   name: string
@@ -46,7 +53,11 @@ export type Store = {
   aktif: boolean
 }
 
-export const stores: Store[] = [
+// ============================================================
+// DATA TOKO
+// ============================================================
+
+export let stores: Store[] = [
   {
     id: "A",
     name: "Toko A",
@@ -77,6 +88,141 @@ export const stores: Store[] = [
   },
 ]
 
+// ============================================================
+// CRUD TOKO
+// ============================================================
+
+let storeSeq = 0
+
+/**
+ * Mengambil semua toko.
+ */
+export function getStores(): Store[] {
+  return stores
+}
+
+/**
+ * Mengambil satu toko berdasarkan ID.
+ */
+export function getStore(
+  storeId: string,
+): Store | undefined {
+  return stores.find(
+    (store) => store.id === storeId,
+  )
+}
+
+/**
+ * Menambah toko baru.
+ */
+export function addStore(
+  name: string,
+  kode: string,
+  akunStore: string,
+  aktif: boolean = true,
+): Store {
+  storeSeq += 1
+
+  const newStore: Store = {
+    id: `STORE-${Date.now()}-${storeSeq}`,
+    name: String(name).trim(),
+    kode: String(kode).trim().toUpperCase(),
+    akunStore: String(akunStore).trim(),
+    aktif,
+  }
+
+  stores = [
+    ...stores,
+    newStore,
+  ]
+
+  return newStore
+}
+
+/**
+ * Mengedit toko.
+ */
+export function updateStore(
+  storeId: string,
+  data: Partial<
+    Pick<
+      Store,
+      "name" | "kode" | "akunStore" | "aktif"
+    >
+  >,
+): Store | undefined {
+  let updatedStore:
+    | Store
+    | undefined
+
+  stores = stores.map((store) => {
+    if (store.id !== storeId) {
+      return store
+    }
+
+    updatedStore = {
+      ...store,
+      ...data,
+
+      name:
+        data.name !== undefined
+          ? data.name.trim()
+          : store.name,
+
+      kode:
+        data.kode !== undefined
+          ? data.kode
+            .trim()
+            .toUpperCase()
+          : store.kode,
+
+      akunStore:
+        data.akunStore !== undefined
+          ? data.akunStore.trim()
+          : store.akunStore,
+    }
+
+    return updatedStore
+  })
+
+  return updatedStore
+}
+
+/**
+ * Menghapus toko.
+ *
+ * Karyawan yang berada di toko tersebut
+ * juga ikut dihapus.
+ */
+export function deleteStore(
+  storeId: string,
+): boolean {
+  const exists = stores.some(
+    (store) =>
+      store.id === storeId,
+  )
+
+  if (!exists) {
+    return false
+  }
+
+  stores = stores.filter(
+    (store) =>
+      store.id !== storeId,
+  )
+
+  employees = employees.filter(
+    (employee) =>
+      employee.storeId !== storeId,
+  )
+
+  return true
+}
+
+// ============================================================
+// POSISI
+// ============================================================
+
 const POSISI = [
   "Kepala Toko",
   "Kasir",
@@ -85,9 +231,14 @@ const POSISI = [
   "Supervisor",
 ]
 
-// --- Employees per store -----------------------------------
+// ============================================================
+// EMPLOYEE DATA AWAL
+// ============================================================
 
-const rawEmployees: Record<string, string[]> = {
+const rawEmployees: Record<
+  string,
+  string[]
+> = {
   A: [
     "Anwar",
     "Saepul",
@@ -98,6 +249,7 @@ const rawEmployees: Record<string, string[]> = {
     "Budi",
     "Citra",
   ],
+
   B: [
     "Fajar",
     "Rizal",
@@ -107,6 +259,7 @@ const rawEmployees: Record<string, string[]> = {
     "Sari",
     "Lukman",
   ],
+
   C: [
     "Bagas",
     "Yoga",
@@ -119,6 +272,7 @@ const rawEmployees: Record<string, string[]> = {
     "Galih",
     "Ade",
   ],
+
   D: [
     "Surya",
     "Bayu",
@@ -130,65 +284,241 @@ const rawEmployees: Record<string, string[]> = {
   ],
 }
 
-export const employees: Employee[] = Object.entries(
-  rawEmployees,
-).flatMap(([storeId, names]) =>
-  names.map((name, i) => ({
-    id: `${storeId}-${i + 1}`,
+// ============================================================
+// EMPLOYEE
+// ============================================================
 
-    name,
+export let employees: Employee[] =
+  Object.entries(
+    rawEmployees,
+  ).flatMap(
+    ([storeId, names]) =>
+      names.map(
+        (name, i) => ({
+          id: `${storeId}-${i + 1}`,
 
-    // NIK contoh untuk prototype
-    nik: `3201${storeId.charCodeAt(0)}${String(
-      i + 1,
-    ).padStart(8, "0")}`,
+          name,
 
-    storeId,
+          // NIK prototype.
+          // Nanti dapat diganti dengan NIK
+          // seperti TP9901120226.
+          nik: `TP${String(
+            99,
+          )}${String(
+            storeId.charCodeAt(0),
+          ).padStart(
+            2,
+            "0",
+          )}${String(
+            i + 1,
+          ).padStart(
+            6,
+            "0",
+          )}`,
 
-    posisi:
-      POSISI[
-      (i + storeId.charCodeAt(0)) %
-      POSISI.length
-      ],
+          storeId,
 
-    aktif: !(storeId === "C" && i === 9),
-  })),
-)
+          posisi:
+            POSISI[
+            (i +
+              storeId.charCodeAt(
+                0,
+              )) %
+            POSISI.length
+            ],
 
+          aktif: !(
+            storeId === "C" &&
+            i === 9
+          ),
+        }),
+      ),
+  )
+
+// ============================================================
+// CRUD EMPLOYEE
+// ============================================================
+
+/**
+ * Mengambil karyawan berdasarkan toko.
+ */
 export function employeesByStore(
   storeId: string,
 ): Employee[] {
   return employees.filter(
-    (e) => e.storeId === storeId,
+    (employee) =>
+      employee.storeId === storeId,
   )
 }
 
-export function getStore(
-  storeId: string,
-): Store | undefined {
-  return stores.find(
-    (s) => s.id === storeId,
+/**
+ * Mengambil satu karyawan berdasarkan ID.
+ */
+export function getEmployee(
+  employeeId: string,
+): Employee | undefined {
+  return employees.find(
+    (employee) =>
+      employee.id === employeeId,
   )
 }
 
-// --- Schedule generation -----------------------------------
+/**
+ * Menambah karyawan.
+ */
+export function addEmployee(
+  data: Omit<
+    Employee,
+    "id"
+  >,
+): Employee {
+  const newEmployee: Employee = {
+    ...data,
+
+    name: data.name.trim(),
+
+    nik: data.nik
+      .trim()
+      .toUpperCase()
+      .replace(/\s/g, ""),
+
+    posisi:
+      data.posisi.trim(),
+  }
+
+  newEmployee.id =
+    `${data.storeId}-NEW-${Date.now()}`
+
+  employees = [
+    ...employees,
+    newEmployee,
+  ]
+
+  return newEmployee
+}
+
+/**
+ * Mengedit karyawan.
+ */
+export function updateEmployee(
+  employeeId: string,
+  data: Partial<
+    Omit<Employee, "id">
+  >,
+): Employee | undefined {
+  let updated:
+    | Employee
+    | undefined
+
+  employees = employees.map(
+    (employee) => {
+      if (
+        employee.id !==
+        employeeId
+      ) {
+        return employee
+      }
+
+      updated = {
+        ...employee,
+        ...data,
+
+        name:
+          data.name !==
+            undefined
+            ? data.name.trim()
+            : employee.name,
+
+        nik:
+          data.nik !==
+            undefined
+            ? data.nik
+              .trim()
+              .toUpperCase()
+              .replace(
+                /\s/g,
+                "",
+              )
+            : employee.nik,
+
+        posisi:
+          data.posisi !==
+            undefined
+            ? data.posisi.trim()
+            : employee.posisi,
+      }
+
+      return updated
+    },
+  )
+
+  return updated
+}
+
+/**
+ * Menghapus karyawan.
+ */
+export function deleteEmployee(
+  employeeId: string,
+): boolean {
+  const exists =
+    employees.some(
+      (employee) =>
+        employee.id ===
+        employeeId,
+    )
+
+  if (!exists) {
+    return false
+  }
+
+  employees =
+    employees.filter(
+      (employee) =>
+        employee.id !==
+        employeeId,
+    )
+
+  return true
+}
+
+// ============================================================
+// SCHEDULE GENERATION
+// ============================================================
 
 function baseStatus(
   empIndex: number,
   day: number,
 ): ShiftStatus {
   const seed =
-    (empIndex * 13 + day * 7) % 21
+    (empIndex * 13 +
+      day * 7) %
+    21
 
-  if (seed === 3) return "cuti"
-  if (seed === 8) return "izin"
-  if (seed === 15) return "sakit"
-  if (seed % 5 === 0) return "libur"
+  if (seed === 3)
+    return "cuti"
 
-  return (empIndex + day) % 2 === 0
+  if (seed === 8)
+    return "izin"
+
+  if (seed === 15)
+    return "sakit"
+
+  if (seed % 5 === 0)
+    return "libur"
+
+  return (
+    (empIndex + day) %
+    2 ===
+    0
+  )
     ? "shift_pagi"
     : "shift_siang"
 }
+
+// ============================================================
+// OVERRIDE SCHEDULE
+// ============================================================
 
 const overrides: Record<
   string,
@@ -204,51 +534,116 @@ function setOverride(
   >,
 ) {
   const emps =
-    employeesByStore(storeId)
+    employeesByStore(
+      storeId,
+    )
 
     ; (
-      Object.keys(map) as ShiftStatus[]
-    ).forEach((status) => {
-      map[status].forEach((name) => {
-        const emp = emps.find(
-          (e) => e.name === name,
-        )
+      Object.keys(
+        map,
+      ) as ShiftStatus[]
+    ).forEach(
+      (status) => {
+        map[status].forEach(
+          (name) => {
+            const emp =
+              emps.find(
+                (employee) =>
+                  employee.name ===
+                  name,
+              )
 
-        if (emp) {
-          overrides[
-            `${storeId}:${dateISO}:${emp.id}`
-          ] = status
-        }
-      })
-    })
+            if (emp) {
+              overrides[
+                `${storeId}:${dateISO}:${emp.id}`
+              ] = status
+            }
+          },
+        )
+      },
+    )
 }
 
-setOverride("A", "2026-08-20", {
-  shift_pagi: ["Anwar", "Saepul"],
-  shift_siang: ["Edi", "Gunda"],
-  libur: ["Rudi"],
-  izin: ["Andi"],
-  sakit: ["Budi"],
-  cuti: ["Citra"],
-})
+// ============================================================
+// OVERRIDE DATA
+// ============================================================
 
-setOverride("A", "2026-08-12", {
-  shift_pagi: ["Anwar", "Saepul"],
-  shift_siang: ["Edi", "Gunda"],
-  libur: ["Rudi"],
-  izin: [],
-  sakit: [],
-  cuti: [],
-})
+setOverride(
+  "A",
+  "2026-08-20",
+  {
+    shift_pagi: [
+      "Anwar",
+      "Saepul",
+    ],
 
-setOverride("B", "2026-08-12", {
-  shift_pagi: ["Fajar", "Rizal", "Doni"],
-  shift_siang: ["Andi", "Budi"],
-  libur: [],
-  izin: [],
-  sakit: [],
-  cuti: [],
-})
+    shift_siang: [
+      "Edi",
+      "Gunda",
+    ],
+
+    libur: ["Rudi"],
+
+    izin: ["Andi"],
+
+    sakit: ["Budi"],
+
+    cuti: ["Citra"],
+  },
+)
+
+setOverride(
+  "A",
+  "2026-08-12",
+  {
+    shift_pagi: [
+      "Anwar",
+      "Saepul",
+    ],
+
+    shift_siang: [
+      "Edi",
+      "Gunda",
+    ],
+
+    libur: ["Rudi"],
+
+    izin: [],
+
+    sakit: [],
+
+    cuti: [],
+  },
+)
+
+setOverride(
+  "B",
+  "2026-08-12",
+  {
+    shift_pagi: [
+      "Fajar",
+      "Rizal",
+      "Doni",
+    ],
+
+    shift_siang: [
+      "Fajar",
+      "Rizal",
+    ],
+
+    libur: [],
+
+    izin: [],
+
+    sakit: [],
+
+    cuti: [],
+  },
+)
+
+// ============================================================
+// GET EMPLOYEE STATUS
+// ============================================================
 
 export function getEmployeeStatus(
   emp: Employee,
@@ -259,13 +654,23 @@ export function getEmployeeStatus(
     `${emp.storeId}:${dateISO}:${emp.id}`
     ]
 
-  if (ov) return ov
+  if (ov) {
+    return ov
+  }
 
   const empIndex =
-    Number(emp.id.split("-")[1]) - 1
+    Number(
+      emp.id.split(
+        "-",
+      )[1],
+    ) - 1
 
   const day =
-    Number(dateISO.split("-")[2])
+    Number(
+      dateISO.split(
+        "-",
+      )[2],
+    )
 
   return baseStatus(
     empIndex,
@@ -273,14 +678,22 @@ export function getEmployeeStatus(
   )
 }
 
+// ============================================================
+// GROUPED DAY
+// ============================================================
+
 export type GroupedDay =
-  Record<ShiftStatus, Employee[]>
+  Record<
+    ShiftStatus,
+    Employee[]
+  >
 
 export function getStoreDay(
   storeId: string,
   dateISO: string,
 ): GroupedDay {
-  const grouped: GroupedDay = {
+  const grouped: GroupedDay =
+  {
     shift_pagi: [],
     shift_siang: [],
     libur: [],
@@ -289,7 +702,9 @@ export function getStoreDay(
     sakit: [],
   }
 
-  employeesByStore(storeId).forEach(
+  employeesByStore(
+    storeId,
+  ).forEach(
     (emp) => {
       grouped[
         getEmployeeStatus(
@@ -303,8 +718,15 @@ export function getStoreDay(
   return grouped
 }
 
+// ============================================================
+// SUMMARY
+// ============================================================
+
 export type Summary =
-  Record<ShiftStatus, number> & {
+  Record<
+    ShiftStatus,
+    number
+  > & {
     totalToko: number
   }
 
@@ -312,15 +734,21 @@ export function getSummary(
   dateISO: string,
   storeIds: string[],
 ): Summary {
-  const summary: Summary = {
+  const summary: Summary =
+  {
     totalToko:
       storeIds.length,
 
     shift_pagi: 0,
+
     shift_siang: 0,
+
     libur: 0,
+
     cuti: 0,
+
     izin: 0,
+
     sakit: 0,
   }
 
@@ -333,9 +761,13 @@ export function getSummary(
         )
 
       STATUS_ORDER.forEach(
-        (s) => {
-          summary[s] +=
-            day[s].length
+        (status) => {
+          summary[
+            status
+          ] +=
+            day[
+              status
+            ].length
         },
       )
     },
@@ -344,7 +776,9 @@ export function getSummary(
   return summary
 }
 
-// --- Revisi Absensi ----------------------------------------
+// ============================================================
+// REVISI ABSENSI
+// ============================================================
 
 export type RevisiStatus =
   | "BARU"
@@ -380,242 +814,259 @@ function mkRevisi(
   return {
     id: `REV-${String(
       revisiSeq,
-    ).padStart(4, "0")}`,
+    ).padStart(
+      4,
+      "0",
+    )}`,
 
     storeId,
+
     employeeName,
+
     tanggal,
+
     shiftSebelumnya,
+
     statusBaru,
+
     keterangan,
+
     tanggalPengajuan,
+
     status,
   }
 }
 
-export const initialRevisi: Revisi[] = [
-  mkRevisi(
-    "A",
-    "Anwar",
-    "10 Agustus 2026",
-    "shift_pagi",
-    "sakit",
-    "Demam",
-    "11 Agustus 2026",
-    "BARU",
-  ),
+// ============================================================
+// INITIAL REVISI
+// ============================================================
 
-  mkRevisi(
-    "A",
-    "Saepul",
-    "9 Agustus 2026",
-    "shift_siang",
-    "izin",
-    "Keperluan keluarga",
-    "10 Agustus 2026",
-    "BARU",
-  ),
+export const initialRevisi:
+  Revisi[] = [
+    mkRevisi(
+      "A",
+      "Anwar",
+      "10 Agustus 2026",
+      "shift_pagi",
+      "sakit",
+      "Demam",
+      "11 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Edi",
-    "8 Agustus 2026",
-    "shift_pagi",
-    "cuti",
-    "Cuti tahunan",
-    "9 Agustus 2026",
-    "PROSES",
-  ),
+    mkRevisi(
+      "A",
+      "Saepul",
+      "9 Agustus 2026",
+      "shift_siang",
+      "izin",
+      "Keperluan keluarga",
+      "10 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Gunda",
-    "12 Agustus 2026",
-    "libur",
-    "shift_pagi",
-    "Menggantikan rekan",
-    "12 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Edi",
+      "8 Agustus 2026",
+      "shift_pagi",
+      "cuti",
+      "Cuti tahunan",
+      "9 Agustus 2026",
+      "PROSES",
+    ),
 
-  mkRevisi(
-    "A",
-    "Rudi",
-    "13 Agustus 2026",
-    "shift_siang",
-    "sakit",
-    "Sakit maag",
-    "13 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Gunda",
+      "12 Agustus 2026",
+      "libur",
+      "shift_pagi",
+      "Menggantikan rekan",
+      "12 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Andi",
-    "14 Agustus 2026",
-    "shift_pagi",
-    "izin",
-    "Urusan pribadi",
-    "14 Agustus 2026",
-    "PROSES",
-  ),
+    mkRevisi(
+      "A",
+      "Rudi",
+      "13 Agustus 2026",
+      "shift_siang",
+      "sakit",
+      "Sakit maag",
+      "13 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Budi",
-    "15 Agustus 2026",
-    "shift_siang",
-    "libur",
-    "Tukar jadwal",
-    "15 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Andi",
+      "14 Agustus 2026",
+      "shift_pagi",
+      "izin",
+      "Urusan pribadi",
+      "14 Agustus 2026",
+      "PROSES",
+    ),
 
-  mkRevisi(
-    "A",
-    "Citra",
-    "16 Agustus 2026",
-    "libur",
-    "shift_siang",
-    "Menggantikan rekan",
-    "16 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Budi",
+      "15 Agustus 2026",
+      "shift_siang",
+      "libur",
+      "Tukar jadwal",
+      "15 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Anwar",
-    "17 Agustus 2026",
-    "shift_pagi",
-    "izin",
-    "Acara keluarga",
-    "17 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Citra",
+      "16 Agustus 2026",
+      "libur",
+      "shift_siang",
+      "Menggantikan rekan",
+      "16 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "A",
-    "Edi",
-    "18 Agustus 2026",
-    "shift_siang",
-    "sakit",
-    "Flu",
-    "18 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Anwar",
+      "17 Agustus 2026",
+      "shift_pagi",
+      "izin",
+      "Acara keluarga",
+      "17 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "B",
-    "Fajar",
-    "10 Agustus 2026",
-    "shift_pagi",
-    "izin",
-    "Keperluan keluarga",
-    "10 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "A",
+      "Edi",
+      "18 Agustus 2026",
+      "shift_siang",
+      "sakit",
+      "Flu",
+      "18 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "B",
-    "Rizal",
-    "11 Agustus 2026",
-    "shift_siang",
-    "sakit",
-    "Demam tinggi",
-    "11 Agustus 2026",
-    "PROSES",
-  ),
+    mkRevisi(
+      "B",
+      "Fajar",
+      "10 Agustus 2026",
+      "shift_pagi",
+      "izin",
+      "Keperluan keluarga",
+      "10 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "B",
-    "Doni",
-    "12 Agustus 2026",
-    "libur",
-    "shift_pagi",
-    "Tukar jadwal",
-    "12 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "B",
+      "Rizal",
+      "11 Agustus 2026",
+      "shift_siang",
+      "sakit",
+      "Demam tinggi",
+      "11 Agustus 2026",
+      "PROSES",
+    ),
 
-  mkRevisi(
-    "D",
-    "Surya",
-    "9 Agustus 2026",
-    "shift_pagi",
-    "cuti",
-    "Cuti tahunan",
-    "9 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "B",
+      "Doni",
+      "12 Agustus 2026",
+      "libur",
+      "shift_pagi",
+      "Tukar jadwal",
+      "12 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "D",
-    "Bayu",
-    "10 Agustus 2026",
-    "shift_siang",
-    "sakit",
-    "Sakit gigi",
-    "10 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "D",
+      "Surya",
+      "9 Agustus 2026",
+      "shift_pagi",
+      "cuti",
+      "Cuti tahunan",
+      "9 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "D",
-    "Eko",
-    "11 Agustus 2026",
-    "shift_pagi",
-    "izin",
-    "Urusan bank",
-    "11 Agustus 2026",
-    "PROSES",
-  ),
+    mkRevisi(
+      "D",
+      "Bayu",
+      "10 Agustus 2026",
+      "shift_siang",
+      "sakit",
+      "Sakit gigi",
+      "10 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "D",
-    "Wahyu",
-    "12 Agustus 2026",
-    "libur",
-    "shift_siang",
-    "Menggantikan rekan",
-    "12 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "D",
+      "Eko",
+      "11 Agustus 2026",
+      "shift_pagi",
+      "izin",
+      "Urusan bank",
+      "11 Agustus 2026",
+      "PROSES",
+    ),
 
-  mkRevisi(
-    "D",
-    "Dimas",
-    "13 Agustus 2026",
-    "shift_siang",
-    "izin",
-    "Keperluan keluarga",
-    "13 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "D",
+      "Wahyu",
+      "12 Agustus 2026",
+      "libur",
+      "shift_siang",
+      "Menggantikan rekan",
+      "12 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "D",
-    "Rina",
-    "14 Agustus 2026",
-    "shift_pagi",
-    "sakit",
-    "Demam",
-    "14 Agustus 2026",
-    "BARU",
-  ),
+    mkRevisi(
+      "D",
+      "Dimas",
+      "13 Agustus 2026",
+      "shift_siang",
+      "izin",
+      "Keperluan keluarga",
+      "13 Agustus 2026",
+      "BARU",
+    ),
 
-  mkRevisi(
-    "D",
-    "Joko",
-    "15 Agustus 2026",
-    "shift_pagi",
-    "libur",
-    "Tukar jadwal",
-    "15 Agustus 2026",
-    "BARU",
-  ),
-]
+    mkRevisi(
+      "D",
+      "Rina",
+      "14 Agustus 2026",
+      "shift_pagi",
+      "sakit",
+      "Demam",
+      "14 Agustus 2026",
+      "BARU",
+    ),
 
-// --- History -----------------------------------------------
+    mkRevisi(
+      "D",
+      "Joko",
+      "15 Agustus 2026",
+      "shift_pagi",
+      "libur",
+      "Tukar jadwal",
+      "15 Agustus 2026",
+      "BARU",
+    ),
+  ]
+
+// ============================================================
+// HISTORY
+// ============================================================
 
 export type HistoryJenis =
   | "Cuti"
@@ -646,131 +1097,157 @@ function mkHist(
 
   return {
     id: `H-${histSeq}`,
+
     tanggal,
+
     tanggalISO,
+
     name,
+
     storeId,
+
     jenis,
+
     keterangan,
   }
 }
 
-export const history: HistoryEntry[] = [
-  mkHist(
-    "10 Agustus 2026",
-    "2026-08-10",
-    "Anwar",
-    "A",
-    "Sakit",
-    "Demam",
-  ),
-  mkHist(
-    "15 Agustus 2026",
-    "2026-08-15",
-    "Saepul",
-    "A",
-    "Izin",
-    "Keperluan keluarga",
-  ),
-  mkHist(
-    "20 Agustus 2026",
-    "2026-08-20",
-    "Citra",
-    "A",
-    "Cuti",
-    "Cuti tahunan",
-  ),
-  mkHist(
-    "3 Agustus 2026",
-    "2026-08-03",
-    "Budi",
-    "A",
-    "Sakit",
-    "Flu",
-  ),
-  mkHist(
-    "8 Agustus 2026",
-    "2026-08-08",
-    "Andi",
-    "A",
-    "Izin",
-    "Urusan pribadi",
-  ),
-  mkHist(
-    "5 Agustus 2026",
-    "2026-08-05",
-    "Fajar",
-    "B",
-    "Izin",
-    "Keperluan keluarga",
-  ),
-  mkHist(
-    "12 Agustus 2026",
-    "2026-08-12",
-    "Rizal",
-    "B",
-    "Sakit",
-    "Demam tinggi",
-  ),
-  mkHist(
-    "18 Agustus 2026",
-    "2026-08-18",
-    "Sari",
-    "B",
-    "Cuti",
-    "Cuti tahunan",
-  ),
-  mkHist(
-    "6 Agustus 2026",
-    "2026-08-06",
-    "Yoga",
-    "C",
-    "Sakit",
-    "Sakit kepala",
-  ),
-  mkHist(
-    "14 Agustus 2026",
-    "2026-08-14",
-    "Dewi",
-    "C",
-    "Cuti",
-    "Cuti melahirkan",
-  ),
-  mkHist(
-    "19 Agustus 2026",
-    "2026-08-19",
-    "Reza",
-    "C",
-    "Izin",
-    "Wisuda keluarga",
-  ),
-  mkHist(
-    "7 Agustus 2026",
-    "2026-08-07",
-    "Surya",
-    "D",
-    "Cuti",
-    "Cuti tahunan",
-  ),
-  mkHist(
-    "11 Agustus 2026",
-    "2026-08-11",
-    "Bayu",
-    "D",
-    "Sakit",
-    "Sakit gigi",
-  ),
-  mkHist(
-    "16 Agustus 2026",
-    "2026-08-16",
-    "Rina",
-    "D",
-    "Izin",
-    "Urusan bank",
-  ),
-]
+// ============================================================
+// HISTORY DATA
+// ============================================================
 
-// --- Date helpers ------------------------------------------
+export const history:
+  HistoryEntry[] = [
+    mkHist(
+      "10 Agustus 2026",
+      "2026-08-10",
+      "Anwar",
+      "A",
+      "Sakit",
+      "Demam",
+    ),
+
+    mkHist(
+      "15 Agustus 2026",
+      "2026-08-15",
+      "Saepul",
+      "A",
+      "Izin",
+      "Keperluan keluarga",
+    ),
+
+    mkHist(
+      "20 Agustus 2026",
+      "2026-08-20",
+      "Citra",
+      "A",
+      "Cuti",
+      "Cuti tahunan",
+    ),
+
+    mkHist(
+      "3 Agustus 2026",
+      "2026-08-03",
+      "Budi",
+      "A",
+      "Sakit",
+      "Flu",
+    ),
+
+    mkHist(
+      "8 Agustus 2026",
+      "2026-08-08",
+      "Andi",
+      "A",
+      "Izin",
+      "Urusan pribadi",
+    ),
+
+    mkHist(
+      "5 Agustus 2026",
+      "2026-08-05",
+      "Fajar",
+      "B",
+      "Izin",
+      "Keperluan keluarga",
+    ),
+
+    mkHist(
+      "12 Agustus 2026",
+      "2026-08-12",
+      "Rizal",
+      "B",
+      "Sakit",
+      "Demam tinggi",
+    ),
+
+    mkHist(
+      "18 Agustus 2026",
+      "2026-08-18",
+      "Sari",
+      "B",
+      "Cuti",
+      "Cuti tahunan",
+    ),
+
+    mkHist(
+      "6 Agustus 2026",
+      "2026-08-06",
+      "Yoga",
+      "C",
+      "Sakit",
+      "Sakit kepala",
+    ),
+
+    mkHist(
+      "14 Agustus 2026",
+      "2026-08-14",
+      "Dewi",
+      "C",
+      "Cuti",
+      "Cuti melahirkan",
+    ),
+
+    mkHist(
+      "19 Agustus 2026",
+      "2026-08-19",
+      "Reza",
+      "C",
+      "Izin",
+      "Wisuda keluarga",
+    ),
+
+    mkHist(
+      "7 Agustus 2026",
+      "2026-08-07",
+      "Surya",
+      "D",
+      "Cuti",
+      "Cuti tahunan",
+    ),
+
+    mkHist(
+      "11 Agustus 2026",
+      "2026-08-11",
+      "Bayu",
+      "D",
+      "Sakit",
+      "Sakit gigi",
+    ),
+
+    mkHist(
+      "16 Agustus 2026",
+      "2026-08-16",
+      "Rina",
+      "D",
+      "Izin",
+      "Urusan bank",
+    ),
+  ]
+
+// ============================================================
+// DATE HELPERS
+// ============================================================
 
 const MONTHS = [
   "Januari",
@@ -793,8 +1270,14 @@ export const DEFAULT_DATE =
 export function formatTanggal(
   iso: string,
 ): string {
-  const [y, m, d] =
-    iso.split("-").map(Number)
+  const [
+    y,
+    m,
+    d,
+  ] =
+    iso
+      .split("-")
+      .map(Number)
 
   return `${d} ${MONTHS[m - 1]
     } ${y}`
