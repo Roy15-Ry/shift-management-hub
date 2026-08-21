@@ -1,7 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { Bell, Menu, UserRound, Moon, Sun } from "lucide-react"
+import {
+  Bell,
+  Menu,
+  UserRound,
+  ChevronDown,
+  LogOut,
+  Sun,
+  Moon,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
 import { PAGE_TITLES } from "@/components/nav-config"
@@ -12,10 +20,14 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
   const [notifOpen, setNotifOpen] = React.useState(false)
   const [darkMode, setDarkMode] = React.useState(false)
+  const [accountOpen, setAccountOpen] = React.useState(false)
 
   const notifRef = React.useRef<HTMLDivElement>(null)
+  const accountRef = React.useRef<HTMLDivElement>(null)
 
-  // Membaca tema yang tersimpan
+  // ================================
+  // MEMBACA TEMA YANG TERSIMPAN
+  // ================================
   React.useEffect(() => {
     const savedTheme = localStorage.getItem("theme")
 
@@ -30,7 +42,9 @@ export function Header({ onMenu }: { onMenu: () => void }) {
     }
   }, [])
 
-  // Mengubah mode normal dan malam
+  // ================================
+  // TOGGLE DARK MODE
+  // ================================
   function toggleDarkMode() {
     const html = document.documentElement
 
@@ -49,31 +63,48 @@ export function Header({ onMenu }: { onMenu: () => void }) {
     }
   }
 
-  // Menutup notifikasi ketika klik di luar
+  // ================================
+  // MENUTUP DROPDOWN KETIKA KLIK DI LUAR
+  // ================================
   React.useEffect(() => {
     function onClick(e: MouseEvent) {
+      const target = e.target as Node
+
       if (
         notifRef.current &&
-        !notifRef.current.contains(e.target as Node)
+        !notifRef.current.contains(target)
       ) {
         setNotifOpen(false)
+      }
+
+      if (
+        accountRef.current &&
+        !accountRef.current.contains(target)
+      ) {
+        setAccountOpen(false)
       }
     }
 
     document.addEventListener("mousedown", onClick)
 
-    return () =>
+    return () => {
       document.removeEventListener("mousedown", onClick)
+    }
   }, [])
 
+  // ================================
+  // DATA NOTIFIKASI
+  // ================================
   const pending = revisi
     .filter((r) => r.status !== "SELESAI")
     .slice(0, 5)
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md md:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md transition-colors duration-300 md:px-6">
 
-      {/* Mobile Menu */}
+      {/* ================================
+          MOBILE MENU
+      ================================= */}
       <button
         type="button"
         onClick={onMenu}
@@ -83,19 +114,33 @@ export function Header({ onMenu }: { onMenu: () => void }) {
         <Menu className="size-5" />
       </button>
 
-      {/* Page Title */}
+      {/* ================================
+          PAGE TITLE
+      ================================= */}
       <h1 className="text-base font-semibold tracking-tight md:text-lg">
         {PAGE_TITLES[page]}
       </h1>
 
+      {/* ================================
+          RIGHT HEADER
+      ================================= */}
       <div className="ml-auto flex items-center gap-2 md:gap-3">
 
-        {/* Notifications */}
-        <div className="relative" ref={notifRef}>
+        {/* ================================
+            NOTIFICATION
+        ================================= */}
+        <div
+          className="relative"
+          ref={notifRef}
+        >
           <button
             type="button"
-            onClick={() => setNotifOpen((v) => !v)}
+            onClick={() => {
+              setNotifOpen((v) => !v)
+              setAccountOpen(false)
+            }}
             aria-label="Notifikasi"
+            aria-expanded={notifOpen}
             className="relative flex size-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted"
           >
             <Bell className="size-5" />
@@ -112,6 +157,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
           {notifOpen && (
             <div className="absolute right-0 top-12 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
 
+              {/* Notification Header */}
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold">
                   Notifikasi
@@ -122,6 +168,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                 </span>
               </div>
 
+              {/* Notification List */}
               <div className="max-h-80 overflow-y-auto">
                 {pending.length === 0 ? (
                   <p className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -158,6 +205,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                 )}
               </div>
 
+              {/* View All */}
               <button
                 type="button"
                 onClick={() => {
@@ -172,7 +220,9 @@ export function Header({ onMenu }: { onMenu: () => void }) {
           )}
         </div>
 
-        {/* Dark Mode */}
+        {/* ================================
+            DARK MODE
+        ================================= */}
         <button
           type="button"
           onClick={toggleDarkMode}
@@ -186,7 +236,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
               ? "Mode normal"
               : "Mode malam"
           }
-          className="flex size-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-muted"
+          className="flex size-9 items-center justify-center rounded-md text-foreground transition-all duration-300 hover:bg-muted"
         >
           {darkMode ? (
             <Sun className="size-5" />
@@ -195,21 +245,107 @@ export function Header({ onMenu }: { onMenu: () => void }) {
           )}
         </button>
 
-        {/* Profile */}
-        <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card py-1.5 pl-1.5 pr-2 md:pr-3">
-          <div className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <UserRound className="size-4" />
-          </div>
+        {/* ================================
+            ACCOUNT MENU
+        ================================= */}
+        <div
+          className="relative"
+          ref={accountRef}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setAccountOpen((v) => !v)
+              setNotifOpen(false)
+            }}
+            aria-label="Menu akun"
+            aria-expanded={accountOpen}
+            className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 transition-colors hover:bg-muted md:px-3"
+          >
+            {/* Avatar */}
+            <div className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <UserRound className="size-4" />
+            </div>
 
-          <div className="hidden text-left leading-tight sm:block">
-            <p className="text-xs font-semibold">
-              CENTRAL
-            </p>
+            {/* Account Name */}
+            <div className="hidden text-left leading-tight sm:block">
+              <p className="text-xs font-semibold">
+                CENTRAL
+              </p>
 
-            <p className="text-[0.7rem] text-muted-foreground">
-              Pusat Monitoring
-            </p>
-          </div>
+              <p className="text-[0.7rem] text-muted-foreground">
+                Pusat Monitoring
+              </p>
+            </div>
+
+            {/* Arrow */}
+            <ChevronDown
+              className={cn(
+                "size-4 text-muted-foreground transition-transform duration-200",
+                accountOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          {/* ================================
+              ACCOUNT DROPDOWN
+          ================================= */}
+          {accountOpen && (
+            <div className="absolute right-0 top-12 z-50 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+
+              {/* Account Information */}
+              <div className="border-b border-border px-4 py-4">
+
+                {/* Nama Akun */}
+                <div>
+                  <p className="mb-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+                    NAMA AKUN
+                  </p>
+
+                  <p className="text-sm font-semibold text-foreground">
+                    Ahmad Royani
+                  </p>
+                </div>
+
+                {/* Jenis Akun */}
+                <div className="mt-3">
+                  <p className="mb-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+                    JENIS AKUN
+                  </p>
+
+                  <p className="text-sm font-semibold text-foreground">
+                    CENTRAL
+                  </p>
+                </div>
+
+                {/* Nama Admin */}
+                <div className="mt-3">
+                  <p className="mb-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+                    NAMA ADMIN
+                  </p>
+
+                  <p className="text-sm font-semibold text-foreground">
+                    Ahmad Royani
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Logout */}
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountOpen(false)
+                  alert("Logout untuk prototype")
+                }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-destructive transition-colors hover:bg-muted"
+              >
+                <LogOut className="size-4" />
+                LOGOUT
+              </button>
+
+            </div>
+          )}
         </div>
 
       </div>

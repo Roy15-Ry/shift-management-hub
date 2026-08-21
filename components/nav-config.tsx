@@ -15,11 +15,31 @@ export type NavItem = {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "pengaturan", label: "Pengaturan Toko", icon: Store },
-  { key: "revisi", label: "Revisi Absensi", icon: ClipboardList },
-  { key: "shift", label: "Shift Cabang", icon: CalendarDays },
-  { key: "history", label: "History", icon: History },
+  {
+    key: "dashboard",
+    label: "DASHBOARD",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "pengaturan",
+    label: "PENGATURAN TOKO",
+    icon: Store,
+  },
+  {
+    key: "revisi",
+    label: "REVISI ABSENSI",
+    icon: ClipboardList,
+  },
+  {
+    key: "shift",
+    label: "SHIFT CABANG",
+    icon: CalendarDays,
+  },
+  {
+    key: "history",
+    label: "HISTORY",
+    icon: History,
+  },
 ]
 
 export const PAGE_TITLES: Record<PageKey, string> = {
