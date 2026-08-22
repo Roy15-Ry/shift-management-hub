@@ -9,6 +9,9 @@ __v0_jsx-dev-runtime.ts
 # Environment variables
 .env*.local
 
+# Firebase Admin Service Account
+shift-management-hub-firebase-adminsdk-fbsvc-ab047666f7.json
+
 # Common ignores
 node_modules
 .next/

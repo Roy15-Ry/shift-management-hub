@@ -12,11 +12,14 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
+import { useAuth } from "@/components/auth-context"
 import { PAGE_TITLES } from "@/components/nav-config"
 import { getStore } from "@/lib/data"
+import { logoutUser } from "@/lib/auth"
 
 export function Header({ onMenu }: { onMenu: () => void }) {
   const { page, setPage, revisi, pendingRevisiCount } = useApp()
+  const { profile } = useAuth()
 
   const [notifOpen, setNotifOpen] = React.useState(false)
   const [darkMode, setDarkMode] = React.useState(false)
@@ -24,6 +27,24 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
   const notifRef = React.useRef<HTMLDivElement>(null)
   const accountRef = React.useRef<HTMLDivElement>(null)
+
+  // ================================
+  // DATA AKUN DARI FIRESTORE
+  // ================================
+  const accountName =
+    profile?.nama || "CENTRAL PUSAT"
+
+  const accountRole =
+    profile?.role || "central_pusat"
+
+  const accountRoleLabel =
+    accountRole === "central_pusat"
+      ? "CENTRAL PUSAT"
+      : accountRole === "central_cabang"
+        ? "CENTRAL CABANG"
+        : accountRole === "store"
+          ? "STORE"
+          : accountRole.toUpperCase()
 
   // ================================
   // MEMBACA TEMA YANG TERSIMPAN
@@ -270,11 +291,15 @@ export function Header({ onMenu }: { onMenu: () => void }) {
             {/* Account Name */}
             <div className="hidden text-left leading-tight sm:block">
               <p className="text-xs font-semibold">
-                CENTRAL
+                {accountRole === "central_pusat"
+                  ? "CENTRAL"
+                  : accountRoleLabel}
               </p>
 
               <p className="text-[0.7rem] text-muted-foreground">
-                Pusat Monitoring
+                {accountRole === "central_pusat"
+                  ? "Pusat Monitoring"
+                  : accountRoleLabel}
               </p>
             </div>
 
@@ -303,7 +328,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                   </p>
 
                   <p className="text-sm font-semibold text-foreground">
-                    Ahmad Royani
+                    {accountName}
                   </p>
                 </div>
 
@@ -314,7 +339,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                   </p>
 
                   <p className="text-sm font-semibold text-foreground">
-                    CENTRAL
+                    {accountRoleLabel}
                   </p>
                 </div>
 
@@ -325,7 +350,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                   </p>
 
                   <p className="text-sm font-semibold text-foreground">
-                    Ahmad Royani
+                    {accountName}
                   </p>
                 </div>
 
@@ -334,9 +359,13 @@ export function Header({ onMenu }: { onMenu: () => void }) {
               {/* Logout */}
               <button
                 type="button"
-                onClick={() => {
-                  setAccountOpen(false)
-                  alert("Logout untuk prototype")
+                onClick={async () => {
+                  try {
+                    await logoutUser()
+                    setAccountOpen(false)
+                  } catch (error) {
+                    console.error("Gagal logout:", error)
+                  }
                 }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-destructive transition-colors hover:bg-muted"
               >
