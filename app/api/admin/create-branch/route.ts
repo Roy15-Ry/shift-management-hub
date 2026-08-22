@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server"
-import { FieldValue } from "firebase-admin/firestore"
+import { adminAuth, adminDb } from "@/lib/firebase-admin"
 
-import {
-  adminAuth,
-  adminDb,
-} from "@/lib/firebase-admin"
-
-export async function POST(
-  request: Request,
-) {
+export async function POST(request: Request) {
   try {
     // =====================================================
-    // AMBIL TOKEN LOGIN DARI HEADER
+    // AMBIL TOKEN LOGIN
     // =====================================================
 
     const authorization =
@@ -34,7 +27,7 @@ export async function POST(
       authorization.substring(7)
 
     // =====================================================
-    // VERIFIKASI TOKEN FIREBASE
+    // VERIFIKASI TOKEN
     // =====================================================
 
     const decodedToken =
@@ -68,7 +61,7 @@ export async function POST(
 
     // =====================================================
     // HANYA CENTRAL PUSAT
-    // YANG BOLEH MEMBUAT CENTRAL CABANG
+    // YANG BOLEH MEMBUAT CABANG
     // =====================================================
 
     if (
@@ -80,7 +73,7 @@ export async function POST(
         {
           success: false,
           message:
-            "Hanya Central Pusat yang dapat membuat Central Cabang.",
+            "Hanya Central Pusat yang dapat membuat cabang.",
         },
         { status: 403 },
       )
@@ -94,36 +87,27 @@ export async function POST(
       await request.json()
 
     const {
-      email,
-      password,
-      nama,
       cabangId,
-      namaCabang,
+      nama,
     } = body
 
     // =====================================================
     // VALIDASI
     // =====================================================
 
-    if (
-      !email ||
-      !password ||
-      !nama ||
-      !cabangId ||
-      !namaCabang
-    ) {
+    if (!cabangId || !nama) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Nama, email, password, ID cabang, dan nama cabang wajib diisi.",
+            "cabangId dan nama wajib diisi.",
         },
         { status: 400 },
       )
     }
 
     // =====================================================
-    // NORMALISASI DATA CABANG
+    // NORMALISASI ID CABANG
     // =====================================================
 
     const normalizedCabangId =
@@ -131,8 +115,8 @@ export async function POST(
         .trim()
         .toUpperCase()
 
-    const normalizedNamaCabang =
-      String(namaCabang).trim()
+    const normalizedNama =
+      String(nama).trim()
 
     // =====================================================
     // CEK APAKAH CABANG SUDAH ADA
@@ -158,62 +142,16 @@ export async function POST(
     }
 
     // =====================================================
-    // BUAT AKUN FIREBASE AUTH
+    // SIMPAN CABANG
     // =====================================================
 
-    const userRecord =
-      await adminAuth.createUser({
-        email,
-        password,
-        displayName: nama,
-      })
-
-    try {
-      // ===================================================
-      // SIMPAN DATA CENTRAL CABANG
-      // ===================================================
-
-      await adminDb
-        .collection("users")
-        .doc(userRecord.uid)
-        .set({
-          uid: userRecord.uid,
-          email,
-          nama,
-          role: "central_cabang",
-          cabangId: normalizedCabangId,
-          aktif: true,
-          createdAt:
-            FieldValue.serverTimestamp(),
-        })
-
-      // ===================================================
-      // BUAT DATA CABANG
-      // ===================================================
-
-      await branchRef.set({
-        cabangId:
-          normalizedCabangId,
-        nama:
-          normalizedNamaCabang,
-        aktif: true,
-        centralUid:
-          userRecord.uid,
-        createdAt:
-          FieldValue.serverTimestamp(),
-      })
-    } catch (databaseError) {
-      // ===================================================
-      // JIKA FIRESTORE GAGAL,
-      // HAPUS AKUN AUTH YANG BARU DIBUAT
-      // ===================================================
-
-      await adminAuth.deleteUser(
-        userRecord.uid,
-      )
-
-      throw databaseError
-    }
+    await branchRef.set({
+      cabangId: normalizedCabangId,
+      nama: normalizedNama,
+      aktif: true,
+      createdAt:
+        new Date(),
+    })
 
     // =====================================================
     // BERHASIL
@@ -222,18 +160,17 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message:
-        "Central Cabang dan data cabang berhasil dibuat.",
-      uid: userRecord.uid,
+        "Cabang berhasil dibuat.",
       cabang: {
         cabangId:
           normalizedCabangId,
-        nama:
-          normalizedNamaCabang,
+        nama: normalizedNama,
+        aktif: true,
       },
     })
   } catch (error: unknown) {
     console.error(
-      "CREATE CENTRAL ERROR:",
+      "CREATE BRANCH ERROR:",
       error,
     )
 
@@ -243,7 +180,7 @@ export async function POST(
         message:
           error instanceof Error
             ? error.message
-            : "Gagal membuat Central Cabang.",
+            : "Gagal membuat cabang.",
       },
       { status: 500 },
     )

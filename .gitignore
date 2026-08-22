@@ -16,3 +16,5 @@ shift-management-hub-firebase-adminsdk-fbsvc-ab047666f7.json
 node_modules
 .next/
 .DS_Store
+shift-management-hub-firebase-adminsdk-*.json
+.env.local

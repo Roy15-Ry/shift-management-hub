@@ -9,12 +9,15 @@ import { PengaturanPage } from "@/components/pages/pengaturan"
 import { RevisiPage } from "@/components/pages/revisi"
 import { ShiftPage } from "@/components/pages/shift"
 import { HistoryPage } from "@/components/pages/history"
+import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
 
 function PageContent() {
   const { page } = useApp()
   switch (page) {
     case "dashboard":
       return <DashboardPage />
+      case "manajemen-akun":
+  return <ManajemenAkunPage />
     case "pengaturan":
       return <PengaturanPage />
     case "revisi":

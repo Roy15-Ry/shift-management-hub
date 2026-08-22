@@ -26,7 +26,9 @@ export async function POST(
           success: false,
           message: "Tidak terautentikasi.",
         },
-        { status: 401 },
+        {
+          status: 401,
+        },
       )
     }
 
@@ -43,7 +45,7 @@ export async function POST(
     const uid = decodedToken.uid
 
     // =====================================================
-    // AMBIL PROFIL USER
+    // AMBIL DATA USER YANG SEDANG LOGIN
     // =====================================================
 
     const userSnapshot =
@@ -59,35 +61,47 @@ export async function POST(
           message:
             "Profil pengguna tidak ditemukan.",
         },
-        { status: 403 },
+        {
+          status: 403,
+        },
       )
     }
 
     const currentUser =
       userSnapshot.data()
 
+    const currentRole =
+      currentUser?.role
+
+    const currentCabangId =
+      currentUser?.cabangId
+
     // =====================================================
-    // HANYA CENTRAL PUSAT
-    // YANG BOLEH MEMBUAT CENTRAL CABANG
+    // CEK HAK AKSES
+    //
+    // CENTRAL PUSAT  → BOLEH MEMBUAT STORE
+    // CENTRAL CABANG  → BOLEH MEMBUAT STORE
+    // STORE           → DITOLAK
     // =====================================================
 
     if (
-      currentUser?.role !==
-        "central_pusat" ||
-      currentUser?.aktif !== true
+      currentRole !== "central_pusat" &&
+      currentRole !== "central_cabang"
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Hanya Central Pusat yang dapat membuat Central Cabang.",
+            "Anda tidak memiliki izin untuk membuat akun Store.",
         },
-        { status: 403 },
+        {
+          status: 403,
+        },
       )
     }
 
     // =====================================================
-    // AMBIL DATA
+    // AMBIL DATA STORE BARU
     // =====================================================
 
     const body =
@@ -98,7 +112,6 @@ export async function POST(
       password,
       nama,
       cabangId,
-      namaCabang,
     } = body
 
     // =====================================================
@@ -109,51 +122,38 @@ export async function POST(
       !email ||
       !password ||
       !nama ||
-      !cabangId ||
-      !namaCabang
+      !cabangId
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Nama, email, password, ID cabang, dan nama cabang wajib diisi.",
+            "Email, password, nama, dan cabangId wajib diisi.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       )
     }
 
     // =====================================================
-    // NORMALISASI DATA CABANG
+    // CENTRAL CABANG HANYA BOLEH MEMBUAT STORE
+    // DI CABANG MILIKNYA SENDIRI
     // =====================================================
 
-    const normalizedCabangId =
-      String(cabangId)
-        .trim()
-        .toUpperCase()
-
-    const normalizedNamaCabang =
-      String(namaCabang).trim()
-
-    // =====================================================
-    // CEK APAKAH CABANG SUDAH ADA
-    // =====================================================
-
-    const branchRef =
-      adminDb
-        .collection("branches")
-        .doc(normalizedCabangId)
-
-    const branchSnapshot =
-      await branchRef.get()
-
-    if (branchSnapshot.exists) {
+    if (
+      currentRole === "central_cabang" &&
+      currentCabangId !== cabangId
+    ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "ID cabang sudah digunakan.",
+            "Central Cabang hanya dapat membuat akun Store untuk cabangnya sendiri.",
         },
-        { status: 409 },
+        {
+          status: 403,
+        },
       )
     }
 
@@ -168,52 +168,23 @@ export async function POST(
         displayName: nama,
       })
 
-    try {
-      // ===================================================
-      // SIMPAN DATA CENTRAL CABANG
-      // ===================================================
+    // =====================================================
+    // SIMPAN PROFIL STORE KE FIRESTORE
+    // =====================================================
 
-      await adminDb
-        .collection("users")
-        .doc(userRecord.uid)
-        .set({
-          uid: userRecord.uid,
-          email,
-          nama,
-          role: "central_cabang",
-          cabangId: normalizedCabangId,
-          aktif: true,
-          createdAt:
-            FieldValue.serverTimestamp(),
-        })
-
-      // ===================================================
-      // BUAT DATA CABANG
-      // ===================================================
-
-      await branchRef.set({
-        cabangId:
-          normalizedCabangId,
-        nama:
-          normalizedNamaCabang,
+    await adminDb
+      .collection("users")
+      .doc(userRecord.uid)
+      .set({
+        uid: userRecord.uid,
+        email,
+        nama,
+        role: "store",
+        cabangId,
         aktif: true,
-        centralUid:
-          userRecord.uid,
         createdAt:
           FieldValue.serverTimestamp(),
       })
-    } catch (databaseError) {
-      // ===================================================
-      // JIKA FIRESTORE GAGAL,
-      // HAPUS AKUN AUTH YANG BARU DIBUAT
-      // ===================================================
-
-      await adminAuth.deleteUser(
-        userRecord.uid,
-      )
-
-      throw databaseError
-    }
 
     // =====================================================
     // BERHASIL
@@ -222,18 +193,12 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message:
-        "Central Cabang dan data cabang berhasil dibuat.",
+        "Akun Store berhasil dibuat.",
       uid: userRecord.uid,
-      cabang: {
-        cabangId:
-          normalizedCabangId,
-        nama:
-          normalizedNamaCabang,
-      },
     })
   } catch (error: unknown) {
     console.error(
-      "CREATE CENTRAL ERROR:",
+      "CREATE STORE ERROR:",
       error,
     )
 
@@ -243,9 +208,11 @@ export async function POST(
         message:
           error instanceof Error
             ? error.message
-            : "Gagal membuat Central Cabang.",
+            : "Gagal membuat akun Store.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     )
   }
 }

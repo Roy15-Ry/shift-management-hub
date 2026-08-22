@@ -4,6 +4,7 @@ import {
   ClipboardList,
   CalendarDays,
   History,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react"
 import type { PageKey } from "@/components/app-context"
@@ -20,6 +21,11 @@ export const NAV_ITEMS: NavItem[] = [
     label: "DASHBOARD",
     icon: LayoutDashboard,
   },
+  {
+  key: "manajemen-akun",
+  label: "MANAJEMEN AKUN",
+  icon: UsersRound,
+},
   {
     key: "pengaturan",
     label: "PENGATURAN TOKO",
@@ -44,6 +50,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const PAGE_TITLES: Record<PageKey, string> = {
   dashboard: "DASHBOARD",
+  "manajemen-akun": "MANAJEMEN AKUN",
   pengaturan: "PENGATURAN TOKO",
   revisi: "REVISI ABSENSI",
   shift: "SHIFT CABANG",

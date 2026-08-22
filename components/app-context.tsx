@@ -13,6 +13,7 @@ export type PageKey =
   | "revisi"
   | "shift"
   | "history"
+  | "manajemen-akun"
 
 type AppContextValue = {
   page: PageKey
