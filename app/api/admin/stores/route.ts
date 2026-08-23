@@ -14,16 +14,21 @@ export async function GET(
         // =====================================================
 
         const authorization =
-            request.headers.get("authorization")
+            request.headers.get(
+                "authorization",
+            )
 
         if (
             !authorization ||
-            !authorization.startsWith("Bearer ")
+            !authorization.startsWith(
+                "Bearer ",
+            )
         ) {
             return NextResponse.json(
                 {
                     success: false,
-                    message: "Tidak terautentikasi.",
+                    message:
+                        "Tidak terautentikasi.",
                 },
                 {
                     status: 401,
@@ -39,22 +44,26 @@ export async function GET(
         // =====================================================
 
         const decodedToken =
-            await adminAuth.verifyIdToken(idToken)
+            await adminAuth.verifyIdToken(
+                idToken,
+            )
 
         const uid =
             decodedToken.uid
 
         // =====================================================
-        // AMBIL PROFIL USER
+        // AMBIL PROFIL USER YANG LOGIN
         // =====================================================
 
-        const userSnapshot =
+        const currentUserSnapshot =
             await adminDb
                 .collection("users")
                 .doc(uid)
                 .get()
 
-        if (!userSnapshot.exists) {
+        if (
+            !currentUserSnapshot.exists
+        ) {
             return NextResponse.json(
                 {
                     success: false,
@@ -68,7 +77,7 @@ export async function GET(
         }
 
         const currentUser =
-            userSnapshot.data()
+            currentUserSnapshot.data()
 
         const role =
             currentUser?.role
@@ -80,12 +89,14 @@ export async function GET(
             currentUser?.storeId
 
         // =====================================================
-        // ROLE YANG DIIZINKAN
+        // CEK HAK AKSES
         // =====================================================
 
         if (
-            role !== "central_pusat" &&
-            role !== "central_cabang" &&
+            role !==
+            "central_pusat" &&
+            role !==
+            "central_cabang" &&
             role !== "store"
         ) {
             return NextResponse.json(
@@ -101,16 +112,16 @@ export async function GET(
         }
 
         // =====================================================
-        // AMBIL SEMUA STORE
+        // AMBIL DATA STORE
         // =====================================================
 
-        const snapshot =
+        const storesSnapshot =
             await adminDb
                 .collection("stores")
                 .get()
 
         let stores =
-            snapshot.docs.map(
+            storesSnapshot.docs.map(
                 (doc) => {
                     const data =
                         doc.data()
@@ -135,8 +146,8 @@ export async function GET(
             )
 
         // =====================================================
-        // CENTRAL CABANG
-        // HANYA BOLEH MELIHAT STORE CABANG SENDIRI
+        // FILTER CENTRAL CABANG
+        // HANYA CABANG MILIKNYA
         // =====================================================
 
         if (
@@ -152,8 +163,8 @@ export async function GET(
         }
 
         // =====================================================
-        // STORE
-        // HANYA MELIHAT STORE SENDIRI
+        // FILTER STORE
+        // HANYA STORE SENDIRI
         // =====================================================
 
         if (
@@ -168,10 +179,102 @@ export async function GET(
         }
 
         // =====================================================
+        // AMBIL AKUN STORE
+        // DARI COLLECTION USERS
+        // =====================================================
+
+        const usersSnapshot =
+            await adminDb
+                .collection("users")
+                .get()
+
+        const storeAccounts =
+            usersSnapshot.docs
+                .map(
+                    (doc) => {
+                        const data =
+                            doc.data()
+
+                        return {
+                            uid: doc.id,
+
+                            nama:
+                                data.nama ??
+                                "",
+
+                            email:
+                                data.email ??
+                                "",
+
+                            role:
+                                data.role ??
+                                "",
+
+                            storeId:
+                                data.storeId ??
+                                null,
+
+                            cabangId:
+                                data.cabangId ??
+                                null,
+
+                            aktif:
+                                data.aktif === true,
+                        }
+                    },
+                )
+                .filter(
+                    (user) =>
+                        user.role ===
+                        "store" &&
+                        Boolean(
+                            user.storeId,
+                        ),
+                )
+
+        // =====================================================
+        // GABUNGKAN DATA STORE
+        // DENGAN DATA AKUN STORE
+        // =====================================================
+
+        const storesWithAccounts =
+            stores.map(
+                (store) => {
+                    const account =
+                        storeAccounts.find(
+                            (user) =>
+                                user.storeId ===
+                                store.storeId,
+                        )
+
+                    return {
+                        ...store,
+
+                        akunUid:
+                            account?.uid ??
+                            null,
+
+                        akunNama:
+                            account?.nama ??
+                            null,
+
+                        akunEmail:
+                            account?.email ??
+                            null,
+
+                        akunAktif:
+                            account
+                                ? account.aktif
+                                : null,
+                    }
+                },
+            )
+
+        // =====================================================
         // URUTKAN
         // =====================================================
 
-        stores.sort(
+        storesWithAccounts.sort(
             (a, b) =>
                 String(
                     a.namaStore,
@@ -182,9 +285,14 @@ export async function GET(
                 ),
         )
 
+        // =====================================================
+        // BERHASIL
+        // =====================================================
+
         return NextResponse.json({
             success: true,
-            stores,
+            stores:
+                storesWithAccounts,
         })
     } catch (error: unknown) {
         console.error(
