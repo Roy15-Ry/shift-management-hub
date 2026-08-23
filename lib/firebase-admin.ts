@@ -14,9 +14,18 @@ import { getFirestore } from "firebase-admin/firestore"
 // FIREBASE ADMIN SERVICE ACCOUNT
 // ============================================================
 
+const serviceAccountFile =
+  process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE
+
+if (!serviceAccountFile) {
+  throw new Error(
+    "FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE belum diatur.",
+  )
+}
+
 const serviceAccountPath = path.join(
   process.cwd(),
-  "shift-management-hub-firebase-adminsdk-fbsvc-1b5467739f.json",
+  serviceAccountFile,
 )
 
 if (!fs.existsSync(serviceAccountPath)) {
