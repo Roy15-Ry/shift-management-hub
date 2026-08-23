@@ -25,7 +25,9 @@ export async function GET(
           success: false,
           message: "Tidak terautentikasi.",
         },
-        { status: 401 },
+        {
+          status: 401,
+        },
       )
     }
 
@@ -58,7 +60,9 @@ export async function GET(
           message:
             "Profil pengguna tidak ditemukan.",
         },
-        { status: 403 },
+        {
+          status: 403,
+        },
       )
     }
 
@@ -81,12 +85,14 @@ export async function GET(
           message:
             "Anda tidak memiliki izin melihat akun.",
         },
-        { status: 403 },
+        {
+          status: 403,
+        },
       )
     }
 
     // =====================================================
-    // AMBIL SEMUA USER DARI FIRESTORE
+    // AMBIL SEMUA USER
     // =====================================================
 
     const snapshot =
@@ -96,15 +102,30 @@ export async function GET(
 
     let users =
       snapshot.docs.map((doc) => {
-        const data = doc.data()
+        const data =
+          doc.data()
 
         return {
           uid: doc.id,
-          nama: data.nama ?? "",
-          email: data.email ?? "",
-          role: data.role ?? "",
+
+          nama:
+            data.nama ?? "",
+
+          email:
+            data.email ?? "",
+
+          role:
+            data.role ?? "",
+
           cabangId:
             data.cabangId ?? null,
+
+          storeId:
+            data.storeId ?? null,
+
+          namaStore:
+            data.namaStore ?? null,
+
           aktif:
             data.aktif === true,
         }
@@ -128,14 +149,19 @@ export async function GET(
     }
 
     // =====================================================
-    // URUTAN
+    // URUTKAN BERDASARKAN NAMA
     // =====================================================
 
-    users.sort((a, b) =>
-      a.nama.localeCompare(
-        b.nama,
-      ),
+    users.sort(
+      (a, b) =>
+        a.nama.localeCompare(
+          b.nama,
+        ),
     )
+
+    // =====================================================
+    // BERHASIL
+    // =====================================================
 
     return NextResponse.json({
       success: true,
@@ -155,7 +181,9 @@ export async function GET(
             ? error.message
             : "Gagal mengambil daftar akun.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     )
   }
 }

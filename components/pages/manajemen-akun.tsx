@@ -13,11 +13,14 @@ type Account = {
   email: string
   role: string
   cabangId: string | null
+  storeId?: string | null
+  namaStore?: string | null
   aktif: boolean
 }
 
 type Branch = {
   cabangId: string
+  nama?: string
   namaCabang?: string
   aktif?: boolean
 }
@@ -31,6 +34,9 @@ export function ManajemenAkunPage() {
   // =====================================================
 
   const [nama, setNama] =
+    React.useState("")
+
+  const [storeId, setStoreId] =
     React.useState("")
 
   const [email, setEmail] =
@@ -192,7 +198,7 @@ export function ManajemenAkunPage() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            "Gagal mengambil daftar akun.",
+          "Gagal mengambil daftar akun.",
         )
       }
 
@@ -253,7 +259,7 @@ export function ManajemenAkunPage() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            "Gagal mengambil data cabang.",
+          "Gagal mengambil data cabang.",
         )
       }
 
@@ -284,8 +290,9 @@ export function ManajemenAkunPage() {
           )
 
           setNamaCabang(
+            ownBranch.nama ||
             ownBranch.namaCabang ||
-              ownBranch.cabangId,
+            ownBranch.cabangId,
           )
         }
       }
@@ -328,6 +335,7 @@ export function ManajemenAkunPage() {
 
   function resetForm() {
     setNama("")
+    setStoreId("")
     setEmail("")
     setPassword("")
     setCabangId("")
@@ -382,8 +390,9 @@ export function ManajemenAkunPage() {
 
       if (ownBranch) {
         setNamaCabang(
+          ownBranch.nama ||
           ownBranch.namaCabang ||
-            ownBranch.cabangId,
+          ownBranch.cabangId,
         )
       }
     }
@@ -447,7 +456,7 @@ export function ManajemenAkunPage() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            "Gagal membuat Central Cabang.",
+          "Gagal membuat Central Cabang.",
         )
       }
 
@@ -499,8 +508,45 @@ export function ManajemenAkunPage() {
       }
 
       // =================================================
-      // PENGAMAN TAMBAHAN
+      // VALIDASI STORE
       // =================================================
+
+      if (!storeId.trim()) {
+        setMessage(
+          "ID Store wajib diisi.",
+        )
+        return
+      }
+
+      if (!nama.trim()) {
+        setMessage(
+          "Nama Store wajib diisi.",
+        )
+        return
+      }
+
+      if (!email.trim()) {
+        setMessage(
+          "Email wajib diisi.",
+        )
+        return
+      }
+
+      if (!password) {
+        setMessage(
+          "Password wajib diisi.",
+        )
+        return
+      }
+
+      if (
+        password.length < 6
+      ) {
+        setMessage(
+          "Password minimal 6 karakter.",
+        )
+        return
+      }
 
       if (!cabangId) {
         setMessage(
@@ -509,11 +555,15 @@ export function ManajemenAkunPage() {
         return
       }
 
+      // =================================================
+      // PENGAMAN CENTRAL CABANG
+      // =================================================
+
       if (
         currentRole ===
-          "central_cabang" &&
+        "central_cabang" &&
         cabangId !==
-          currentCabangId
+        currentCabangId
       ) {
         setMessage(
           "Anda hanya dapat membuat Store untuk cabang sendiri.",
@@ -536,10 +586,20 @@ export function ManajemenAkunPage() {
                 `Bearer ${idToken}`,
             },
             body: JSON.stringify({
-              nama,
-              email,
+              nama: nama.trim(),
+              email:
+                email.trim().toLowerCase(),
               password,
-              cabangId,
+              storeId:
+                storeId
+                  .trim()
+                  .toUpperCase(),
+              namaStore:
+                nama.trim(),
+              cabangId:
+                cabangId
+                  .trim()
+                  .toUpperCase(),
             }),
           },
         )
@@ -550,7 +610,7 @@ export function ManajemenAkunPage() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            "Gagal membuat akun Store.",
+          "Gagal membuat akun Store.",
         )
       }
 
@@ -693,6 +753,7 @@ export function ManajemenAkunPage() {
                     >
                       <td className="px-4 py-3 font-medium">
                         {account.nama ||
+                          account.namaStore ||
                           "-"}
                       </td>
 
@@ -769,7 +830,6 @@ export function ManajemenAkunPage() {
               }
               className="space-y-4 p-5"
             >
-
               <div>
                 <label className="mb-1 block text-sm font-medium">
                   Nama Central Cabang
@@ -950,6 +1010,26 @@ export function ManajemenAkunPage() {
               }
               className="space-y-4 p-5"
             >
+              {/* ID STORE */}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  ID Store
+                </label>
+
+                <input
+                  type="text"
+                  value={storeId}
+                  onChange={(e) =>
+                    setStoreId(
+                      e.target.value.toUpperCase(),
+                    )
+                  }
+                  placeholder="Contoh: CJR-01-STR-01"
+                  required
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
 
               {/* NAMA STORE */}
 
@@ -966,7 +1046,7 @@ export function ManajemenAkunPage() {
                       e.target.value,
                     )
                   }
-                  placeholder="Contoh: STORE PAKUAN"
+                  placeholder="Contoh: STORE CIANJUR"
                   required
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
@@ -1025,7 +1105,7 @@ export function ManajemenAkunPage() {
                 </label>
 
                 {currentRole ===
-                "central_cabang" ? (
+                  "central_cabang" ? (
                   <input
                     type="text"
                     value={
@@ -1058,8 +1138,9 @@ export function ManajemenAkunPage() {
                         )
 
                       setNamaCabang(
+                        selectedBranch?.nama ||
                         selectedBranch?.namaCabang ||
-                          "",
+                        "",
                       )
                     }}
                     required
@@ -1085,8 +1166,11 @@ export function ManajemenAkunPage() {
                           }
                         >
                           {branch.cabangId}
-                          {branch.namaCabang
-                            ? ` — ${branch.namaCabang}`
+                          {(branch.nama ||
+                            branch.namaCabang)
+                            ? ` — ${branch.nama ||
+                            branch.namaCabang
+                            }`
                             : ""}
                         </option>
                       ),
