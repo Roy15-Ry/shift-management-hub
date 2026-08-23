@@ -1,5 +1,5 @@
 "use client"
-
+import { StoreFirebaseList } from "@/components/store-firebase-list"
 import * as React from "react"
 
 import {
@@ -1894,9 +1894,7 @@ function StoreDetail({
 
 export function PengaturanPage() {
   const [selected, setSelected] =
-    React.useState<
-      string | null
-    >(null)
+    React.useState<string | null>(null)
 
   function handleSelectStore(
     storeId: string,
@@ -1904,24 +1902,20 @@ export function PengaturanPage() {
     setSelected(storeId)
   }
 
-  function handleBack() {
-    setSelected(null)
+  if (selected) {
+    return (
+      <StoreDetail
+        storeId={selected}
+        onBack={() =>
+          setSelected(null)
+        }
+      />
+    )
   }
 
-  return selected ? (
-
-    <StoreDetail
-      storeId={selected}
-      onBack={handleBack}
+  return (
+    <StoreFirebaseList
+      onSelect={handleSelectStore}
     />
-
-  ) : (
-
-    <StoreList
-      onSelect={
-        handleSelectStore
-      }
-    />
-
   )
 }
