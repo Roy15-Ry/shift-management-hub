@@ -13,6 +13,16 @@ type CurrentUser = {
     storeId?: string | null
 }
 
+type StoreData = {
+    cabangId?: string | null
+    aktif?: boolean
+    [key: string]: unknown
+}
+
+// =====================================================
+// AUTH USER
+// =====================================================
+
 async function getCurrentUser(
     request: Request,
 ): Promise<CurrentUser> {
@@ -62,6 +72,10 @@ async function getCurrentUser(
     }
 }
 
+// =====================================================
+// NORMALIZER
+// =====================================================
+
 function normalizeText(
     value: unknown,
 ): string {
@@ -76,39 +90,26 @@ function normalizeNik(
         .replace(/\s/g, "")
 }
 
-function canAccessStore(
-    user: CurrentUser,
-    storeId: string,
+// =====================================================
+// CEK ROLE CENTRAL
+// =====================================================
+
+function isCentralRole(
+    role: string,
 ): boolean {
-    if (
-        user.role === "central_pusat"
-    ) {
-        return true
-    }
-
-    if (
-        user.role === "central_cabang"
-    ) {
-        return (
-            Boolean(user.cabangId) &&
-            storeId.startsWith(
-                `${user.cabangId}-`,
-            )
-        )
-    }
-
-    if (user.role === "store") {
-        return (
-            user.storeId === storeId
-        )
-    }
-
-    return false
+    return (
+        role === "central_pusat" ||
+        role === "central_cabang"
+    )
 }
+
+// =====================================================
+// AMBIL DATA STORE
+// =====================================================
 
 async function getStoreData(
     storeId: string,
-) {
+): Promise<StoreData | null> {
     const storeSnapshot =
         await adminDb
             .collection("stores")
@@ -119,11 +120,173 @@ async function getStoreData(
         return null
     }
 
-    return storeSnapshot.data()
+    return (
+        storeSnapshot.data() as StoreData
+    )
+}
+
+// =====================================================
+// CEK HAK AKSES STORE
+//
+// CENTRAL PUSAT
+// → semua Store
+//
+// CENTRAL CABANG
+// → Store dalam cabangnya
+//
+// STORE
+// → hanya Store miliknya sendiri
+// =====================================================
+
+async function canAccessStore(
+    user: CurrentUser,
+    storeId: string,
+): Promise<boolean> {
+    const normalizedStoreId =
+        normalizeText(
+            storeId,
+        ).toUpperCase()
+
+    if (!normalizedStoreId) {
+        return false
+    }
+
+    // -------------------------------------------------
+    // CENTRAL PUSAT
+    // -------------------------------------------------
+
+    if (
+        user.role ===
+        "central_pusat"
+    ) {
+        return true
+    }
+
+    // -------------------------------------------------
+    // STORE
+    // -------------------------------------------------
+
+    if (
+        user.role === "store"
+    ) {
+        return (
+            normalizeText(
+                user.storeId,
+            ).toUpperCase() ===
+            normalizedStoreId
+        )
+    }
+
+    // -------------------------------------------------
+    // CENTRAL CABANG
+    // -------------------------------------------------
+
+    if (
+        user.role ===
+        "central_cabang"
+    ) {
+        const storeData =
+            await getStoreData(
+                normalizedStoreId,
+            )
+
+        if (!storeData) {
+            return false
+        }
+
+        const storeCabangId =
+            normalizeText(
+                storeData.cabangId,
+            ).toUpperCase()
+
+        const userCabangId =
+            normalizeText(
+                user.cabangId,
+            ).toUpperCase()
+
+        return (
+            Boolean(
+                userCabangId,
+            ) &&
+            storeCabangId ===
+                userCabangId
+        )
+    }
+
+    return false
+}
+
+// =====================================================
+// CEK HAK MODIFIKASI KARYAWAN
+//
+// HANYA:
+// - central_pusat
+// - central_cabang
+//
+// STORE TIDAK BOLEH.
+// =====================================================
+
+function canManageEmployees(
+    user: CurrentUser,
+): boolean {
+    return isCentralRole(
+        user.role,
+    )
+}
+
+// =====================================================
+// ERROR RESPONSE
+// =====================================================
+
+function handleAuthError(
+    error: unknown,
+) {
+    if (
+        error instanceof Error &&
+        error.message ===
+            "AUTH_REQUIRED"
+    ) {
+        return NextResponse.json(
+            {
+                success: false,
+                message:
+                    "Tidak terautentikasi.",
+            },
+            { status: 401 },
+        )
+    }
+
+    if (
+        error instanceof Error &&
+        error.message ===
+            "USER_PROFILE_NOT_FOUND"
+    ) {
+        return NextResponse.json(
+            {
+                success: false,
+                message:
+                    "Profil pengguna tidak ditemukan.",
+            },
+            { status: 403 },
+        )
+    }
+
+    return null
 }
 
 // =====================================================
 // GET
+//
+// CENTRAL PUSAT
+// → semua karyawan
+//
+// CENTRAL CABANG
+// → karyawan pada cabangnya
+//
+// STORE
+// → hanya karyawan Store sendiri
+//
+// GET tetap boleh untuk STORE.
 // =====================================================
 
 export async function GET(
@@ -131,11 +294,15 @@ export async function GET(
 ) {
     try {
         const user =
-            await getCurrentUser(request)
+            await getCurrentUser(
+                request,
+            )
 
         if (
-            user.role !== "central_pusat" &&
-            user.role !== "central_cabang" &&
+            user.role !==
+                "central_pusat" &&
+            user.role !==
+                "central_cabang" &&
             user.role !== "store"
         ) {
             return NextResponse.json(
@@ -149,18 +316,75 @@ export async function GET(
         }
 
         const url =
-            new URL(request.url)
+            new URL(
+                request.url,
+            )
 
         const requestedStoreId =
             normalizeText(
                 url.searchParams.get(
                     "storeId",
                 ),
-            )
+            ).toUpperCase()
+
+        // =================================================
+        // AMBIL DATA STORE
+        // =================================================
+
+        const storesSnapshot =
+            await adminDb
+                .collection("stores")
+                .get()
+
+        const storeMap =
+            new Map<
+                string,
+                StoreData
+            >()
+
+        storesSnapshot.docs.forEach(
+            (doc) => {
+                storeMap.set(
+                    doc.id.toUpperCase(),
+                    doc.data() as StoreData,
+                )
+            },
+        )
+
+        // =================================================
+        // CEK STORE YANG DIMINTA
+        // =================================================
+
+        if (
+            requestedStoreId
+        ) {
+            const allowed =
+                await canAccessStore(
+                    user,
+                    requestedStoreId,
+                )
+
+            if (!allowed) {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        message:
+                            "Anda tidak memiliki izin mengakses Store tersebut.",
+                    },
+                    { status: 403 },
+                )
+            }
+        }
+
+        // =================================================
+        // AMBIL EMPLOYEES
+        // =================================================
 
         const snapshot =
             await adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .get()
 
         let employees =
@@ -172,74 +396,107 @@ export async function GET(
                     return {
                         id: doc.id,
                         name:
-                            data.name ?? "",
+                            data.name ??
+                            "",
                         nik:
-                            data.nik ?? "",
+                            data.nik ??
+                            "",
                         posisi:
-                            data.posisi ?? "",
+                            data.posisi ??
+                            "",
                         storeId:
-                            data.storeId ?? "",
+                            data.storeId ??
+                            "",
                         cabangId:
-                            data.cabangId ?? "",
+                            data.cabangId ??
+                            "",
                         aktif:
-                            data.aktif === true,
+                            data.aktif ===
+                            true,
                     }
                 },
             )
 
         // =================================================
-        // FILTER BERDASARKAN ROLE
+        // FILTER CENTRAL CABANG
+        // =================================================
+
+        if (
+            user.role ===
+            "central_cabang"
+        ) {
+            const userCabangId =
+                normalizeText(
+                    user.cabangId,
+                ).toUpperCase()
+
+            employees =
+                employees.filter(
+                    (employee) => {
+                        const employeeStoreId =
+                            normalizeText(
+                                employee.storeId,
+                            ).toUpperCase()
+
+                        const storeData =
+                            storeMap.get(
+                                employeeStoreId,
+                            )
+
+                        if (
+                            !storeData
+                        ) {
+                            return false
+                        }
+
+                        const storeCabangId =
+                            normalizeText(
+                                storeData.cabangId,
+                            ).toUpperCase()
+
+                        return (
+                            storeCabangId ===
+                            userCabangId
+                        )
+                    },
+                )
+        }
+
+        // =================================================
+        // FILTER STORE
         // =================================================
 
         if (
             user.role === "store"
         ) {
-            employees =
-                employees.filter(
-                    (employee) =>
-                        employee.storeId ===
-                        user.storeId,
-                )
-        }
+            const userStoreId =
+                normalizeText(
+                    user.storeId,
+                ).toUpperCase()
 
-        if (
-            user.role === "central_cabang"
-        ) {
             employees =
                 employees.filter(
                     (employee) =>
-                        employee.cabangId ===
-                        user.cabangId,
+                        normalizeText(
+                            employee.storeId,
+                        ).toUpperCase() ===
+                        userStoreId,
                 )
         }
 
         // =================================================
-        // FILTER STORE TAMBAHAN
+        // FILTER STORE REQUEST
         // =================================================
 
         if (
             requestedStoreId
         ) {
-            if (
-                !canAccessStore(
-                    user,
-                    requestedStoreId,
-                )
-            ) {
-                return NextResponse.json(
-                    {
-                        success: false,
-                        message:
-                            "Anda tidak memiliki izin mengakses Store tersebut.",
-                    },
-                    { status: 403 },
-                )
-            }
-
             employees =
                 employees.filter(
                     (employee) =>
-                        employee.storeId ===
+                        normalizeText(
+                            employee.storeId,
+                        ).toUpperCase() ===
                         requestedStoreId,
                 )
         }
@@ -265,34 +522,13 @@ export async function GET(
             error,
         )
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "AUTH_REQUIRED"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Tidak terautentikasi.",
-                },
-                { status: 401 },
+        const authError =
+            handleAuthError(
+                error,
             )
-        }
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "USER_PROFILE_NOT_FOUND"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Profil pengguna tidak ditemukan.",
-                },
-                { status: 403 },
-            )
+        if (authError) {
+            return authError
         }
 
         return NextResponse.json(
@@ -310,6 +546,8 @@ export async function GET(
 
 // =====================================================
 // POST
+//
+// HANYA CENTRAL
 // =====================================================
 
 export async function POST(
@@ -317,18 +555,24 @@ export async function POST(
 ) {
     try {
         const user =
-            await getCurrentUser(request)
+            await getCurrentUser(
+                request,
+            )
+
+        // =================================================
+        // STORE DILARANG MENAMBAH
+        // =================================================
 
         if (
-            user.role !== "central_pusat" &&
-            user.role !== "central_cabang" &&
-            user.role !== "store"
+            !canManageEmployees(
+                user,
+            )
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Anda tidak memiliki izin menambah karyawan.",
+                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin menambah karyawan.",
                 },
                 { status: 403 },
             )
@@ -338,13 +582,19 @@ export async function POST(
             await request.json()
 
         const name =
-            normalizeText(body.name)
+            normalizeText(
+                body.name,
+            )
 
         const nik =
-            normalizeNik(body.nik)
+            normalizeNik(
+                body.nik,
+            )
 
         const posisi =
-            normalizeText(body.posisi)
+            normalizeText(
+                body.posisi,
+            )
 
         const storeId =
             normalizeText(
@@ -367,10 +617,16 @@ export async function POST(
             )
         }
 
+        // =================================================
+        // CEK AKSES STORE
+        // =================================================
+
         if (
-            !canAccessStore(
-                user,
-                storeId,
+            !(
+                await canAccessStore(
+                    user,
+                    storeId,
+                )
             )
         ) {
             return NextResponse.json(
@@ -404,7 +660,8 @@ export async function POST(
         }
 
         if (
-            storeData.aktif === false
+            storeData.aktif ===
+            false
         ) {
             return NextResponse.json(
                 {
@@ -422,12 +679,14 @@ export async function POST(
             ).toUpperCase()
 
         // =================================================
-        // CEK NIK DUPLIKAT DALAM STORE
+        // CEK NIK DUPLIKAT
         // =================================================
 
         const duplicateSnapshot =
             await adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .where(
                     "storeId",
                     "==",
@@ -455,12 +714,14 @@ export async function POST(
         }
 
         // =================================================
-        // BUAT ID KARYAWAN
+        // BUAT KARYAWAN
         // =================================================
 
         const employeeRef =
             adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .doc()
 
         await employeeRef.set({
@@ -495,34 +756,13 @@ export async function POST(
             error,
         )
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "AUTH_REQUIRED"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Tidak terautentikasi.",
-                },
-                { status: 401 },
+        const authError =
+            handleAuthError(
+                error,
             )
-        }
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "USER_PROFILE_NOT_FOUND"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Profil pengguna tidak ditemukan.",
-                },
-                { status: 403 },
-            )
+        if (authError) {
+            return authError
         }
 
         return NextResponse.json(
@@ -540,6 +780,8 @@ export async function POST(
 
 // =====================================================
 // PATCH
+//
+// HANYA CENTRAL
 // =====================================================
 
 export async function PATCH(
@@ -547,18 +789,24 @@ export async function PATCH(
 ) {
     try {
         const user =
-            await getCurrentUser(request)
+            await getCurrentUser(
+                request,
+            )
+
+        // =================================================
+        // STORE DILARANG EDIT
+        // =================================================
 
         if (
-            user.role !== "central_pusat" &&
-            user.role !== "central_cabang" &&
-            user.role !== "store"
+            !canManageEmployees(
+                user,
+            )
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Anda tidak memiliki izin mengubah karyawan.",
+                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin mengubah data karyawan.",
                 },
                 { status: 403 },
             )
@@ -585,13 +833,17 @@ export async function PATCH(
 
         const employeeRef =
             adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .doc(employeeId)
 
         const employeeSnapshot =
             await employeeRef.get()
 
-        if (!employeeSnapshot.exists) {
+        if (
+            !employeeSnapshot.exists
+        ) {
             return NextResponse.json(
                 {
                     success: false,
@@ -610,10 +862,16 @@ export async function PATCH(
                 existing?.storeId,
             ).toUpperCase()
 
+        // =================================================
+        // CEK AKSES STORE
+        // =================================================
+
         if (
-            !canAccessStore(
-                user,
-                storeId,
+            !(
+                await canAccessStore(
+                    user,
+                    storeId,
+                )
             )
         ) {
             return NextResponse.json(
@@ -629,26 +887,27 @@ export async function PATCH(
         const name =
             normalizeText(
                 body.name ??
-                existing?.name,
+                    existing?.name,
             )
 
         const nik =
             normalizeNik(
                 body.nik ??
-                existing?.nik,
+                    existing?.nik,
             )
 
         const posisi =
             normalizeText(
                 body.posisi ??
-                existing?.posisi,
+                    existing?.posisi,
             )
 
         const aktif =
             typeof body.aktif ===
-                "boolean"
+            "boolean"
                 ? body.aktif
-                : existing?.aktif === true
+                : existing?.aktif ===
+                  true
 
         if (
             !name ||
@@ -665,9 +924,15 @@ export async function PATCH(
             )
         }
 
+        // =================================================
+        // CEK NIK DUPLIKAT
+        // =================================================
+
         const duplicateSnapshot =
             await adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .where(
                     "storeId",
                     "==",
@@ -683,10 +948,13 @@ export async function PATCH(
         const duplicateExists =
             duplicateSnapshot.docs.some(
                 (doc) =>
-                    doc.id !== employeeId,
+                    doc.id !==
+                    employeeId,
             )
 
-        if (duplicateExists) {
+        if (
+            duplicateExists
+        ) {
             return NextResponse.json(
                 {
                     success: false,
@@ -728,34 +996,13 @@ export async function PATCH(
             error,
         )
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "AUTH_REQUIRED"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Tidak terautentikasi.",
-                },
-                { status: 401 },
+        const authError =
+            handleAuthError(
+                error,
             )
-        }
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "USER_PROFILE_NOT_FOUND"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Profil pengguna tidak ditemukan.",
-                },
-                { status: 403 },
-            )
+        if (authError) {
+            return authError
         }
 
         return NextResponse.json(
@@ -773,6 +1020,8 @@ export async function PATCH(
 
 // =====================================================
 // DELETE
+//
+// HANYA CENTRAL
 // =====================================================
 
 export async function DELETE(
@@ -780,18 +1029,24 @@ export async function DELETE(
 ) {
     try {
         const user =
-            await getCurrentUser(request)
+            await getCurrentUser(
+                request,
+            )
+
+        // =================================================
+        // STORE DILARANG HAPUS
+        // =================================================
 
         if (
-            user.role !== "central_pusat" &&
-            user.role !== "central_cabang" &&
-            user.role !== "store"
+            !canManageEmployees(
+                user,
+            )
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Anda tidak memiliki izin menghapus karyawan.",
+                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin menghapus karyawan.",
                 },
                 { status: 403 },
             )
@@ -818,13 +1073,17 @@ export async function DELETE(
 
         const employeeRef =
             adminDb
-                .collection("employees")
+                .collection(
+                    "employees",
+                )
                 .doc(employeeId)
 
         const employeeSnapshot =
             await employeeRef.get()
 
-        if (!employeeSnapshot.exists) {
+        if (
+            !employeeSnapshot.exists
+        ) {
             return NextResponse.json(
                 {
                     success: false,
@@ -843,10 +1102,16 @@ export async function DELETE(
                 employee?.storeId,
             ).toUpperCase()
 
+        // =================================================
+        // CEK AKSES STORE
+        // =================================================
+
         if (
-            !canAccessStore(
-                user,
-                storeId,
+            !(
+                await canAccessStore(
+                    user,
+                    storeId,
+                )
             )
         ) {
             return NextResponse.json(
@@ -872,34 +1137,13 @@ export async function DELETE(
             error,
         )
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "AUTH_REQUIRED"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Tidak terautentikasi.",
-                },
-                { status: 401 },
+        const authError =
+            handleAuthError(
+                error,
             )
-        }
 
-        if (
-            error instanceof Error &&
-            error.message ===
-            "USER_PROFILE_NOT_FOUND"
-        ) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    message:
-                        "Profil pengguna tidak ditemukan.",
-                },
-                { status: 403 },
-            )
+        if (authError) {
+            return authError
         }
 
         return NextResponse.json(

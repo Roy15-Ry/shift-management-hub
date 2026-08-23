@@ -16,6 +16,7 @@ import {
     Field,
     SearchInput,
 } from "@/components/controls"
+import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 
 type FirebaseStore = {
@@ -74,6 +75,8 @@ export function StoreFirebaseDetail({
     storeId: string
     onBack: () => void
 }) {
+    const { showToast } = useToast()
+
     const [store, setStore] =
         React.useState<FirebaseStore | null>(
             null,
@@ -176,7 +179,7 @@ export function StoreFirebaseDetail({
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    "Gagal mengambil data Store.",
+                        "Gagal mengambil data Store.",
                 )
             }
 
@@ -199,9 +202,11 @@ export function StoreFirebaseDetail({
 
             if (!selectedStore) {
                 setStore(null)
+
                 setStoreError(
                     `Store "${storeId}" tidak ditemukan pada data Firebase yang dapat Anda akses.`,
                 )
+
                 return
             }
 
@@ -252,7 +257,7 @@ export function StoreFirebaseDetail({
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    "Gagal mengambil data karyawan.",
+                        "Gagal mengambil data karyawan.",
                 )
             }
 
@@ -327,21 +332,27 @@ export function StoreFirebaseDetail({
             newPosisi.trim()
 
         if (!name) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "Nama karyawan wajib diisi.",
             )
             return
         }
 
         if (!nik) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "NIK karyawan wajib diisi.",
             )
             return
         }
 
         if (!posisi) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "Posisi karyawan wajib diisi.",
             )
             return
@@ -379,7 +390,7 @@ export function StoreFirebaseDetail({
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    "Gagal menambahkan karyawan.",
+                        "Gagal menambahkan karyawan.",
                 )
             }
 
@@ -387,11 +398,19 @@ export function StoreFirebaseDetail({
             resetEmployeeForm()
 
             await loadEmployees()
+
+            showToast(
+                "success",
+                "Karyawan berhasil ditambahkan",
+                `${name} telah ditambahkan ke ${store.namaStore}.`,
+            )
         } catch (error) {
-            alert(
+            showToast(
+                "error",
+                "Gagal menambahkan karyawan",
                 error instanceof Error
                     ? error.message
-                    : "Gagal menambahkan karyawan.",
+                    : "Terjadi kesalahan saat menambahkan karyawan.",
             )
         } finally {
             setSaving(false)
@@ -420,21 +439,27 @@ export function StoreFirebaseDetail({
             newPosisi.trim()
 
         if (!name) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "Nama karyawan wajib diisi.",
             )
             return
         }
 
         if (!nik) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "NIK karyawan wajib diisi.",
             )
             return
         }
 
         if (!posisi) {
-            alert(
+            showToast(
+                "error",
+                "Data belum lengkap",
                 "Posisi karyawan wajib diisi.",
             )
             return
@@ -475,7 +500,7 @@ export function StoreFirebaseDetail({
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    "Gagal memperbarui karyawan.",
+                        "Gagal memperbarui karyawan.",
                 )
             }
 
@@ -483,11 +508,19 @@ export function StoreFirebaseDetail({
             resetEmployeeForm()
 
             await loadEmployees()
+
+            showToast(
+                "success",
+                "Data berhasil diperbarui",
+                `${name} telah diperbarui.`,
+            )
         } catch (error) {
-            alert(
+            showToast(
+                "error",
+                "Gagal memperbarui data",
                 error instanceof Error
                     ? error.message
-                    : "Gagal memperbarui karyawan.",
+                    : "Terjadi kesalahan saat memperbarui karyawan.",
             )
         } finally {
             setSaving(false)
@@ -502,6 +535,9 @@ export function StoreFirebaseDetail({
         if (!deleteEmployee) {
             return
         }
+
+        const employeeName =
+            deleteEmployee.name
 
         setSaving(true)
 
@@ -533,18 +569,26 @@ export function StoreFirebaseDetail({
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    "Gagal menghapus karyawan.",
+                        "Gagal menghapus karyawan.",
                 )
             }
 
             setDeleteEmployee(null)
 
             await loadEmployees()
+
+            showToast(
+                "success",
+                "Karyawan berhasil dihapus",
+                `${employeeName} telah dihapus dari daftar karyawan.`,
+            )
         } catch (error) {
-            alert(
+            showToast(
+                "error",
+                "Gagal menghapus karyawan",
                 error instanceof Error
                     ? error.message
-                    : "Gagal menghapus karyawan.",
+                    : "Terjadi kesalahan saat menghapus karyawan.",
             )
         } finally {
             setSaving(false)
@@ -749,7 +793,7 @@ export function StoreFirebaseDetail({
                         <p className="mt-1">
                             {store.akunAktif ===
                                 null ||
-                                store.akunAktif ===
+                            store.akunAktif ===
                                 undefined ? (
                                 <span className="text-sm text-muted-foreground">
                                     -
@@ -850,7 +894,7 @@ export function StoreFirebaseDetail({
 
                             <tbody>
                                 {filteredEmployees.length ===
-                                    0 ? (
+                                0 ? (
                                     <tr>
                                         <td
                                             colSpan={5}
@@ -871,7 +915,9 @@ export function StoreFirebaseDetail({
                                     </tr>
                                 ) : (
                                     filteredEmployees.map(
-                                        (employee) => (
+                                        (
+                                            employee,
+                                        ) => (
                                             <tr
                                                 key={
                                                     employee.id
