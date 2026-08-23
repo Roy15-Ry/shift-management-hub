@@ -77,6 +77,11 @@ export function ManajemenAkunPage() {
 
   const [message, setMessage] =
     React.useState("")
+  const [toast, setToast] =
+    React.useState<{
+      type: "success" | "error"
+      text: string
+    } | null>(null)
 
   // =====================================================
   // USER LOGIN
@@ -375,6 +380,23 @@ export function ManajemenAkunPage() {
     currentRole,
     currentCabangId,
   ])
+  // =====================================================
+  // TOAST NOTIFICATION
+  // =====================================================
+
+  function showToast(
+    type: "success" | "error",
+    text: string,
+  ) {
+    setToast({
+      type,
+      text,
+    })
+
+    setTimeout(() => {
+      setToast(null)
+    }, 3000)
+  }
 
   // =====================================================
   // RESET FORM
@@ -636,9 +658,13 @@ export function ManajemenAkunPage() {
           )
         }
 
-        setMessage(
+        showToast(
+          "success",
           data.message ||
-          "Status akun berhasil diubah.",
+          `Akun berhasil ${nextStatus
+            ? "diaktifkan"
+            : "dinonaktifkan"
+          }.`,
         )
 
         closeConfirmDialog()
@@ -684,7 +710,8 @@ export function ManajemenAkunPage() {
           )
         }
 
-        setMessage(
+        showToast(
+          "success",
           data.message ||
           "Akun berhasil dihapus.",
         )
@@ -694,11 +721,14 @@ export function ManajemenAkunPage() {
         await loadAccounts()
       }
     } catch (error) {
-      setMessage(
+
+      showToast(
+        "error",
         error instanceof Error
           ? error.message
           : "Terjadi kesalahan.",
       )
+
     } finally {
       setLoading(false)
     }
@@ -960,6 +990,48 @@ export function ManajemenAkunPage() {
 
   return (
     <div className="space-y-6">
+      {/* =================================================
+          TOAST NOTIFICATION
+      ================================================= */}
+
+      {toast && (
+        <div
+          className={`fixed right-5 top-5 z-[100] min-w-[300px] max-w-md rounded-xl border p-4 shadow-lg ${toast.type === "success"
+            ? "border-green-200 bg-green-50 text-green-800"
+            : "border-red-200 bg-red-50 text-red-800"
+            }`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="text-lg">
+              {toast.type === "success"
+                ? "✓"
+                : "⚠"}
+            </div>
+
+            <div className="flex-1">
+              <p className="text-sm font-semibold">
+                {toast.type === "success"
+                  ? "Berhasil"
+                  : "Terjadi Kesalahan"}
+              </p>
+
+              <p className="mt-1 text-sm">
+                {toast.text}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setToast(null)
+              }
+              className="text-lg leading-none opacity-60 hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* =================================================
           HEADER
