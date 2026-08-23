@@ -1,11 +1,14 @@
 "use client"
 
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 import { loginUser } from "@/lib/auth"
 
 export function LoginPage() {
     const [email, setEmail] = React.useState("")
     const [password, setPassword] = React.useState("")
+    const [showPassword, setShowPassword] =
+        React.useState(false)
     const [loading, setLoading] = React.useState(false)
     const [error, setError] = React.useState("")
 
@@ -22,9 +25,27 @@ export function LoginPage() {
         } catch (error: unknown) {
             console.error(error)
 
-            setError(
-                "Email atau password salah.",
-            )
+            if (
+                error instanceof Error &&
+                error.message ===
+                    "ACCOUNT_DISABLED"
+            ) {
+                setError(
+                    "Akun Anda sedang dinonaktifkan. Silakan hubungi administrator.",
+                )
+            } else if (
+                error instanceof Error &&
+                error.message ===
+                    "USER_PROFILE_NOT_FOUND"
+            ) {
+                setError(
+                    "Profil akun tidak ditemukan. Silakan hubungi administrator.",
+                )
+            } else {
+                setError(
+                    "Email atau password salah.",
+                )
+            }
         } finally {
             setLoading(false)
         }
@@ -33,13 +54,24 @@ export function LoginPage() {
     return (
         <main className="flex min-h-svh items-center justify-center bg-background p-4">
             <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-lg">
+
+                {/* LOGO */}
+                <div className="mb-5 flex justify-center">
+                    <img
+                        src="/logo.webp"
+                        alt="SHIFT MANAGEMENT HUB"
+                        className="h-24 w-auto object-contain"
+                    />
+                </div>
+
+                {/* JUDUL */}
                 <div className="mb-6 text-center">
-                    <h1 className="text-2xl font-bold">
+                    <h1 className="text-2xl font-bold tracking-tight">
                         SHIFT MANAGEMENT HUB
                     </h1>
 
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Silakan masuk ke akun Anda
+                        Pusat Informasi dan Monitoring Jadwal Shift
                     </p>
                 </div>
 
@@ -47,10 +79,11 @@ export function LoginPage() {
                     onSubmit={handleSubmit}
                     className="space-y-4"
                 >
+                    {/* EMAIL */}
                     <div>
                         <label
                             htmlFor="email"
-                            className="mb-1 block text-sm font-medium"
+                            className="mb-1.5 block text-sm font-medium"
                         >
                             Email
                         </label>
@@ -60,45 +93,92 @@ export function LoginPage() {
                             type="email"
                             value={email}
                             onChange={(event) =>
-                                setEmail(event.target.value)
+                                setEmail(
+                                    event.target.value,
+                                )
                             }
                             placeholder="nama@email.com"
+                            autoComplete="email"
                             required
-                            className="w-full rounded-lg border bg-background px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
+                            disabled={loading}
+                            className="w-full rounded-lg border bg-background px-3 py-2.5 outline-none transition focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                         />
                     </div>
 
+                    {/* PASSWORD */}
                     <div>
                         <label
                             htmlFor="password"
-                            className="mb-1 block text-sm font-medium"
+                            className="mb-1.5 block text-sm font-medium"
                         >
                             Password
                         </label>
 
-                        <input
-                            id="password"
-                            type="password"
-                            value={password}
-                            onChange={(event) =>
-                                setPassword(event.target.value)
-                            }
-                            placeholder="Masukkan password"
-                            required
-                            className="w-full rounded-lg border bg-background px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
-                        />
+                        <div className="relative">
+                            <input
+                                id="password"
+                                type={
+                                    showPassword
+                                        ? "text"
+                                        : "password"
+                                }
+                                value={password}
+                                onChange={(event) =>
+                                    setPassword(
+                                        event.target.value,
+                                    )
+                                }
+                                placeholder="Masukkan password"
+                                autoComplete="current-password"
+                                required
+                                disabled={loading}
+                                className="w-full rounded-lg border bg-background px-3 py-2.5 pr-11 outline-none transition focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setShowPassword(
+                                        (current) =>
+                                            !current,
+                                    )
+                                }
+                                disabled={loading}
+                                aria-label={
+                                    showPassword
+                                        ? "Sembunyikan password"
+                                        : "Tampilkan password"
+                                }
+                                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                            >
+                                {showPassword ? (
+                                    <EyeOff
+                                        className="h-4 w-4"
+                                    />
+                                ) : (
+                                    <Eye
+                                        className="h-4 w-4"
+                                    />
+                                )}
+                            </button>
+                        </div>
                     </div>
 
+                    {/* ERROR */}
                     {error && (
-                        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-600">
+                        <div
+                            role="alert"
+                            className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400"
+                        >
                             {error}
                         </div>
                     )}
 
+                    {/* LOGIN BUTTON */}
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity disabled:opacity-50"
+                        className="w-full rounded-lg bg-primary px-4 py-2.5 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {loading
                             ? "Memproses..."
