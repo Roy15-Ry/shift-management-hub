@@ -15,17 +15,24 @@ export type NavItem = {
   icon: LucideIcon
 }
 
-export const NAV_ITEMS: NavItem[] = [
+/*
+ * =====================================================
+ * MENU CENTRAL
+ * =====================================================
+ *
+ * CENTRAL PUSAT dan CENTRAL CABANG menggunakan menu ini.
+ */
+export const CENTRAL_NAV_ITEMS: NavItem[] = [
   {
     key: "dashboard",
     label: "DASHBOARD",
     icon: LayoutDashboard,
   },
   {
-  key: "manajemen-akun",
-  label: "MANAJEMEN AKUN",
-  icon: UsersRound,
-},
+    key: "manajemen-akun",
+    label: "MANAJEMEN AKUN",
+    icon: UsersRound,
+  },
   {
     key: "pengaturan",
     label: "PENGATURAN TOKO",
@@ -48,6 +55,39 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ]
 
+/*
+ * =====================================================
+ * MENU STORE
+ * =====================================================
+ *
+ * STORE tidak boleh melihat menu Central.
+ *
+ * Untuk sementara Store hanya mendapatkan menu
+ * yang memang diperuntukkan untuk Store.
+ */
+export const STORE_NAV_ITEMS: NavItem[] = [
+  {
+    key: "dashboard",
+    label: "DASHBOARD",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "revisi",
+    label: "REVISI ABSENSI",
+    icon: ClipboardList,
+  },
+  {
+    key: "history",
+    label: "HISTORY",
+    icon: History,
+  },
+]
+
+/*
+ * =====================================================
+ * JUDUL HALAMAN
+ * =====================================================
+ */
 export const PAGE_TITLES: Record<PageKey, string> = {
   dashboard: "DASHBOARD",
   "manajemen-akun": "MANAJEMEN AKUN",

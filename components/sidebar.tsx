@@ -3,10 +3,44 @@
 import { CalendarClock, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
-import { NAV_ITEMS } from "@/components/nav-config"
+import { useAuth } from "@/components/auth-context"
+import {
+  CENTRAL_NAV_ITEMS,
+  STORE_NAV_ITEMS,
+} from "@/components/nav-config"
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { page, setPage, pendingRevisiCount } = useApp()
+function SidebarContent({
+  onNavigate,
+}: {
+  onNavigate?: () => void
+}) {
+  const {
+    page,
+    setPage,
+    pendingRevisiCount,
+  } = useApp()
+
+  const { profile } = useAuth()
+
+  /*
+   * =====================================================
+   * ROLE AKUN
+   * =====================================================
+   */
+  const role = profile?.role ?? ""
+
+  /*
+   * =====================================================
+   * TENTUKAN MENU BERDASARKAN ROLE
+   * =====================================================
+   *
+   * STORE  -> STORE_NAV_ITEMS
+   * CENTRAL -> CENTRAL_NAV_ITEMS
+   */
+  const navItems =
+    role === "store"
+      ? STORE_NAV_ITEMS
+      : CENTRAL_NAV_ITEMS
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -40,7 +74,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           Menu
         </p>
 
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = page === item.key
           const Icon = item.icon
 
@@ -48,7 +82,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <button
               key={item.key}
               type="button"
-              aria-current={active ? "page" : undefined}
+              aria-current={
+                active
+                  ? "page"
+                  : undefined
+              }
               onClick={() => {
                 setPage(item.key)
                 onNavigate?.()
@@ -84,15 +122,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           )
         })}
       </nav>
-
-      {/* 
-        Tidak ada Account / Logout di sini.
-        Account menu berada di Header (pojok kanan atas).
-      */}
     </div>
   )
 }
 
+/*
+ * =====================================================
+ * DESKTOP SIDEBAR
+ * =====================================================
+ */
 export function DesktopSidebar() {
   return (
     <aside className="hidden w-64 shrink-0 border-r border-sidebar-border lg:block">
@@ -103,6 +141,11 @@ export function DesktopSidebar() {
   )
 }
 
+/*
+ * =====================================================
+ * MOBILE SIDEBAR
+ * =====================================================
+ */
 export function MobileSidebar({
   open,
   onClose,
@@ -152,7 +195,9 @@ export function MobileSidebar({
           <X className="size-5" />
         </button>
 
-        <SidebarContent onNavigate={onClose} />
+        <SidebarContent
+          onNavigate={onClose}
+        />
       </div>
     </div>
   )
