@@ -20,7 +20,7 @@ function SidebarContent({
     pendingRevisiCount,
   } = useApp()
 
-  const { profile } = useAuth()
+  const { profile, loading } = useAuth()
 
   /*
    * =====================================================
@@ -38,7 +38,9 @@ function SidebarContent({
    * CENTRAL -> CENTRAL_NAV_ITEMS
    */
   const navItems =
-    role === "store"
+  loading
+    ? []
+    : role === "store"
       ? STORE_NAV_ITEMS
       : CENTRAL_NAV_ITEMS
 

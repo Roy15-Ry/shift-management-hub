@@ -72,9 +72,19 @@ export const STORE_NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
+    key: "buat-jadwal",
+    label: "BUAT JADWAL SHIFT",
+    icon: CalendarDays,
+  },
+  {
     key: "revisi",
     label: "REVISI ABSENSI",
     icon: ClipboardList,
+  },
+  {
+    key: "shift",
+    label: "SHIFT CABANG",
+    icon: CalendarDays,
   },
   {
     key: "history",
@@ -90,6 +100,7 @@ export const STORE_NAV_ITEMS: NavItem[] = [
  */
 export const PAGE_TITLES: Record<PageKey, string> = {
   dashboard: "DASHBOARD",
+  "buat-jadwal": "BUAT JADWAL SHIFT",
   "manajemen-akun": "MANAJEMEN AKUN",
   pengaturan: "PENGATURAN TOKO",
   revisi: "REVISI ABSENSI",
