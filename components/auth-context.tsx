@@ -13,7 +13,33 @@ type UserProfile = {
     nama?: string
     email?: string
     role?: string
+
+    /*
+     * ID CABANG
+     *
+     * Digunakan oleh CENTRAL CABANG
+     * dan akun Store yang berada di cabang tersebut.
+     */
     cabangId?: string
+
+    /*
+     * ID STORE
+     *
+     * Khusus akun STORE.
+     *
+     * Contoh:
+     * STORE001
+     */
+    storeId?: string
+
+    /*
+     * Nama Store
+     *
+     * Contoh:
+     * STORE CIANJUR
+     */
+    namaStore?: string
+
     aktif?: boolean
 }
 
@@ -54,8 +80,11 @@ export function AuthProvider({
                                     currentUser.uid,
                                 )
 
+                            console.log("PROFILE LOGIN:", userProfile)
+
                             setProfile(
-                                userProfile as UserProfile | null,
+                                userProfile as
+                                UserProfile | null,
                             )
                         } else {
                             setProfile(null)
