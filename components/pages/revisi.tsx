@@ -15,9 +15,20 @@ import { EmptyState } from "@/components/controls"
 import { useApp } from "@/components/app-context"
 import { getStore, stores } from "@/lib/data"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/components/auth-context"
 
 function StoreList({ onSelect }: { onSelect: (id: string) => void }) {
   const { revisi } = useApp()
+  const { profile } = useAuth()
+
+  const accessibleStores =
+    profile?.role === "store" && profile.storeId
+      ? stores.filter(
+          (s) =>
+            s.id === profile.storeId ||
+            s.kode === profile.storeId,
+        )
+      : stores
 
   return (
     <div className="space-y-4">
@@ -30,7 +41,7 @@ function StoreList({ onSelect }: { onSelect: (id: string) => void }) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {stores.map((s) => {
+       {accessibleStores.map((s) => {
           const items = revisi.filter((r) => r.storeId === s.id)
           const pending = items.filter((r) => r.status !== "SELESAI").length
           const hasAny = pending > 0
@@ -207,10 +218,37 @@ function RevisiDetail({
 
 export function RevisiPage() {
   const [selected, setSelected] = React.useState<string | null>(null)
+  const { profile } = useAuth()
 
-  return selected ? (
-    <RevisiDetail storeId={selected} onBack={() => setSelected(null)} />
-  ) : (
-    <StoreList onSelect={setSelected} />
-  )
+  React.useEffect(() => {
+    if (
+      profile?.role === "store" &&
+      profile.storeId
+    ) {
+      const store = stores.find(
+        (s) =>
+          s.id === profile.storeId ||
+          s.kode === profile.storeId,
+      )
+
+      if (store) {
+        setSelected(store.id)
+      }
+    }
+  }, [profile])
+
+  if (selected) {
+    return (
+      <RevisiDetail
+        storeId={selected}
+        onBack={() => {
+          if (profile?.role !== "store") {
+            setSelected(null)
+          }
+        }}
+      />
+    )
+  }
+
+  return <StoreList onSelect={setSelected} />
 }
