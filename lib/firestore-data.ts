@@ -34,12 +34,12 @@ export type FirestoreSchedule = {
   employeeId: string
   tanggal: string
   status:
-    | "shift_pagi"
-    | "shift_siang"
-    | "libur"
-    | "cuti"
-    | "izin"
-    | "sakit"
+  | "shift_pagi"
+  | "shift_siang"
+  | "libur"
+  | "cuti"
+  | "izin"
+  | "sakit"
 }
 
 // ============================================================

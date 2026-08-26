@@ -42,43 +42,43 @@ const summaryMeta: {
   text: string
   ring: string
 }[] = [
-  {
-    key: "shift_pagi",
-    bg: "bg-status-pagi-bg",
-    text: "text-status-pagi",
-    ring: "ring-status-pagi/20",
-  },
-  {
-    key: "shift_siang",
-    bg: "bg-status-siang-bg",
-    text: "text-status-siang",
-    ring: "ring-status-siang/20",
-  },
-  {
-    key: "libur",
-    bg: "bg-status-libur-bg",
-    text: "text-status-libur",
-    ring: "ring-status-libur/20",
-  },
-  {
-    key: "sakit",
-    bg: "bg-status-sakit-bg",
-    text: "text-status-sakit",
-    ring: "ring-status-sakit/20",
-  },
-  {
-    key: "izin",
-    bg: "bg-status-izin-bg",
-    text: "text-status-izin",
-    ring: "ring-status-izin/20",
-  },
-  {
-    key: "cuti",
-    bg: "bg-status-cuti-bg",
-    text: "text-status-cuti",
-    ring: "ring-status-cuti/20",
-  },
-]
+    {
+      key: "shift_pagi",
+      bg: "bg-status-pagi-bg",
+      text: "text-status-pagi",
+      ring: "ring-status-pagi/20",
+    },
+    {
+      key: "shift_siang",
+      bg: "bg-status-siang-bg",
+      text: "text-status-siang",
+      ring: "ring-status-siang/20",
+    },
+    {
+      key: "libur",
+      bg: "bg-status-libur-bg",
+      text: "text-status-libur",
+      ring: "ring-status-libur/20",
+    },
+    {
+      key: "sakit",
+      bg: "bg-status-sakit-bg",
+      text: "text-status-sakit",
+      ring: "ring-status-sakit/20",
+    },
+    {
+      key: "izin",
+      bg: "bg-status-izin-bg",
+      text: "text-status-izin",
+      ring: "ring-status-izin/20",
+    },
+    {
+      key: "cuti",
+      bg: "bg-status-cuti-bg",
+      text: "text-status-cuti",
+      ring: "ring-status-cuti/20",
+    },
+  ]
 
 // ============================================================
 // DASHBOARD
@@ -104,11 +104,34 @@ export function DashboardPage() {
 
   const [schedules, setSchedules] =
     React.useState<
-      Record<string, Awaited<ReturnType<typeof getFirestoreSchedules>>>
+      Record<
+        string,
+        Awaited<
+          ReturnType<typeof getFirestoreSchedules>
+        >
+      >
     >({})
 
   const [loading, setLoading] =
     React.useState(true)
+
+  // ==========================================================
+  // ROLE
+  // ==========================================================
+
+  const role =
+    profile?.role
+      ?.trim()
+      .toLowerCase()
+
+  const isStore =
+    role === "store"
+
+  const isCentralCabang =
+    role === "central_cabang"
+
+  const isCentralPusat =
+    role === "central_pusat"
 
   // ==========================================================
   // LOAD DATA FIRESTORE
@@ -124,27 +147,25 @@ export function DashboardPage() {
 
         const activeStores =
           firestoreStores.filter(
-            (store) => store.aktif !== false,
+            (store) =>
+              store.aktif !== false,
           )
 
-        setStores(activeStores)
-
         // ------------------------------------------------------
-        // FILTER STORE SESUAI AKUN
+        // FILTER STORE SESUAI ROLE
         // ------------------------------------------------------
 
         let accessibleStores =
           activeStores
 
-        const role =
-          profile?.role
-            ?.trim()
-            .toLowerCase()
-
-        if (role === "store") {
+        // STORE
+        if (
+          isStore &&
+          profile?.storeId
+        ) {
           const accountStoreId =
-            profile?.storeId
-              ?.trim()
+            profile.storeId
+              .trim()
               .toUpperCase()
 
           accessibleStores =
@@ -156,6 +177,38 @@ export function DashboardPage() {
                 accountStoreId,
             )
         }
+
+        // CENTRAL CABANG
+        else if (
+          isCentralCabang &&
+          profile?.cabangId
+        ) {
+          const accountCabangId =
+            profile.cabangId
+              .trim()
+              .toUpperCase()
+
+          accessibleStores =
+            activeStores.filter(
+              (store) =>
+                store.cabangId
+                  ?.trim()
+                  .toUpperCase() ===
+                accountCabangId,
+            )
+        }
+
+        // CENTRAL PUSAT
+        else if (isCentralPusat) {
+          accessibleStores =
+            activeStores
+        }
+
+        // ------------------------------------------------------
+        // SIMPAN STORE YANG BOLEH DIAKSES
+        // ------------------------------------------------------
+
+        setStores(accessibleStores)
 
         // ------------------------------------------------------
         // LOAD EMPLOYEE + SCHEDULE
@@ -173,7 +226,9 @@ export function DashboardPage() {
           >
         > = {}
 
-        for (const store of accessibleStores) {
+        for (
+          const store of accessibleStores
+        ) {
           const storeEmployees =
             await getFirestoreEmployees(
               store.id,
@@ -193,13 +248,27 @@ export function DashboardPage() {
             )
         }
 
-        setEmployees(allEmployees)
-        setSchedules(scheduleMap)
+        setEmployees(
+          allEmployees,
+        )
+
+        setSchedules(
+          scheduleMap,
+        )
+
+        console.log(
+          "DASHBOARD EMPLOYEE FIRESTORE:",
+          allEmployees,
+        )
       } catch (error) {
         console.error(
           "Gagal mengambil data Dashboard:",
           error,
         )
+
+        setStores([])
+        setEmployees([])
+        setSchedules({})
       } finally {
         setLoading(false)
       }
@@ -211,6 +280,9 @@ export function DashboardPage() {
   }, [
     profile,
     date,
+    isStore,
+    isCentralCabang,
+    isCentralPusat,
   ])
 
   // ==========================================================
@@ -218,44 +290,21 @@ export function DashboardPage() {
   // ==========================================================
 
   const accessibleStores =
-    React.useMemo(() => {
-      const role =
-        profile?.role
-          ?.trim()
-          .toLowerCase()
-
-      if (
-        role === "store"
-      ) {
-        const storeId =
-          profile?.storeId
-            ?.trim()
-            .toUpperCase()
-
-        return stores.filter(
-          (store) =>
-            store.id
-              .trim()
-              .toUpperCase() ===
-            storeId,
-        )
-      }
-
-      return stores
-    }, [
-      stores,
-      profile?.role,
-      profile?.storeId,
-    ])
+    React.useMemo(
+      () => stores,
+      [stores],
+    )
 
   // ==========================================================
   // STORE TERPILIH
   // ==========================================================
 
   const visibleStores =
-    storeFilter === "all"
+    isStore
       ? accessibleStores
-      : accessibleStores.filter(
+      : storeFilter === "all"
+        ? accessibleStores
+        : accessibleStores.filter(
           (store) =>
             store.id ===
             storeFilter,
@@ -288,7 +337,7 @@ export function DashboardPage() {
         (store) => {
           const storeSchedules =
             schedules[
-              store.id
+            store.id
             ] ?? []
 
           storeSchedules.forEach(
@@ -334,17 +383,26 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
 
+      {/* ================================================== */}
       {/* INTRO */}
+      {/* ================================================== */}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">
-            DASHBOARD CENTRAL
+            {isStore
+              ? "DASHBOARD"
+              : "DASHBOARD CENTRAL"}
           </h2>
 
           <p className="text-sm text-muted-foreground">
-            Operasional seluruh toko Hari Ini
-            &middot; {formatTanggal(date)}
+            Operasional{" "}
+            {isStore
+              ? "toko"
+              : "seluruh toko"}{" "}
+            Hari Ini
+            &middot;{" "}
+            {formatTanggal(date)}
           </p>
         </div>
 
@@ -358,14 +416,19 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* ================================================== */}
       {/* SUMMARY */}
+      {/* ================================================== */}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
 
         <div className="flex flex-col justify-between rounded-xl border border-border bg-primary p-4 text-primary-foreground shadow-sm">
           <div className="flex items-center gap-2 text-xs font-medium text-primary-foreground/80">
             <StoreIcon className="size-4" />
-            Total Toko
+
+            {isStore
+              ? "Toko"
+              : "Total Toko"}
           </div>
 
           <p className="mt-3 text-3xl font-bold leading-none">
@@ -393,7 +456,7 @@ export function DashboardPage() {
               >
                 {
                   STATUS_LABEL[
-                    m.key
+                  m.key
                   ]
                 }
               </div>
@@ -401,7 +464,7 @@ export function DashboardPage() {
               <p className="mt-3 text-3xl font-bold leading-none text-foreground">
                 {
                   summary[
-                    m.key
+                  m.key
                   ]
                 }
 
@@ -414,10 +477,22 @@ export function DashboardPage() {
         )}
       </div>
 
+      {/* ================================================== */}
       {/* FILTER */}
+      {/* ================================================== */}
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3 sm:grid-cols-2",
+            isStore
+              ? "lg:grid-cols-[1fr_1fr_auto]"
+              : "lg:grid-cols-[1fr_1fr_1fr_auto]",
+            "lg:items-end",
+          )}
+        >
+
+          {/* TANGGAL */}
 
           <Field label="Tanggal">
             <DateField
@@ -426,34 +501,43 @@ export function DashboardPage() {
             />
           </Field>
 
-          <Field label="Toko">
-            <SelectField
-              value={storeFilter}
-              onChange={
-                setStoreFilter
-              }
-              options={[
-                {
-                  value: "all",
-                  label:
-                    accessibleStores.length ===
-                    1
-                      ? accessibleStores[0]
-                          .nama
-                      : "Semua Toko",
-                },
+          {/* TOKO - CENTRAL SAJA */}
 
-                ...accessibleStores.map(
-                  (store) => ({
+          {!isStore && (
+            <Field label="Toko">
+              <SelectField
+                value={
+                  storeFilter
+                }
+                onChange={
+                  setStoreFilter
+                }
+                options={[
+                  {
                     value:
-                      store.id,
+                      "all",
                     label:
-                      store.nama,
-                  }),
-                ),
-              ]}
-            />
-          </Field>
+                      accessibleStores.length ===
+                        1
+                        ? accessibleStores[0]
+                          .nama
+                        : "Semua Toko",
+                  },
+
+                  ...accessibleStores.map(
+                    (store) => ({
+                      value:
+                        store.id,
+                      label:
+                        store.nama,
+                    }),
+                  ),
+                ]}
+              />
+            </Field>
+          )}
+
+          {/* STATUS */}
 
           <Field label="Status">
             <SelectField
@@ -465,24 +549,27 @@ export function DashboardPage() {
               ) =>
                 setStatusFilter(
                   value as
-                    | ShiftStatus
-                    | "all",
+                  | ShiftStatus
+                  | "all",
                 )
               }
               options={[
                 {
-                  value: "all",
+                  value:
+                    "all",
                   label:
                     "Semua Status",
                 },
 
                 ...STATUS_ORDER.map(
-                  (status) => ({
+                  (
+                    status,
+                  ) => ({
                     value:
                       status,
                     label:
                       STATUS_LABEL[
-                        status
+                      status
                       ],
                   }),
                 ),
@@ -490,10 +577,14 @@ export function DashboardPage() {
             />
           </Field>
 
+          {/* RESET */}
+
           <Button
             variant="outline"
             size="lg"
-            disabled={isDefault}
+            disabled={
+              isDefault
+            }
             onClick={
               resetFilter
             }
@@ -504,13 +595,17 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* ================================================== */}
       {/* MONITORING */}
+      {/* ================================================== */}
 
       <div>
         <div className="mb-3 flex items-center justify-between">
 
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Monitoring Toko
+            {isStore
+              ? "Monitoring Toko"
+              : "Monitoring Toko"}
           </h3>
 
           <span className="text-xs text-muted-foreground">
@@ -519,7 +614,6 @@ export function DashboardPage() {
             }{" "}
             toko ditampilkan
           </span>
-
         </div>
 
         {loading ? (
@@ -531,11 +625,11 @@ export function DashboardPage() {
           <EmptyState
             title="Tidak ada toko"
             description={
-              profile?.role
-                ?.toLowerCase() ===
-              "store"
+              isStore
                 ? "Akun ini belum terhubung dengan toko yang valid."
-                : "Belum ada data toko."
+                : isCentralCabang
+                  ? "Belum ada toko aktif pada cabang ini."
+                  : "Belum ada data toko."
             }
           />
         ) : (
@@ -546,13 +640,17 @@ export function DashboardPage() {
                 const storeEmployees =
                   employees.filter(
                     (employee) =>
-                      employee.storeId ===
-                      store.id,
+                      employee.storeId
+                        ?.trim()
+                        .toUpperCase() ===
+                      store.id
+                        ?.trim()
+                        .toUpperCase(),
                   )
 
                 const storeSchedules =
                   schedules[
-                    store.id
+                  store.id
                   ] ?? []
 
                 return (
@@ -610,7 +708,7 @@ export function DashboardPage() {
                     <div className="p-4">
 
                       {storeEmployees.length ===
-                      0 ? (
+                        0 ? (
                         <p className="py-4 text-center text-sm text-muted-foreground">
                           Belum ada karyawan.
                         </p>
@@ -632,9 +730,9 @@ export function DashboardPage() {
 
                               if (
                                 statusFilter !==
-                                  "all" &&
+                                "all" &&
                                 schedule?.status !==
-                                  statusFilter
+                                statusFilter
                               ) {
                                 return null
                               }
@@ -649,16 +747,25 @@ export function DashboardPage() {
 
                                   <div>
                                     <p className="text-sm font-medium">
-  {employee.nama}
-</p>
+                                      {
+                                        employee.nama ||
+                                        "-"
+                                      }
+                                    </p>
 
-<p className="text-xs text-muted-foreground">
-  NIK: {employee.nik || "-"}
-</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      NIK:{" "}
+                                      {
+                                        employee.nik?.trim() ||
+                                        "-"
+                                      }
+                                    </p>
 
-<p className="text-xs text-muted-foreground">
-  {employee.posisi}
-</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {
+                                        employee.posisi ||
+                                        "-"
+                                      }
                                     </p>
                                   </div>
 
@@ -666,8 +773,8 @@ export function DashboardPage() {
                                     {
                                       schedule
                                         ? STATUS_LABEL[
-                                            schedule.status
-                                          ]
+                                        schedule.status
+                                        ]
                                         : "Belum dijadwalkan"
                                     }
                                   </span>
