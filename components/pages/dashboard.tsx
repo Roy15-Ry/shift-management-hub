@@ -107,7 +107,9 @@ export function DashboardPage() {
       Record<
         string,
         Awaited<
-          ReturnType<typeof getFirestoreSchedules>
+          ReturnType<
+            typeof getFirestoreSchedules
+          >
         >
       >
     >({})
@@ -143,7 +145,11 @@ export function DashboardPage() {
         setLoading(true)
 
         const firestoreStores =
-          await getFirestoreStores()
+          await getFirestoreStores(
+            role,
+            profile?.storeId,
+            profile?.cabangId,
+          )
 
         const activeStores =
           firestoreStores.filter(
@@ -209,6 +215,7 @@ export function DashboardPage() {
         // ------------------------------------------------------
 
         setStores(accessibleStores)
+        console.log("DASHBOARD STORES:", accessibleStores)
 
         // ------------------------------------------------------
         // LOAD EMPLOYEE + SCHEDULE
@@ -311,6 +318,15 @@ export function DashboardPage() {
         )
 
   // ==========================================================
+  // STORE ACCOUNT
+  // ==========================================================
+
+  const accountStore =
+    isStore
+      ? accessibleStores[0]
+      : null
+
+  // ==========================================================
   // SUMMARY
   // ==========================================================
 
@@ -388,10 +404,11 @@ export function DashboardPage() {
       {/* ================================================== */}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+
         <div>
           <h2 className="text-lg font-semibold tracking-tight">
             {isStore
-              ? "DASHBOARD"
+              ? "DASHBOARD STORE"
               : "DASHBOARD CENTRAL"}
           </h2>
 
@@ -414,6 +431,7 @@ export function DashboardPage() {
             />
           </Field>
         </div>
+
       </div>
 
       {/* ================================================== */}
@@ -422,23 +440,57 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
 
+        {/* STORE / TOTAL TOKO */}
+
         <div className="flex flex-col justify-between rounded-xl border border-border bg-primary p-4 text-primary-foreground shadow-sm">
+
           <div className="flex items-center gap-2 text-xs font-medium text-primary-foreground/80">
+
             <StoreIcon className="size-4" />
 
             {isStore
               ? "Toko"
               : "Total Toko"}
+
           </div>
 
-          <p className="mt-3 text-3xl font-bold leading-none">
-            {summary.totalToko}
+          {isStore ? (
+            accountStore ? (
+              <>
+                <p className="mt-3 text-lg font-bold leading-tight">
+                  {accountStore.nama}
+                </p>
 
-            <span className="ml-1 text-sm font-medium text-primary-foreground/70">
-              Toko
-            </span>
-          </p>
+                <p className="mt-1 text-xs font-medium text-primary-foreground/70">
+                  Data Toko
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 text-sm font-bold leading-tight">
+                  Data Toko Belum Tersedia
+                </p>
+
+                <p className="mt-1 text-xs font-medium text-primary-foreground/70">
+                  Belum ada data toko yang dapat ditampilkan untuk akun ini.
+                </p>
+              </>
+            )
+          ) : (
+            <p className="mt-3 text-3xl font-bold leading-none">
+
+              {summary.totalToko}
+
+              <span className="ml-1 text-sm font-medium text-primary-foreground/70">
+                Toko
+              </span>
+
+            </p>
+          )}
+
         </div>
+
+        {/* STATUS SUMMARY */}
 
         {summaryMeta.map(
           (m) => (
@@ -446,6 +498,7 @@ export function DashboardPage() {
               key={m.key}
               className="flex flex-col justify-between rounded-xl border border-border bg-card p-4 shadow-sm"
             >
+
               <div
                 className={cn(
                   "inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
@@ -462,6 +515,7 @@ export function DashboardPage() {
               </div>
 
               <p className="mt-3 text-3xl font-bold leading-none text-foreground">
+
                 {
                   summary[
                   m.key
@@ -471,10 +525,13 @@ export function DashboardPage() {
                 <span className="ml-1 text-sm font-medium text-muted-foreground">
                   orang
                 </span>
+
               </p>
+
             </div>
           ),
         )}
+
       </div>
 
       {/* ================================================== */}
@@ -482,6 +539,7 @@ export function DashboardPage() {
       {/* ================================================== */}
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+
         <div
           className={cn(
             "grid grid-cols-1 gap-3 sm:grid-cols-2",
@@ -505,6 +563,7 @@ export function DashboardPage() {
 
           {!isStore && (
             <Field label="Toko">
+
               <SelectField
                 value={
                   storeFilter
@@ -534,12 +593,14 @@ export function DashboardPage() {
                   ),
                 ]}
               />
+
             </Field>
           )}
 
           {/* STATUS */}
 
           <Field label="Status">
+
             <SelectField
               value={
                 statusFilter
@@ -575,6 +636,7 @@ export function DashboardPage() {
                 ),
               ]}
             />
+
           </Field>
 
           {/* RESET */}
@@ -592,6 +654,7 @@ export function DashboardPage() {
             <RotateCcw />
             Reset Filter
           </Button>
+
         </div>
       </div>
 
@@ -600,43 +663,54 @@ export function DashboardPage() {
       {/* ================================================== */}
 
       <div>
+
         <div className="mb-3 flex items-center justify-between">
 
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {isStore
-              ? "Monitoring Toko"
-              : "Monitoring Toko"}
+            Monitoring Toko
           </h3>
 
           <span className="text-xs text-muted-foreground">
-            {
-              visibleStores.length
-            }{" "}
-            toko ditampilkan
+
+            {isStore
+              ? `${visibleStores.length === 1 ? "1" : "0"} toko`
+              : `${visibleStores.length} toko ditampilkan`}
+
           </span>
+
         </div>
 
         {loading ? (
+
           <div className="rounded-xl border border-border bg-card">
             <LoadingState />
           </div>
+
         ) : visibleStores.length ===
           0 ? (
+
           <EmptyState
-            title="Tidak ada toko"
+            title={
+              isStore
+                ? "Data Toko Belum Tersedia"
+                : "Tidak ada toko"
+            }
             description={
               isStore
-                ? "Akun ini belum terhubung dengan toko yang valid."
+                ? "Belum ada data toko yang dapat ditampilkan untuk akun ini."
                 : isCentralCabang
                   ? "Belum ada toko aktif pada cabang ini."
                   : "Belum ada data toko."
             }
           />
+
         ) : (
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
 
             {visibleStores.map(
               (store) => {
+
                 const storeEmployees =
                   employees.filter(
                     (employee) =>
@@ -654,6 +728,7 @@ export function DashboardPage() {
                   ] ?? []
 
                 return (
+
                   <div
                     key={
                       store.id
@@ -677,6 +752,7 @@ export function DashboardPage() {
                         </div>
 
                         <div>
+
                           <p className="text-sm font-semibold leading-tight">
                             {
                               store.nama
@@ -690,15 +766,18 @@ export function DashboardPage() {
                               )
                             }
                           </p>
+
                         </div>
 
                       </div>
 
                       <span className="rounded-md bg-card px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border">
+
                         {
                           storeEmployees.length
                         }{" "}
                         karyawan
+
                       </span>
 
                     </div>
@@ -709,16 +788,20 @@ export function DashboardPage() {
 
                       {storeEmployees.length ===
                         0 ? (
+
                         <p className="py-4 text-center text-sm text-muted-foreground">
                           Belum ada karyawan.
                         </p>
+
                       ) : (
+
                         <div className="space-y-2">
 
                           {storeEmployees.map(
                             (
                               employee,
                             ) => {
+
                               const schedule =
                                 storeSchedules.find(
                                   (
@@ -738,6 +821,7 @@ export function DashboardPage() {
                               }
 
                               return (
+
                                 <div
                                   key={
                                     employee.id
@@ -746,6 +830,7 @@ export function DashboardPage() {
                                 >
 
                                   <div>
+
                                     <p className="text-sm font-medium">
                                       {
                                         employee.nama ||
@@ -767,9 +852,11 @@ export function DashboardPage() {
                                         "-"
                                       }
                                     </p>
+
                                   </div>
 
                                   <span className="text-xs font-medium text-muted-foreground">
+
                                     {
                                       schedule
                                         ? STATUS_LABEL[
@@ -777,25 +864,33 @@ export function DashboardPage() {
                                         ]
                                         : "Belum dijadwalkan"
                                     }
+
                                   </span>
 
                                 </div>
+
                               )
                             },
                           )}
 
                         </div>
+
                       )}
 
                     </div>
+
                   </div>
+
                 )
               },
             )}
 
           </div>
+
         )}
+
       </div>
+
     </div>
   )
 }

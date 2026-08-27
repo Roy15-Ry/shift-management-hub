@@ -46,20 +46,103 @@ export type FirestoreSchedule = {
 // STORES
 // ============================================================
 
-export async function getFirestoreStores(): Promise<
-  FirestoreStore[]
-> {
-  const snapshot = await getDocs(
-    collection(db, "stores"),
+export async function getFirestoreStores(
+  role?: string,
+  storeId?: string,
+  cabangId?: string,
+): Promise<FirestoreStore[]> {
+  const storesRef = collection(
+    db,
+    "stores",
   )
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<
-      FirestoreStore,
-      "id"
-    >),
-  }))
+  let q
+
+  // ==========================================================
+  // STORE
+  // Hanya mengambil toko miliknya sendiri
+  // ==========================================================
+
+  if (
+    role === "store" &&
+    storeId
+  ) {
+    q = query(
+      storesRef,
+      where(
+        "storeId",
+        "==",
+        storeId,
+      ),
+    )
+  }
+
+  // ==========================================================
+  // CENTRAL CABANG
+  // Hanya mengambil toko pada cabangnya
+  // ==========================================================
+
+  else if (
+    role === "central_cabang" &&
+    cabangId
+  ) {
+    q = query(
+      storesRef,
+      where(
+        "cabangId",
+        "==",
+        cabangId,
+      ),
+      where(
+        "aktif",
+        "==",
+        true,
+      ),
+    )
+  }
+
+  // ==========================================================
+  // CENTRAL PUSAT
+  // Mengambil semua toko
+  // ==========================================================
+
+  else {
+    q = query(
+      storesRef,
+    )
+  }
+
+  const snapshot =
+    await getDocs(q)
+
+  return snapshot.docs.map(
+    (doc) => {
+      const data =
+        doc.data()
+
+      return {
+        id:
+          data.storeId ??
+          doc.id,
+
+        nama:
+          data.namaStore ??
+          data.nama ??
+          "-",
+
+        kode:
+          data.storeId ??
+          doc.id,
+
+        cabangId:
+          data.cabangId ??
+          "",
+
+        aktif:
+          data.aktif !== false,
+      }
+    },
+  )
 }
 
 // ============================================================
@@ -69,25 +152,33 @@ export async function getFirestoreStores(): Promise<
 export async function getFirestoreEmployees(
   storeId: string,
 ): Promise<FirestoreEmployee[]> {
-  const employeesRef = collection(
-    db,
-    "employees",
-  )
+  const employeesRef =
+    collection(
+      db,
+      "employees",
+    )
 
   const q = query(
     employeesRef,
-    where("storeId", "==", storeId),
+    where(
+      "storeId",
+      "==",
+      storeId,
+    ),
   )
 
-  const snapshot = await getDocs(q)
+  const snapshot =
+    await getDocs(q)
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<
-      FirestoreEmployee,
-      "id"
-    >),
-  }))
+  return snapshot.docs.map(
+    (doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<
+        FirestoreEmployee,
+        "id"
+      >),
+    }),
+  )
 }
 
 // ============================================================
@@ -98,24 +189,36 @@ export async function getFirestoreSchedules(
   storeId: string,
   tanggal: string,
 ): Promise<FirestoreSchedule[]> {
-  const schedulesRef = collection(
-    db,
-    "schedules",
-  )
+  const schedulesRef =
+    collection(
+      db,
+      "schedules",
+    )
 
   const q = query(
     schedulesRef,
-    where("storeId", "==", storeId),
-    where("tanggal", "==", tanggal),
+    where(
+      "storeId",
+      "==",
+      storeId,
+    ),
+    where(
+      "tanggal",
+      "==",
+      tanggal,
+    ),
   )
 
-  const snapshot = await getDocs(q)
+  const snapshot =
+    await getDocs(q)
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<
-      FirestoreSchedule,
-      "id"
-    >),
-  }))
+  return snapshot.docs.map(
+    (doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<
+        FirestoreSchedule,
+        "id"
+      >),
+    }),
+  )
 }

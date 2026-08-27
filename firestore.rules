@@ -1,0 +1,182 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userData() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function isStore() {
+      return isSignedIn()
+        && userData().role == "store"
+        && userData().aktif == true;
+    }
+
+    function isCentralCabang() {
+      return isSignedIn()
+        && userData().role == "central_cabang"
+        && userData().aktif == true;
+    }
+
+    function isCentralPusat() {
+      return isSignedIn()
+        && userData().role == "central_pusat"
+        && userData().aktif == true;
+    }
+
+    // =====================================================
+    // USERS
+    // =====================================================
+
+    match /users/{userId} {
+
+      allow read: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isCentralPusat()
+        );
+
+      allow create, update: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isCentralPusat()
+        );
+
+      allow delete: if isCentralPusat();
+    }
+
+    // =====================================================
+    // CABANG
+    // =====================================================
+
+    match /cabang/{cabangId} {
+
+      allow read, create, update, delete:
+        if isCentralPusat();
+    }
+
+    // =====================================================
+    // STORES
+    // =====================================================
+
+    match /stores/{storeDocId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+          ||
+          isCentralPusat()
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // EMPLOYEES
+    // =====================================================
+
+    match /employees/{employeeId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat()
+          ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // SCHEDULES
+    // =====================================================
+
+    match /schedules/{scheduleId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat() ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // REVISI
+    // =====================================================
+
+    match /revisi/{revisiId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat() ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // HISTORY
+    // =====================================================
+
+    match /history/{historyId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat() ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+  }
+}
