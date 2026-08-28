@@ -99,6 +99,33 @@ const STORE_HEADER_THEMES = [
   },
 ]
 
+const CENTRAL_STORE_HEADER_THEMES = [
+  {
+    header: "bg-sky-500/12 dark:bg-sky-400/12",
+    icon: "bg-sky-500/20 text-sky-800 dark:bg-sky-400/20 dark:text-sky-100",
+  },
+  {
+    header: "bg-emerald-500/12 dark:bg-emerald-400/12",
+    icon: "bg-emerald-500/20 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-100",
+  },
+  {
+    header: "bg-violet-500/12 dark:bg-violet-400/12",
+    icon: "bg-violet-500/20 text-violet-800 dark:bg-violet-400/20 dark:text-violet-100",
+  },
+  {
+    header: "bg-amber-500/12 dark:bg-amber-400/12",
+    icon: "bg-amber-500/20 text-amber-800 dark:bg-amber-400/20 dark:text-amber-100",
+  },
+  {
+    header: "bg-rose-500/12 dark:bg-rose-400/12",
+    icon: "bg-rose-500/20 text-rose-800 dark:bg-rose-400/20 dark:text-rose-100",
+  },
+  {
+    header: "bg-teal-500/12 dark:bg-teal-400/12",
+    icon: "bg-teal-500/20 text-teal-800 dark:bg-teal-400/20 dark:text-teal-100",
+  },
+]
+
 function getLocalDateISO(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -128,6 +155,12 @@ function getStoreHeaderTheme(store: FirestoreStore) {
   ]
 }
 
+function getCentralStoreHeaderTheme(index: number) {
+  return CENTRAL_STORE_HEADER_THEMES[
+    index % CENTRAL_STORE_HEADER_THEMES.length
+  ]
+}
+
 function scheduleKey(storeId: string, tanggal: string) {
   return `${storeId}:${tanggal}`
 }
@@ -150,6 +183,9 @@ export function DashboardPage() {
     React.useState(() => getLocalDateISO())
 
   const [storeFilter, setStoreFilter] =
+    React.useState("all")
+
+  const [branchFilter, setBranchFilter] =
     React.useState("all")
 
   const [statusFilter, setStatusFilter] =
@@ -408,6 +444,56 @@ export function DashboardPage() {
       [stores],
     )
 
+  const branchStores =
+    React.useMemo(
+      () =>
+        isCentralPusat &&
+        branchFilter !== "all"
+          ? accessibleStores.filter(
+            (store) =>
+              store.cabangId ===
+              branchFilter,
+          )
+          : accessibleStores,
+      [
+        accessibleStores,
+        branchFilter,
+        isCentralPusat,
+      ],
+    )
+
+  const branchOptions =
+    React.useMemo(
+      () =>
+        Array.from(
+          new Set(
+            accessibleStores
+              .map(
+                (store) => store.cabangId,
+              )
+              .filter(Boolean),
+          ),
+        ),
+      [accessibleStores],
+    )
+
+  React.useEffect(() => {
+    if (
+      isCentralPusat &&
+      storeFilter !== "all" &&
+      !branchStores.some(
+        (store) =>
+          store.id === storeFilter,
+      )
+    ) {
+      setStoreFilter("all")
+    }
+  }, [
+    branchStores,
+    isCentralPusat,
+    storeFilter,
+  ])
+
   // ==========================================================
   // STORE TERPILIH
   // ==========================================================
@@ -416,8 +502,8 @@ export function DashboardPage() {
     isStore
       ? accessibleStores
       : storeFilter === "all"
-        ? accessibleStores
-        : accessibleStores.filter(
+        ? branchStores
+        : branchStores.filter(
           (store) =>
             store.id ===
             storeFilter,
@@ -492,11 +578,13 @@ export function DashboardPage() {
 
   const isDefault =
     date === getLocalDateISO() &&
+    branchFilter === "all" &&
     storeFilter === "all" &&
     statusFilter === "all"
 
   function resetFilter() {
     setDate(getLocalDateISO())
+    setBranchFilter("all")
     setStoreFilter("all")
     setStatusFilter("all")
   }
@@ -654,7 +742,9 @@ export function DashboardPage() {
             "grid grid-cols-1 gap-3 sm:grid-cols-2",
             isStore
               ? "lg:grid-cols-[1fr_1fr_auto]"
-              : "lg:grid-cols-[1fr_1fr_1fr_auto]",
+              : isCentralPusat
+                ? "lg:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+                : "lg:grid-cols-[1fr_1fr_1fr_auto]",
             "lg:items-end",
           )}
         >
@@ -667,6 +757,32 @@ export function DashboardPage() {
               onChange={setDate}
             />
           </Field>
+
+          {/* CABANG - CENTRAL PUSAT SAJA */}
+
+          {isCentralPusat && (
+            <Field label="Cabang">
+
+              <SelectField
+                value={branchFilter}
+                onChange={setBranchFilter}
+                options={[
+                  {
+                    value: "all",
+                    label: "Semua Cabang",
+                  },
+
+                  ...branchOptions.map(
+                    (cabangId) => ({
+                      value: cabangId,
+                      label: cabangId,
+                    }),
+                  ),
+                ]}
+              />
+
+            </Field>
+          )}
 
           {/* TOKO - CENTRAL SAJA */}
 
@@ -685,14 +801,14 @@ export function DashboardPage() {
                     value:
                       "all",
                     label:
-                      accessibleStores.length ===
+                      branchStores.length ===
                         1
-                        ? accessibleStores[0]
+                        ? branchStores[0]
                           .nama
                         : "Semua Toko",
                   },
 
-                  ...accessibleStores.map(
+                  ...branchStores.map(
                     (store) => ({
                       value:
                         store.id,
@@ -821,7 +937,7 @@ export function DashboardPage() {
           )}>
 
             {visibleStores.map(
-              (store) => {
+              (store, index) => {
 
                 const storeEmployees =
                   employees.filter(
@@ -835,7 +951,14 @@ export function DashboardPage() {
                   )
 
                 const headerTheme =
-                  getStoreHeaderTheme(store)
+                  isStore
+                    ? getStoreHeaderTheme(store)
+                    : getCentralStoreHeaderTheme(index)
+
+                const cardNumber =
+                  isStore
+                    ? 1
+                    : index + 1
 
                 return (
 
@@ -859,12 +982,7 @@ export function DashboardPage() {
                           "flex size-9 items-center justify-center rounded-lg text-sm font-bold",
                           headerTheme.icon,
                         )}>
-                          {
-                            store.kode?.slice(
-                              -1,
-                            ) ??
-                            "?"
-                          }
+                          {cardNumber}
                         </div>
 
                         <div>
