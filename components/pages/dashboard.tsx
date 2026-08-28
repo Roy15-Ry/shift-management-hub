@@ -27,7 +27,6 @@ import {
   STATUS_LABEL,
   STATUS_ORDER,
   formatTanggal,
-  DEFAULT_DATE,
   type ShiftStatus,
 } from "@/lib/data"
 
@@ -81,6 +80,58 @@ const summaryMeta: {
     },
   ]
 
+const STORE_HEADER_THEMES = [
+  {
+    header: "bg-sky-500/10 dark:bg-sky-400/10",
+    icon: "bg-sky-500/15 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200",
+  },
+  {
+    header: "bg-emerald-500/10 dark:bg-emerald-400/10",
+    icon: "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200",
+  },
+  {
+    header: "bg-violet-500/10 dark:bg-violet-400/10",
+    icon: "bg-violet-500/15 text-violet-700 dark:bg-violet-400/15 dark:text-violet-200",
+  },
+  {
+    header: "bg-amber-500/10 dark:bg-amber-400/10",
+    icon: "bg-amber-500/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200",
+  },
+]
+
+function getLocalDateISO(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
+}
+
+function addDays(dateISO: string, days: number) {
+  const [year, month, day] = dateISO.split("-").map(Number)
+  const date = new Date(year, month - 1, day)
+
+  date.setDate(date.getDate() + days)
+
+  return getLocalDateISO(date)
+}
+
+function getStoreHeaderTheme(store: FirestoreStore) {
+  const identity = store.id || store.kode
+  const hash = Array.from(identity).reduce(
+    (total, char) => total + char.charCodeAt(0),
+    0,
+  )
+
+  return STORE_HEADER_THEMES[
+    hash % STORE_HEADER_THEMES.length
+  ]
+}
+
+function scheduleKey(storeId: string, tanggal: string) {
+  return `${storeId}:${tanggal}`
+}
+
 // ============================================================
 // DASHBOARD
 // ============================================================
@@ -96,7 +147,7 @@ export function DashboardPage() {
   }, [showToast])
 
   const [date, setDate] =
-    React.useState(DEFAULT_DATE)
+    React.useState(() => getLocalDateISO())
 
   const [storeFilter, setStoreFilter] =
     React.useState("all")
@@ -142,6 +193,15 @@ export function DashboardPage() {
 
   const isCentralPusat =
     role === "central_pusat"
+
+  const monitoringDates =
+    React.useMemo(
+      () =>
+        isStore
+          ? [date, addDays(date, 1), addDays(date, 2)]
+          : [date],
+      [date, isStore],
+    )
 
   // ==========================================================
   // LOAD DATA FIRESTORE
@@ -282,12 +342,18 @@ export function DashboardPage() {
             ),
           )
 
-          scheduleMap[store.id] =
-            await getFirestoreSchedules(
+          for (const scheduleDate of monitoringDates) {
+            scheduleMap[
+              scheduleKey(
+                store.id,
+                scheduleDate,
+              )
+            ] = await getFirestoreSchedules(
               store.id,
-              date,
+              scheduleDate,
               cabangId,
             )
+          }
         }
 
         setEmployees(
@@ -326,6 +392,7 @@ export function DashboardPage() {
   }, [
     profile,
     date,
+    monitoringDates,
     isStore,
     isCentralCabang,
     isCentralPusat,
@@ -392,7 +459,10 @@ export function DashboardPage() {
         (store) => {
           const storeSchedules =
             schedules[
-            store.id
+            scheduleKey(
+              store.id,
+              date,
+            )
             ] ?? []
 
           storeSchedules.forEach(
@@ -421,12 +491,12 @@ export function DashboardPage() {
   // ==========================================================
 
   const isDefault =
-    date === DEFAULT_DATE &&
+    date === getLocalDateISO() &&
     storeFilter === "all" &&
     statusFilter === "all"
 
   function resetFilter() {
-    setDate(DEFAULT_DATE)
+    setDate(getLocalDateISO())
     setStoreFilter("all")
     setStatusFilter("all")
   }
@@ -481,7 +551,7 @@ export function DashboardPage() {
 
         {/* STORE / TOTAL TOKO */}
 
-        <div className="flex flex-col justify-between rounded-xl border border-border bg-primary p-4 text-primary-foreground shadow-sm">
+        <div className="flex flex-col justify-between rounded-xl border border-border bg-primary p-4 text-primary-foreground shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/70 hover:shadow-md">
 
           <div className="flex items-center gap-2 text-xs font-medium text-primary-foreground/80">
 
@@ -535,7 +605,7 @@ export function DashboardPage() {
           (m) => (
             <div
               key={m.key}
-              className="flex flex-col justify-between rounded-xl border border-border bg-card p-4 shadow-sm"
+              className="flex flex-col justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md"
             >
 
               <div
@@ -577,7 +647,7 @@ export function DashboardPage() {
       {/* FILTER */}
       {/* ================================================== */}
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md">
 
         <div
           className={cn(
@@ -745,7 +815,10 @@ export function DashboardPage() {
 
         ) : (
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+          <div className={cn(
+            "grid grid-cols-1 gap-4",
+            !isStore && "xl:grid-cols-2 2xl:grid-cols-3",
+          )}>
 
             {visibleStores.map(
               (store) => {
@@ -761,10 +834,8 @@ export function DashboardPage() {
                         .toUpperCase(),
                   )
 
-                const storeSchedules =
-                  schedules[
-                  store.id
-                  ] ?? []
+                const headerTheme =
+                  getStoreHeaderTheme(store)
 
                 return (
 
@@ -772,16 +843,22 @@ export function DashboardPage() {
                     key={
                       store.id
                     }
-                    className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+                    className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
                   >
 
                     {/* STORE HEADER */}
 
-                    <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3">
+                    <div className={cn(
+                      "flex items-center justify-between gap-3 border-b border-border px-4 py-3",
+                      headerTheme.header,
+                    )}>
 
                       <div className="flex items-center gap-3">
 
-                        <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+                        <div className={cn(
+                          "flex size-9 items-center justify-center rounded-lg text-sm font-bold",
+                          headerTheme.icon,
+                        )}>
                           {
                             store.kode?.slice(
                               -1,
@@ -834,83 +911,103 @@ export function DashboardPage() {
 
                       ) : (
 
-                        <div className="space-y-2">
+                        <div className={cn(
+                          isStore && "overflow-x-auto pb-1",
+                        )}>
 
-                          {storeEmployees.map(
-                            (
-                              employee,
-                            ) => {
+                        <div className={cn(
+                          "space-y-2",
+                          isStore && "grid min-w-[54rem] grid-cols-3 gap-3 space-y-0",
+                        )}>
 
-                              const schedule =
-                                storeSchedules.find(
-                                  (
-                                    item,
-                                  ) =>
-                                    item.employeeId ===
-                                    employee.id,
+                          {monitoringDates.map(
+                            (monitoringDate) => {
+                              const storeSchedules =
+                                schedules[
+                                scheduleKey(
+                                  store.id,
+                                  monitoringDate,
                                 )
-
-                              if (
-                                statusFilter !==
-                                "all" &&
-                                schedule?.status !==
-                                statusFilter
-                              ) {
-                                return null
-                              }
+                                ] ?? []
 
                               return (
-
                                 <div
-                                  key={
-                                    employee.id
-                                  }
-                                  className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2"
+                                  key={monitoringDate}
+                                  className={cn(
+                                    "min-w-0 space-y-2",
+                                    isStore && "rounded-lg border border-border bg-muted/20 p-3",
+                                  )}
                                 >
 
-                                  <div>
-
-                                    <p className="text-sm font-medium">
-                                      {
-                                        employee.name ||
-                                        "-"
-                                      }
+                                  {isStore && (
+                                    <p className="text-xs font-semibold text-muted-foreground">
+                                      {formatTanggal(monitoringDate)}
                                     </p>
+                                  )}
 
-                                    <p className="text-xs text-muted-foreground">
-                                      NIK:{" "}
-                                      {
-                                        employee.nik?.trim() ||
-                                        "-"
+                                  {storeEmployees.map(
+                                    (employee) => {
+                                      const schedule =
+                                        storeSchedules.find(
+                                          (item) =>
+                                            item.employeeId ===
+                                            employee.id,
+                                        )
+
+                                      if (
+                                        statusFilter !== "all" &&
+                                        schedule?.status !== statusFilter
+                                      ) {
+                                        return null
                                       }
-                                    </p>
 
-                                    <p className="text-xs text-muted-foreground">
-                                      {
-                                        employee.posisi ||
-                                        "-"
-                                      }
-                                    </p>
+                                      return (
+                                        <div
+                                          key={employee.id}
+                                          className={cn(
+                                            "flex rounded-lg border border-border bg-muted/20 px-3 py-2 transition-colors hover:bg-muted/40",
+                                            isStore
+                                              ? "flex-col items-start gap-2"
+                                              : "items-center justify-between",
+                                          )}
+                                        >
 
-                                  </div>
+                                          <div className="min-w-0">
 
-                                  <span className="text-xs font-medium text-muted-foreground">
+                                            <p className="text-sm font-medium">
+                                              {employee.name || "-"}
+                                            </p>
 
-                                    {
-                                      schedule
-                                        ? STATUS_LABEL[
-                                        schedule.status
-                                        ]
-                                        : "Belum dijadwalkan"
-                                    }
+                                            <p className="text-xs text-muted-foreground">
+                                              NIK: {employee.nik?.trim() || "-"}
+                                            </p>
 
-                                  </span>
+                                            <p className="text-xs text-muted-foreground">
+                                              {employee.posisi || "-"}
+                                            </p>
+
+                                          </div>
+
+                                          <span className={cn(
+                                            "text-xs font-medium text-muted-foreground",
+                                            isStore && "rounded-md bg-card/70 px-2 py-1 whitespace-nowrap",
+                                          )}>
+                                            {schedule
+                                              ? STATUS_LABEL[schedule.status]
+                                              : "Belum dijadwalkan"}
+                                          </span>
+
+                                        </div>
+                                      )
+                                    },
+                                  )}
 
                                 </div>
-
                               )
                             },
                           )}
+
+                        </div>
 
                         </div>
 

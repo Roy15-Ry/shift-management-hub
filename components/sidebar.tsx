@@ -53,8 +53,8 @@ function SidebarContent({
           <CalendarClock className="size-5" />
         </div>
 
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-tight text-white">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold leading-tight text-white">
             SHIFT MANAGEMENT HUB
           </p>
 
