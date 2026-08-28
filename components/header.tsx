@@ -15,7 +15,7 @@ import { useApp } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
 import { PAGE_TITLES } from "@/components/nav-config"
 import { getStore } from "@/lib/data"
-import { logoutUser } from "@/lib/auth"
+import { auth, logoutUser } from "@/lib/auth"
 
 export function Header({ onMenu }: { onMenu: () => void }) {
   const { page, setPage, revisi, pendingRevisiCount } = useApp()
@@ -24,6 +24,8 @@ export function Header({ onMenu }: { onMenu: () => void }) {
   const [notifOpen, setNotifOpen] = React.useState(false)
   const [darkMode, setDarkMode] = React.useState(false)
   const [accountOpen, setAccountOpen] = React.useState(false)
+  const [unitName, setUnitName] =
+    React.useState<string | null>(null)
 
   const notifRef = React.useRef<HTMLDivElement>(null)
   const accountRef = React.useRef<HTMLDivElement>(null)
@@ -31,9 +33,6 @@ export function Header({ onMenu }: { onMenu: () => void }) {
   // ================================
   // DATA AKUN DARI FIRESTORE
   // ================================
-  const accountName =
-    profile?.nama || "CENTRAL PUSAT"
-
   const accountRole =
     profile?.role || "central_pusat"
 
@@ -45,6 +44,141 @@ export function Header({ onMenu }: { onMenu: () => void }) {
         : accountRole === "store"
           ? "STORE"
           : accountRole.toUpperCase()
+
+  const fallbackAccountName =
+    accountRole === "store"
+      ? profile?.namaStore || "STORE"
+      : accountRole === "central_cabang"
+        ? profile?.cabangId || "CENTRAL CABANG"
+        : "CENTRAL PUSAT"
+
+  const accountName =
+    unitName || fallbackAccountName
+
+  const adminName =
+    profile?.nama || "-"
+
+  // ================================
+  // IDENTITAS UNIT AKUN
+  // ================================
+  React.useEffect(() => {
+    let cancelled = false
+
+    async function loadUnitName() {
+      if (
+        !profile ||
+        accountRole === "central_pusat"
+      ) {
+        setUnitName(null)
+        return
+      }
+
+      const currentUser = auth.currentUser
+
+      if (!currentUser) {
+        setUnitName(null)
+        return
+      }
+
+      setUnitName(null)
+
+      try {
+        const idToken =
+          await currentUser.getIdToken()
+
+        if (accountRole === "store") {
+          const response = await fetch(
+            "/api/admin/stores",
+            {
+              headers: {
+                Authorization:
+                  `Bearer ${idToken}`,
+              },
+            },
+          )
+
+          if (!response.ok) {
+            throw new Error(
+              "Gagal mengambil identitas Store.",
+            )
+          }
+
+          const data = await response.json()
+          const store = data.stores?.find(
+            (item: {
+              storeId?: string
+              namaStore?: string
+            }) =>
+              item.storeId ===
+              profile.storeId,
+          )
+
+          if (!cancelled) {
+            setUnitName(
+              store?.namaStore || null,
+            )
+          }
+
+          return
+        }
+
+        if (
+          accountRole === "central_cabang"
+        ) {
+          const response = await fetch(
+            "/api/admin/branches",
+            {
+              headers: {
+                Authorization:
+                  `Bearer ${idToken}`,
+              },
+            },
+          )
+
+          if (!response.ok) {
+            throw new Error(
+              "Gagal mengambil identitas Cabang.",
+            )
+          }
+
+          const data = await response.json()
+          const branch = data.branches?.find(
+            (item: {
+              cabangId?: string
+              nama?: string
+            }) =>
+              item.cabangId ===
+              profile.cabangId,
+          )
+
+          if (!cancelled) {
+            setUnitName(
+              branch?.nama || null,
+            )
+          }
+        }
+      } catch (error) {
+        console.error(
+          "Gagal mengambil identitas unit akun:",
+          error,
+        )
+
+        if (!cancelled) {
+          setUnitName(null)
+        }
+      }
+    }
+
+    loadUnitName()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    accountRole,
+    profile?.storeId,
+    profile?.cabangId,
+  ])
 
   // ================================
   // MEMBACA TEMA YANG TERSIMPAN
@@ -350,7 +484,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                   </p>
 
                   <p className="text-sm font-semibold text-foreground">
-                    {accountName}
+                    {adminName}
                   </p>
                 </div>
 
