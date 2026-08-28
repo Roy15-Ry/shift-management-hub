@@ -21,9 +21,10 @@ export type FirestoreStore = {
 
 export type FirestoreEmployee = {
   id: string
-  nama: string
+  name: string
   nik: string
   storeId: string
+  cabangId: string
   posisi: string
   aktif: boolean
 }
@@ -31,6 +32,7 @@ export type FirestoreEmployee = {
 export type FirestoreSchedule = {
   id: string
   storeId: string
+  cabangId: string
   employeeId: string
   tanggal: string
   status:
@@ -151,6 +153,7 @@ export async function getFirestoreStores(
 
 export async function getFirestoreEmployees(
   storeId: string,
+  cabangId?: string,
 ): Promise<FirestoreEmployee[]> {
   const employeesRef =
     collection(
@@ -158,26 +161,48 @@ export async function getFirestoreEmployees(
       "employees",
     )
 
-  const q = query(
-    employeesRef,
-    where(
-      "storeId",
-      "==",
-      storeId,
-    ),
-  )
+  const q = cabangId
+    ? query(
+      employeesRef,
+      where(
+        "storeId",
+        "==",
+        storeId,
+      ),
+      where(
+        "cabangId",
+        "==",
+        cabangId,
+      ),
+    )
+    : query(
+      employeesRef,
+      where(
+        "storeId",
+        "==",
+        storeId,
+      ),
+    )
 
   const snapshot =
     await getDocs(q)
 
   return snapshot.docs.map(
-    (doc) => ({
-      id: doc.id,
-      ...(doc.data() as Omit<
-        FirestoreEmployee,
-        "id"
-      >),
-    }),
+    (doc) => {
+      const data = doc.data()
+
+      return {
+        id: doc.id,
+        ...(data as Omit<
+          FirestoreEmployee,
+          "id" | "name"
+        >),
+        name:
+          data.name ??
+          data.nama ??
+          "-",
+      }
+    },
   )
 }
 
@@ -188,6 +213,7 @@ export async function getFirestoreEmployees(
 export async function getFirestoreSchedules(
   storeId: string,
   tanggal: string,
+  cabangId?: string,
 ): Promise<FirestoreSchedule[]> {
   const schedulesRef =
     collection(
@@ -195,19 +221,38 @@ export async function getFirestoreSchedules(
       "schedules",
     )
 
-  const q = query(
-    schedulesRef,
-    where(
-      "storeId",
-      "==",
-      storeId,
-    ),
-    where(
-      "tanggal",
-      "==",
-      tanggal,
-    ),
-  )
+  const q = cabangId
+    ? query(
+      schedulesRef,
+      where(
+        "storeId",
+        "==",
+        storeId,
+      ),
+      where(
+        "tanggal",
+        "==",
+        tanggal,
+      ),
+      where(
+        "cabangId",
+        "==",
+        cabangId,
+      ),
+    )
+    : query(
+      schedulesRef,
+      where(
+        "storeId",
+        "==",
+        storeId,
+      ),
+      where(
+        "tanggal",
+        "==",
+        tanggal,
+      ),
+    )
 
   const snapshot =
     await getDocs(q)

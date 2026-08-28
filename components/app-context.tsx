@@ -113,8 +113,9 @@ export function AppProvider({
 
         // ====================================================
         // CENTRAL CABANG
-        // Untuk sementara ambil berdasarkan daftar store
-        // pada cabang tersebut.
+        // Query harus dibatasi cabang agar dapat dibuktikan
+        // oleh Firestore Rules. Setiap dokumen revisi harus
+        // menyimpan cabangId yang sesuai dengan Store-nya.
         // ====================================================
 
         else if (
@@ -122,49 +123,14 @@ export function AppProvider({
             "central_cabang" &&
           profile.cabangId
         ) {
-          const storesSnapshot =
-            await getDocs(
-              query(
-                collection(
-                  db,
-                  "stores",
-                ),
-                where(
-                  "cabangId",
-                  "==",
-                  profile.cabangId,
-                ),
-                where(
-                  "aktif",
-                  "==",
-                  true,
-                ),
-              ),
-            )
-
-          const storeIds =
-            storesSnapshot.docs.map(
-              (item) => item.id,
-            )
-
-          if (
-            storeIds.length === 0
-          ) {
-            setRevisi([])
-            return
-          }
-
           snapshot =
             await getDocs(
               query(
                 revisiRef,
                 where(
-                  "storeId",
-                  "in",
-                  storeIds.slice(
-                    0,
-                    10,
-                  ),
+                  "cabangId",
+                  "==",
+                  profile.cabangId,
                 ),
               ),
             )

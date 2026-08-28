@@ -4,6 +4,7 @@ import * as React from "react"
 import { RotateCcw, Store as StoreIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/ui/toast"
 import { useAuth } from "@/components/auth-context"
 
 import {
@@ -86,6 +87,13 @@ const summaryMeta: {
 
 export function DashboardPage() {
   const { profile } = useAuth()
+  const { showToast } = useToast()
+  const showToastRef =
+    React.useRef(showToast)
+
+  React.useEffect(() => {
+    showToastRef.current = showToast
+  }, [showToast])
 
   const [date, setDate] =
     React.useState(DEFAULT_DATE)
@@ -141,6 +149,8 @@ export function DashboardPage() {
 
   React.useEffect(() => {
     async function loadData() {
+      let accessibleStores: FirestoreStore[] = []
+
       try {
         setLoading(true)
 
@@ -161,8 +171,7 @@ export function DashboardPage() {
         // FILTER STORE SESUAI ROLE
         // ------------------------------------------------------
 
-        let accessibleStores =
-          activeStores
+        accessibleStores = activeStores
 
         // STORE
         if (
@@ -217,10 +226,29 @@ export function DashboardPage() {
         setStores(accessibleStores)
         console.log("DASHBOARD STORES:", accessibleStores)
 
-        // ------------------------------------------------------
-        // LOAD EMPLOYEE + SCHEDULE
-        // ------------------------------------------------------
+      } catch (error) {
+        console.error(
+          "Gagal mengambil data toko Dashboard:",
+          error,
+        )
 
+        setStores([])
+        setEmployees([])
+        setSchedules({})
+        showToastRef.current(
+          "error",
+          "Data toko gagal dimuat",
+          "Silakan coba lagi.",
+        )
+        setLoading(false)
+        return
+      }
+
+      // ------------------------------------------------------
+      // LOAD EMPLOYEE + SCHEDULE
+      // ------------------------------------------------------
+
+      try {
         const allEmployees: FirestoreEmployee[] =
           []
 
@@ -236,9 +264,15 @@ export function DashboardPage() {
         for (
           const store of accessibleStores
         ) {
+          const cabangId =
+            isCentralCabang
+              ? profile?.cabangId
+              : undefined
+
           const storeEmployees =
             await getFirestoreEmployees(
               store.id,
+              cabangId,
             )
 
           allEmployees.push(
@@ -252,6 +286,7 @@ export function DashboardPage() {
             await getFirestoreSchedules(
               store.id,
               date,
+              cabangId,
             )
         }
 
@@ -269,16 +304,20 @@ export function DashboardPage() {
         )
       } catch (error) {
         console.error(
-          "Gagal mengambil data Dashboard:",
+          "Gagal mengambil data karyawan atau jadwal Dashboard:",
           error,
         )
 
-        setStores([])
         setEmployees([])
         setSchedules({})
-      } finally {
-        setLoading(false)
+        showToastRef.current(
+          "error",
+          "Data jadwal belum dapat dimuat",
+          "Daftar toko tetap ditampilkan. Silakan coba lagi.",
+        )
       }
+
+      setLoading(false)
     }
 
     if (profile) {
@@ -833,7 +872,7 @@ export function DashboardPage() {
 
                                     <p className="text-sm font-medium">
                                       {
-                                        employee.nama ||
+                                        employee.name ||
                                         "-"
                                       }
                                     </p>
