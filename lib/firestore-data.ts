@@ -267,3 +267,51 @@ export async function getFirestoreSchedules(
     }),
   )
 }
+
+// ============================================================
+// MONTHLY SCHEDULES
+// ============================================================
+
+export async function getFirestoreMonthlySchedules(
+  storeId: string,
+  year: number,
+  month: number,
+): Promise<FirestoreSchedule[]> {
+  const schedulesRef =
+    collection(
+      db,
+      "schedules",
+    )
+
+  const snapshot =
+    await getDocs(
+      query(
+        schedulesRef,
+        where(
+          "storeId",
+          "==",
+          storeId,
+        ),
+      ),
+    )
+
+  const monthPrefix =
+    `${year}-${String(month + 1).padStart(2, "0")}-`
+
+  return snapshot.docs
+    .map(
+      (doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<
+          FirestoreSchedule,
+          "id"
+        >),
+      }),
+    )
+    .filter(
+      (schedule) =>
+        schedule.tanggal?.startsWith(
+          monthPrefix,
+        ),
+    )
+}

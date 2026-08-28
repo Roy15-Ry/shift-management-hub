@@ -10,6 +10,7 @@ import { useAuth } from "@/components/auth-context"
 import { DesktopSidebar, MobileSidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { DashboardPage } from "@/components/pages/dashboard"
+import { BuatJadwalPage } from "@/components/pages/buat-jadwal"
 import { PengaturanPage } from "@/components/pages/pengaturan"
 import { RevisiPage } from "@/components/pages/revisi"
 import { ShiftPage } from "@/components/pages/shift"
@@ -51,6 +52,8 @@ function PageContent() {
   switch (page) {
     case "dashboard":
       return <DashboardPage />
+    case "buat-jadwal":
+      return <BuatJadwalPage />
 
     case "manajemen-akun":
       return <ManajemenAkunPage />
