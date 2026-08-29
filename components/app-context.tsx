@@ -6,8 +6,6 @@ import {
   getDocs,
   query,
   where,
-  doc,
-  updateDoc,
 } from "firebase/firestore"
 
 import { db } from "@/lib/firebase"
@@ -17,6 +15,15 @@ import type {
   Revisi,
   RevisiStatus,
 } from "@/lib/data"
+
+export type CreateRevisiPayload = {
+  tanggal: string
+  employeeId: string
+  employeeName: string
+  jenisRevisi: string
+  jenisRevisiLainnya?: string
+  keterangan: string
+}
 
 export type PageKey =
   | "dashboard"
@@ -37,6 +44,18 @@ type AppContextValue = {
 
   refreshRevisi: () => Promise<void>
   advanceRevisi: (id: string) => Promise<void>
+
+  advanceAllRevisi: (
+    storeId: string,
+    to: "PROSES" | "SELESAI",
+  ) => Promise<number>
+  isBatchProcessing: boolean
+
+  createRevisi: (
+    payload: CreateRevisiPayload,
+  ) => Promise<void>
+
+  isCreatingRevisi: boolean
 
   pendingRevisiCount: number
 
@@ -61,7 +80,7 @@ export function AppProvider({
 }: {
   children: React.ReactNode
 }) {
-  const { profile, loading: authLoading } =
+  const { profile, loading: authLoading, user } =
     useAuth()
 
   const [page, setPage] =
@@ -72,6 +91,12 @@ export function AppProvider({
 
   const [loadingRevisi, setLoadingRevisi] =
     React.useState(true)
+
+  const [isCreatingRevisi, setIsCreatingRevisi] =
+    React.useState(false)
+
+  const [isBatchProcessing, setIsBatchProcessing] =
+    React.useState(false)
 
   const [sidebarCollapsed, setSidebarCollapsed] =
     React.useState(false)
@@ -211,18 +236,51 @@ export function AppProvider({
           return
         }
 
-        try {
-          await updateDoc(
-            doc(
-              db,
-              "revisi",
-              id,
-            ),
-            {
-              status:
-                nextStatus,
-            },
+        if (!user) {
+          throw new Error(
+            "Anda harus login terlebih dahulu.",
           )
+        }
+
+        try {
+          const idToken =
+            await user.getIdToken()
+
+          const response =
+            await fetch(
+              "/api/revisi",
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify(
+                  {
+                    id,
+                    status:
+                      nextStatus,
+                  },
+                ),
+              },
+            )
+
+          const result =
+            (await response.json()) as {
+              success?: boolean
+              message?: string
+            }
+
+          if (
+            !response.ok ||
+            !result?.success
+          ) {
+            throw new Error(
+              result?.message ??
+                "Gagal memperbarui revisi.",
+            )
+          }
 
           setRevisi(
             (prev) =>
@@ -246,7 +304,137 @@ export function AppProvider({
           throw error
         }
       },
-      [revisi],
+      [revisi, user],
+    )
+
+  const createRevisi =
+    React.useCallback(
+      async (payload: CreateRevisiPayload) => {
+        if (!user) {
+          throw new Error(
+            "Anda harus login terlebih dahulu.",
+          )
+        }
+
+        setIsCreatingRevisi(true)
+
+        try {
+          const idToken =
+            await user.getIdToken()
+
+          const response =
+            await fetch(
+              "/api/revisi",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify(
+                  payload,
+                ),
+              },
+            )
+
+          const result =
+            (await response.json()) as {
+              success?: boolean
+              message?: string
+            }
+
+          if (
+            !response.ok ||
+            !result?.success
+          ) {
+            throw new Error(
+              result?.message ??
+                "Pengajuan revisi gagal.",
+            )
+          }
+
+          await refreshRevisi()
+        } catch (error) {
+          console.error(
+            "Gagal membuat revisi:",
+            error,
+          )
+
+          throw error
+        } finally {
+          setIsCreatingRevisi(false)
+        }
+      },
+      [user, refreshRevisi],
+    )
+
+  const advanceAllRevisi =
+    React.useCallback(
+      async (
+        storeId: string,
+        to: "PROSES" | "SELESAI",
+      ) => {
+        if (!user) {
+          throw new Error(
+            "Anda harus login terlebih dahulu.",
+          )
+        }
+
+        setIsBatchProcessing(true)
+
+        try {
+          const idToken =
+            await user.getIdToken()
+
+          const response =
+            await fetch(
+              "/api/revisi/batch",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify(
+                  { to, storeId },
+                ),
+              },
+            )
+
+          const result =
+            (await response.json()) as {
+              success?: boolean
+              message?: string
+              processed?: number
+            }
+
+          if (
+            !response.ok ||
+            !result?.success
+          ) {
+            throw new Error(
+              result?.message ??
+                "Aksi massal gagal.",
+            )
+          }
+
+          await refreshRevisi()
+
+          return result?.processed ?? 0
+        } catch (error) {
+          console.error(
+            "Gagal memproses revisi massal:",
+            error,
+          )
+
+          throw error
+        } finally {
+          setIsBatchProcessing(false)
+        }
+      },
+      [user, refreshRevisi],
     )
 
   const pendingRevisiCount =
@@ -269,6 +457,12 @@ export function AppProvider({
 
     refreshRevisi,
     advanceRevisi,
+
+    advanceAllRevisi,
+    isBatchProcessing,
+
+    createRevisi,
+    isCreatingRevisi,
 
     pendingRevisiCount,
 

@@ -785,16 +785,100 @@ export type RevisiStatus =
   | "PROSES"
   | "SELESAI"
 
+// ============================================================
+// JENIS REVISI ABSENSI
+// ============================================================
+
+export const REVISI_JENIS_LAINNYA = "lainnya"
+
+export type RevisiJenis =
+  | "tukar_shift"
+  | "lupa_absen_masuk"
+  | "lupa_absen_pulang"
+  | "sistem_error"
+  | "perubahan_kehadiran"
+  | "penyesuaian_jam"
+  | "lainnya"
+
+export const REVISI_JENIS_ITEMS: {
+  value: RevisiJenis
+  label: string
+  description: string
+}[] = [
+  {
+    value: "tukar_shift",
+    label: "Tukar Shift",
+    description:
+      "Karyawan bertukar jadwal shift dengan karyawan lain.",
+  },
+  {
+    value: "lupa_absen_masuk",
+    label: "Lupa Absen Masuk",
+    description:
+      "Karyawan lupa melakukan absensi saat masuk kerja.",
+  },
+  {
+    value: "lupa_absen_pulang",
+    label: "Lupa Absen Pulang",
+    description:
+      "Karyawan lupa melakukan absensi saat selesai bekerja.",
+  },
+  {
+    value: "sistem_error",
+    label: "Tidak Bisa Absen — Sistem Error",
+    description:
+      "Karyawan tidak dapat melakukan absensi karena kendala sistem, perangkat, jaringan, atau kendala teknis lainnya.",
+  },
+  {
+    value: "perubahan_kehadiran",
+    label: "Perubahan Status Kehadiran",
+    description:
+      "Digunakan apabila status kehadiran berubah, misalnya menjadi izin, sakit, cuti, libur, atau kondisi lainnya.",
+  },
+  {
+    value: "penyesuaian_jam",
+    label: "Penyesuaian Jam Kerja",
+    description:
+      "Digunakan apabila terdapat kegiatan atau kondisi khusus yang menyebabkan jam masuk atau jam pulang berbeda dari jadwal normal.",
+  },
+  {
+    value: "lainnya",
+    label: "Lainnya",
+    description:
+      "Untuk kejadian yang tidak termasuk dalam pilihan yang tersedia.",
+  },
+]
+
+export function getRevisiJenisItem(
+  value?: string | null,
+) {
+  return REVISI_JENIS_ITEMS.find(
+    (item) =>
+      item.value === value,
+  )
+}
+
 export type Revisi = {
   id: string
   storeId: string
+  cabangId?: string
+  storeName?: string
+  employeeId?: string
   employeeName: string
   tanggal: string
-  shiftSebelumnya: ShiftStatus
-  statusBaru: ShiftStatus
+  jenisRevisi?: string
+  jenisRevisiLainnya?: string
+  jadwalShift?: ShiftStatus
+  // Bidang legacy (tidak dipakai formulir baru, dipertahankan
+  // agar data lama tetap terbaca).
+  shiftSebelumnya?: ShiftStatus
+  statusBaru?: ShiftStatus
+  alasan?: string
   keterangan: string
   tanggalPengajuan: string
   status: RevisiStatus
+  prosesAt?: string
+  prosesOleh?: string
 }
 
 let revisiSeq = 0

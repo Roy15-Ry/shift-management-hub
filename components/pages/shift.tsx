@@ -6,15 +6,16 @@ import { Segmented, DateField, Field } from "@/components/controls"
 import { StoreDayCard } from "@/components/store-day"
 import type { UserOptions as AutoTableUserOptions } from "jspdf-autotable"
 import {
-  STATUS_LABEL,
-  STATUS_ORDER,
   daysInMonth,
   employeesByStore,
   getEmployeeStatus,
   monthName,
   stores,
-  type ShiftStatus,
 } from "@/lib/data"
+import {
+  SHIFT_STATUS_ITEMS,
+  getShiftStatusItem,
+} from "@/lib/shift-status"
 import { cn } from "@/lib/utils"
 
 import { useAuth } from "@/components/auth-context"
@@ -31,49 +32,9 @@ import {
 
 // ============================================================
 // KODE WARNA & STATUS (dipakai Central maupun Store)
+//
+// Warna/label bersumber dari lib/shift-status agar konsisten.
 // ============================================================
-
-const cellColor: Record<ShiftStatus, string> = {
-  shift_pagi: "bg-status-pagi-bg text-status-pagi",
-  shift_siang: "bg-status-siang-bg text-status-siang",
-  libur: "bg-status-libur-bg text-status-libur",
-  cuti: "bg-status-cuti-bg text-status-cuti",
-  izin: "bg-status-izin-bg text-status-izin",
-  sakit: "bg-status-sakit-bg text-status-sakit",
-}
-
-const cellLetter: Record<ShiftStatus, string> = {
-  shift_pagi: "P",
-  shift_siang: "S",
-  libur: "L",
-  cuti: "C",
-  izin: "I",
-  sakit: "K",
-}
-
-const dotColor: Record<ShiftStatus, string> = {
-  shift_pagi: "bg-status-pagi",
-  shift_siang: "bg-status-siang",
-  libur: "bg-status-libur",
-  cuti: "bg-status-cuti",
-  izin: "bg-status-izin",
-  sakit: "bg-status-sakit",
-}
-
-// ============================================================
-// SHIFT STORE (JADWAL SHIFT) — READ-ONLY
-// ============================================================
-
-const STORE_SHIFT_OPTIONS = [
-  { code: "P", status: "shift_pagi", label: "SHIFT PAGI", className: "bg-amber-500 text-white ring-amber-500/30" },
-  { code: "S", status: "shift_siang", label: "SHIFT SIANG", className: "bg-blue-600 text-white ring-blue-600/30" },
-  { code: "OFF", status: "libur", label: "OFF", className: "bg-red-600 text-white ring-red-600/30" },
-  { code: "C", status: "cuti", label: "CUTI", className: "bg-emerald-600 text-white ring-emerald-600/30" },
-  { code: "I", status: "izin", label: "IZIN", className: "bg-violet-600 text-white ring-violet-600/30" },
-  { code: "K", status: "sakit", label: "SAKIT", className: "bg-rose-900 text-white ring-rose-900/30" },
-] as const
-
-type StoreScheduleStatus = (typeof STORE_SHIFT_OPTIONS)[number]["status"]
 
 const monthFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
 const weekdayFormatter = new Intl.DateTimeFormat("id-ID", { weekday: "short" })
@@ -87,7 +48,7 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 function getStoreShiftOption(status?: string | null) {
-  return STORE_SHIFT_OPTIONS.find((option) => option.status === status)
+  return getShiftStatusItem(status)
 }
 
 function slugifyStoreName(name: string) {
@@ -286,7 +247,7 @@ function StoreJadwalShift() {
                     return (
                       <th
                         key={day}
-                        className="min-w-8 overflow-hidden border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0"
+                        className="min-w-9 overflow-hidden border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0 md:min-w-12"
                       >
                         <span className="block truncate text-[0.7rem] leading-tight text-foreground md:text-sm">{day}</span>
                         <span className="block truncate text-[0.5rem] uppercase leading-tight md:text-[0.65rem]">
@@ -318,13 +279,13 @@ function StoreJadwalShift() {
                       return (
                         <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                           <span
-                            title={option?.label ?? "Belum dijadwalkan"}
+                            title={option?.title ?? "Belum dijadwalkan"}
                             className={cn(
-                              "flex h-5 w-full items-center justify-center overflow-hidden rounded text-[0.55rem] font-bold ring-1 md:mx-auto md:h-7 md:w-7 md:rounded-md md:text-[0.7rem]",
+                              "flex h-5 items-center justify-center truncate rounded px-0.5 text-[0.55rem] font-bold ring-1 md:mx-auto md:h-6 md:min-w-11 md:px-1 md:text-[0.62rem] md:whitespace-nowrap",
                               option ? option.className : "bg-background text-muted-foreground ring-border",
                             )}
                           >
-                            {option?.code ?? "-"}
+                            {option?.label ?? "-"}
                           </span>
                         </td>
                       )
@@ -345,19 +306,17 @@ function StoreJadwalShift() {
             KETERANGAN STATUS
           </p>
           <div className="flex flex-wrap gap-x-5 gap-y-2.5">
-            {STORE_SHIFT_OPTIONS.map((option) => (
+            {SHIFT_STATUS_ITEMS.map((option) => (
               <span key={option.status} className="flex items-center gap-2 text-sm">
                 <span
                   className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ring-1",
+                    "flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
                     option.className,
                   )}
                 >
-                  {option.code}
+                  {option.label}
                 </span>
-                <span className="text-muted-foreground">
-                  {option.status === "libur" ? "LIBUR" : option.label}
-                </span>
+                <span className="text-muted-foreground">{option.title}</span>
               </span>
             ))}
           </div>
@@ -374,18 +333,18 @@ function StoreJadwalShift() {
 function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      {STATUS_ORDER.map((s) => (
-        <div key={s} className="flex items-center gap-1.5">
+      {SHIFT_STATUS_ITEMS.map((item) => (
+        <div key={item.status} className="flex items-center gap-1.5">
           <span
             className={cn(
-              "flex size-5 items-center justify-center rounded text-[0.65rem] font-bold",
-              cellColor[s],
+              "flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
+              item.className,
             )}
           >
-            {cellLetter[s]}
+            {item.label}
           </span>
           <span className="text-xs text-muted-foreground">
-            {STATUS_LABEL[s]}
+            {item.title}
           </span>
         </div>
       ))}
@@ -453,8 +412,8 @@ function MonthlyView() {
                       {dayList.map((d) => (
                         <th
                           key={d}
-                          className="border-b border-border px-0 py-2 text-center text-[0.7rem] font-medium text-muted-foreground"
-                          style={{ minWidth: 30 }}
+                          className="border-b border-border px-0.5 py-2 text-center text-[0.7rem] font-medium text-muted-foreground"
+                          style={{ minWidth: 44 }}
                         >
                           {d}
                         </th>
@@ -470,19 +429,20 @@ function MonthlyView() {
                         {dayList.map((d) => {
                           const iso = `${year}-08-${String(d).padStart(2, "0")}`
                           const status = getEmployeeStatus(e, iso)
+                          const item = getShiftStatusItem(status)
                           return (
                             <td
                               key={d}
                               className="border-b border-border/50 p-0.5 text-center"
                             >
                               <span
-                                title={STATUS_LABEL[status]}
+                                title={item?.title ?? "Belum dijadwalkan"}
                                 className={cn(
-                                  "mx-auto flex size-6 items-center justify-center rounded text-[0.65rem] font-bold",
-                                  cellColor[status],
+                                  "mx-auto flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded text-[0.6rem] font-bold ring-1",
+                                  item?.className ?? "bg-background text-muted-foreground ring-border",
                                 )}
                               >
-                                {cellLetter[status]}
+                                {item?.label ?? "-"}
                               </span>
                             </td>
                           )
@@ -512,11 +472,18 @@ function DailyView() {
           </Field>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {STATUS_ORDER.map((s) => (
-            <div key={s} className="flex items-center gap-1.5">
-              <span className={cn("size-2 rounded-full", dotColor[s])} />
+          {SHIFT_STATUS_ITEMS.map((item) => (
+            <div key={item.status} className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "flex h-5 min-w-7 items-center justify-center whitespace-nowrap rounded px-1 text-[0.6rem] font-bold ring-1",
+                  item.className,
+                )}
+              >
+                {item.label}
+              </span>
               <span className="text-xs text-muted-foreground">
-                {STATUS_LABEL[s]}
+                {item.title}
               </span>
             </div>
           ))}

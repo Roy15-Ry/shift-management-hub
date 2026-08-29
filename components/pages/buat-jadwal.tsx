@@ -15,15 +15,10 @@ import {
   type FirestoreStore,
 } from "@/lib/firestore-data"
 import { cn } from "@/lib/utils"
-
-const SHIFT_OPTIONS = [
-  { code: "P", status: "shift_pagi", label: "SHIFT PAGI", className: "bg-amber-500 text-white ring-amber-500/30" },
-  { code: "S", status: "shift_siang", label: "SHIFT SIANG", className: "bg-blue-600 text-white ring-blue-600/30" },
-  { code: "OFF", status: "libur", label: "OFF", className: "bg-red-600 text-white ring-red-600/30" },
-  { code: "C", status: "cuti", label: "CUTI", className: "bg-emerald-600 text-white ring-emerald-600/30" },
-  { code: "I", status: "izin", label: "IZIN", className: "bg-violet-600 text-white ring-violet-600/30" },
-  { code: "K", status: "sakit", label: "SAKIT", className: "bg-rose-900 text-white ring-rose-900/30" },
-] as const
+import {
+  SHIFT_STATUS_ITEMS as SHIFT_OPTIONS,
+  type ShiftStatusItem,
+} from "@/lib/shift-status"
 
 type ScheduleStatus = (typeof SHIFT_OPTIONS)[number]["status"]
 type SchedulePhase = "Belum dibuat" | "Draft" | "Selesai"
@@ -61,7 +56,7 @@ function getDaysInMonth(year: number, month: number) {
   return Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1)
 }
 
-function getShiftOption(status?: string | null) {
+function getShiftOption(status?: string | null): ShiftStatusItem | undefined {
   return SHIFT_OPTIONS.find((option) => option.status === status)
 }
 
@@ -659,8 +654,8 @@ export function BuatJadwalPage() {
                     const isActive = activeCell?.employeeId === employee.id && activeCell.tanggal === tanggal
                     const title = option
                       ? option.status === "cuti" && value?.cutiJenis
-                        ? `${option.label} — ${value.cutiJenis}`
-                        : option.label
+                        ? `${option.title} — ${value.cutiJenis}`
+                        : option.title
                       : "Belum dijadwalkan"
 
                     if (isLocked) {
@@ -669,11 +664,11 @@ export function BuatJadwalPage() {
                           <span
                             title={title}
                             className={cn(
-                              "mx-auto flex size-7 items-center justify-center rounded-md text-xs font-bold ring-1",
+                              "mx-auto flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
                               option ? option.className : "bg-background text-muted-foreground ring-border",
                             )}
                           >
-                            {option?.code ?? "-"}
+                            {option?.label ?? "-"}
                           </span>
                         </td>
                       )
@@ -690,12 +685,12 @@ export function BuatJadwalPage() {
                             setActiveCell({ employeeId: employee.id, tanggal, x: rect.left, y: rect.bottom })
                           }}
                           className={cn(
-                            "mx-auto flex size-7 items-center justify-center rounded-md text-xs font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "mx-auto flex h-7 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             option ? option.className : "bg-background text-muted-foreground ring-border",
                             isActive && "ring-2 ring-ring",
                           )}
                         >
-                          {option?.code ?? "-"}
+                          {option?.label ?? "-"}
                         </button>
                       </td>
                     )
@@ -719,15 +714,13 @@ export function BuatJadwalPage() {
               <span key={option.status} className="flex items-center gap-2 text-sm">
                 <span
                   className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ring-1",
+                    "flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
                     option.className,
                   )}
                 >
-                  {option.code}
+                  {option.label}
                 </span>
-                <span className="text-muted-foreground">
-                  {option.status === "libur" ? "LIBUR" : option.label}
-                </span>
+                <span className="text-muted-foreground">{option.title}</span>
               </span>
             ))}
           </div>

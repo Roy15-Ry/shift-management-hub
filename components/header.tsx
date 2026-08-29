@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
 import { PAGE_TITLES } from "@/components/nav-config"
-import { getStore } from "@/lib/data"
+import { getRevisiJenisItem, getStore } from "@/lib/data"
 import { auth, logoutUser } from "@/lib/auth"
 
 export function Header({ onMenu }: { onMenu: () => void }) {
@@ -35,6 +35,12 @@ export function Header({ onMenu }: { onMenu: () => void }) {
   // ================================
   const accountRole =
     profile?.role || "central_pusat"
+
+  // Store BUKAN penerima notifikasi Revisi Absensi.
+  // Notifikasi hanya untuk Central Cabang + Central Pusat.
+  const isCentralNotif =
+    accountRole === "central_cabang" ||
+    accountRole === "central_pusat"
 
   const accountRoleLabel =
     accountRole === "central_pusat"
@@ -304,8 +310,9 @@ export function Header({ onMenu }: { onMenu: () => void }) {
       <div className="ml-auto flex items-center gap-2 md:gap-3">
 
         {/* ================================
-            NOTIFICATION
+            NOTIFICATION (Central saja - Store bukan penerima)
         ================================= */}
+        {isCentralNotif && (
         <div
           className="relative"
           ref={notifRef}
@@ -369,12 +376,14 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">
                           Revisi Absensi &middot;{" "}
-                          {getStore(r.storeId)?.name}
+                          {r.storeName || getStore(r.storeId)?.name}
                         </p>
 
                         <p className="truncate text-xs text-muted-foreground">
-                          {r.employeeName} — {r.keterangan} (
-                          {r.status})
+                          {r.employeeName} —{" "}
+                          {getRevisiJenisItem(r.jenisRevisi)?.label ||
+                            r.keterangan}{" "}
+                          ({r.status})
                         </p>
                       </div>
                     </div>
@@ -396,6 +405,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
             </div>
           )}
         </div>
+        )}
 
         {/* ================================
             DARK MODE
