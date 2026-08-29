@@ -39,6 +39,9 @@ type AppContextValue = {
   advanceRevisi: (id: string) => Promise<void>
 
   pendingRevisiCount: number
+
+  sidebarCollapsed: boolean
+  toggleSidebar: () => void
 }
 
 const AppContext =
@@ -69,6 +72,14 @@ export function AppProvider({
 
   const [loadingRevisi, setLoadingRevisi] =
     React.useState(true)
+
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    React.useState(false)
+
+  const toggleSidebar = React.useCallback(
+    () => setSidebarCollapsed((c) => !c),
+    [],
+  )
 
   const refreshRevisi =
     React.useCallback(async () => {
@@ -260,6 +271,9 @@ export function AppProvider({
     advanceRevisi,
 
     pendingRevisiCount,
+
+    sidebarCollapsed,
+    toggleSidebar,
   }
 
   return (

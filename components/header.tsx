@@ -18,7 +18,7 @@ import { getStore } from "@/lib/data"
 import { auth, logoutUser } from "@/lib/auth"
 
 export function Header({ onMenu }: { onMenu: () => void }) {
-  const { page, setPage, revisi, pendingRevisiCount } = useApp()
+  const { page, setPage, revisi, pendingRevisiCount, sidebarCollapsed, toggleSidebar } = useApp()
   const { profile } = useAuth()
 
   const [notifOpen, setNotifOpen] = React.useState(false)
@@ -256,6 +256,28 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md transition-colors duration-300 md:px-6">
+
+      {/* ================================
+          DESKTOP SIDEBAR TOGGLE
+          (hide/show sidebar pada layar normal)
+      ================================= */}
+      <button
+        type="button"
+        onClick={toggleSidebar}
+        aria-label={
+          sidebarCollapsed
+            ? "Tampilkan sidebar"
+            : "Sembunyikan sidebar"
+        }
+        title={
+          sidebarCollapsed
+            ? "Tampilkan sidebar"
+            : "Sembunyikan sidebar"
+        }
+        className="hidden size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-muted lg:inline-flex"
+      >
+        <Menu className="size-5" />
+      </button>
 
       {/* ================================
           MOBILE MENU

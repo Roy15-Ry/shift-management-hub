@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, FileDown } from "lucide-react"
+import { ChevronLeft, ChevronRight, LockKeyhole } from "lucide-react"
 
 import { useAuth } from "@/components/auth-context"
 import { EmptyState, LoadingState } from "@/components/controls"
@@ -28,6 +28,20 @@ const SHIFT_OPTIONS = [
 type ScheduleStatus = (typeof SHIFT_OPTIONS)[number]["status"]
 type SchedulePhase = "Belum dibuat" | "Draft" | "Selesai"
 
+type CellValue = {
+  status: ScheduleStatus
+  cutiJenis?: string
+}
+
+const CUTI_TYPES = [
+  "Cuti Tahunan",
+  "Cuti Menikah",
+  "Cuti Melahirkan",
+  "Cuti Haid",
+  "Cuti Kematian",
+  "Cuti Haji / Umrah",
+]
+
 const monthFormatter = new Intl.DateTimeFormat("id-ID", {
   month: "long",
   year: "numeric",
@@ -50,6 +64,47 @@ function getDaysInMonth(year: number, month: number) {
 function getShiftOption(status?: string | null) {
   return SHIFT_OPTIONS.find((option) => option.status === status)
 }
+
+// ============================================================
+// PENYIMPANAN DRAFT LOKAL (localStorage)
+//
+// Perubahan status hanya disimpan di browser. Tidak ada write
+// ke Firebase saat pengguna sekadar memilih/mengubah sel.
+// ============================================================
+
+function cellDraftKey(storeId: string, year: number, month: number) {
+  return `buat-jadwal-draft:${storeId}:${year}-${String(month + 1).padStart(2, "0")}`
+}
+
+function loadLocalCells(key: string): Record<string, CellValue> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as Record<string, CellValue>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistLocalCells(key: string, cells: Record<string, CellValue>) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(cells))
+  } catch {
+    // simpanan lokal gagal — abaikan, tidak menghalangi editing.
+  }
+}
+
+function clearLocalCells(key: string) {
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // abaikan
+  }
+}
+
+// ============================================================
+// POPOVER PILIH STATUS (compact)
+// ============================================================
 
 function ShiftPopover(props: {
   x: number
@@ -90,28 +145,98 @@ function ShiftPopover(props: {
       ref={ref}
       role="dialog"
       aria-label="Pilih status shift"
-      className="fixed z-50 rounded-lg border border-border bg-card p-2 shadow-lg"
+      className="fixed z-50 rounded-lg border border-border bg-card p-1.5 shadow-lg"
       style={{ top: pos.top, left: pos.left }}
     >
-      <div className="space-y-1">
+      <div className="flex gap-1">
         {SHIFT_OPTIONS.map((option) => (
           <button
             key={option.status}
             type="button"
+            title={option.label}
+            aria-label={option.label}
             onClick={() => onSelect(option.status)}
             className={cn(
-              "flex w-48 items-center justify-center rounded-md px-3 py-2.5 text-sm font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex size-9 items-center justify-center rounded-md text-xs font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               option.className,
               currentStatus === option.status && "ring-2 ring-ring",
             )}
           >
-            {option.label}
+            {option.code}
           </button>
         ))}
       </div>
     </div>
   )
 }
+
+// ============================================================
+// POPOVER PILIH JENIS CUTI (kecil, dekat sel)
+// ============================================================
+
+function CutiPopover(props: {
+  x: number
+  y: number
+  onSelect: (cutiJenis: string) => void
+  onClose: () => void
+}) {
+  const { x, y, onSelect, onClose } = props
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ top: y, left: x })
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const margin = 8
+    const rect = node.getBoundingClientRect()
+    const maxLeft = window.innerWidth - rect.width - margin
+    const maxTop = window.innerHeight - rect.height - margin
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    })
+  }, [x, y])
+
+  React.useEffect(() => {
+    function handlePointer(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener("pointerdown", handlePointer)
+    return () => document.removeEventListener("pointerdown", handlePointer)
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Pilih jenis cuti"
+      className="fixed z-50 rounded-lg border border-border bg-card p-1.5 shadow-lg"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+        Jenis Cuti
+      </p>
+      <div className="space-y-1">
+        {CUTI_TYPES.map((type) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => onSelect(type)}
+            className="flex w-44 items-center justify-center rounded-md bg-emerald-600 px-2 py-1.5 text-xs font-semibold text-white ring-1 ring-emerald-600/30 transition-colors hover:brightness-95 focus-visible:outline-none"
+          >
+            {type}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// HALAMAN BUAT JADWAL SHIFT
+// ============================================================
 
 export function BuatJadwalPage() {
   const { profile, user } = useAuth()
@@ -123,9 +248,11 @@ export function BuatJadwalPage() {
   const [employees, setEmployees] = React.useState<FirestoreEmployee[]>([])
   const [schedules, setSchedules] = React.useState<FirestoreSchedule[]>([])
   const [savedDrafts, setSavedDrafts] = React.useState<FirestoreSchedule[]>([])
-  const [draftChanges, setDraftChanges] = React.useState<Record<string, ScheduleStatus>>({})
+  const [draftChanges, setDraftChanges] = React.useState<Record<string, CellValue>>({})
   const [activeCell, setActiveCell] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
+  const [cutiTarget, setCutiTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
   const [phase, setPhase] = React.useState<SchedulePhase>("Belum dibuat")
+  const [editing, setEditing] = React.useState(false)
   const [message, setMessage] = React.useState("")
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -147,6 +274,7 @@ export function BuatJadwalPage() {
     setLoading(true)
     setError("")
     setMessage("")
+    setEditing(false)
 
     const authedUser = user
 
@@ -177,9 +305,15 @@ export function BuatJadwalPage() {
         setEmployees(storeEmployees.filter((employee) => employee.aktif !== false))
         setSchedules(monthlySchedules)
         setSavedDrafts(drafts)
-        setDraftChanges({})
         setActiveCell(null)
-        const hasDraft = drafts.length > 0
+        setCutiTarget(null)
+
+        // Pulihkan draft lokal dari browser untuk bulan ini.
+        const localCells = loadLocalCells(cellDraftKey(storeId, period.year, period.month))
+        setDraftChanges(localCells)
+
+        const hasLocalDraft = Object.keys(localCells).length > 0
+        const hasDraft = drafts.length > 0 || hasLocalDraft
         const hasFinal = monthlySchedules.length > 0
         setPhase(hasFinal ? "Selesai" : hasDraft ? "Draft" : "Belum dibuat")
       })
@@ -198,20 +332,34 @@ export function BuatJadwalPage() {
   }, [cabangId, isStore, period.month, period.year, storeId, user])
 
   const savedScheduleByCell = React.useMemo(() => {
-    return new Map(schedules.map((schedule) => [getCellKey(schedule.employeeId, schedule.tanggal), schedule.status]))
+    return new Map(
+      schedules.map((schedule) => [
+        getCellKey(schedule.employeeId, schedule.tanggal),
+        { status: schedule.status, cutiJenis: schedule.cutiJenis },
+      ]),
+    )
   }, [schedules])
 
   const savedDraftByCell = React.useMemo(() => {
-    return new Map(savedDrafts.map((draft) => [getCellKey(draft.employeeId, draft.tanggal), draft.status as ScheduleStatus]))
+    return new Map(
+      savedDrafts.map((draft) => [
+        getCellKey(draft.employeeId, draft.tanggal),
+        { status: draft.status as ScheduleStatus, cutiJenis: draft.cutiJenis },
+      ]),
+    )
   }, [savedDrafts])
 
-  const getCellStatus = React.useCallback(
-    (employeeId: string, tanggal: string) => {
+  const getCellValue = React.useCallback(
+    (employeeId: string, tanggal: string): CellValue | undefined => {
       const key = getCellKey(employeeId, tanggal)
       return draftChanges[key] ?? savedDraftByCell.get(key) ?? savedScheduleByCell.get(key)
     },
     [draftChanges, savedDraftByCell, savedScheduleByCell],
   )
+
+  // Jadwal yang sudah SELESAI terkunci sampai tombol Edit ditekan.
+  const isLocked = phase === "Selesai" && !editing
+  const canEditCells = !isLocked
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -220,21 +368,73 @@ export function BuatJadwalPage() {
     })
   }
 
+  function applyCell(key: string, value: CellValue) {
+    setDraftChanges((current) => {
+      const next = { ...current, [key]: value }
+      if (storeId) persistLocalCells(cellDraftKey(storeId, period.year, period.month), next)
+      return next
+    })
+  }
+
+  function startEditing() {
+    setEditing(true)
+    setMessage("Mode edit aktif. Klik sel untuk mengubah jadwal.")
+  }
+
+  function cancelEdit() {
+    // Buang semua perubahan sel yang dibuat selama mode edit
+    // dan bersihkan draft lokal sementara. Jadwal final (dari
+    // Firestore) tidak ikut diubah.
+    setDraftChanges({})
+    if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+    setActiveCell(null)
+    setCutiTarget(null)
+    setEditing(false)
+    setMessage("Perubahan edit dibatalkan. Jadwal final tidak berubah dan tetap terkunci.")
+  }
+
   function chooseShift(status: ScheduleStatus) {
-    if (!activeCell) return
-    setDraftChanges((current) => ({ ...current, [getCellKey(activeCell.employeeId, activeCell.tanggal)]: status }))
-    setPhase("Draft")
-    setMessage("Perubahan jadwal disiapkan sebagai draft pada sesi ini.")
+    if (!activeCell || !canEditCells) return
+    const key = getCellKey(activeCell.employeeId, activeCell.tanggal)
+
+    if (status === "cuti") {
+      setCutiTarget({
+        employeeId: activeCell.employeeId,
+        tanggal: activeCell.tanggal,
+        x: activeCell.x,
+        y: activeCell.y,
+      })
+      setActiveCell(null)
+      return
+    }
+
+    applyCell(key, { status })
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage("Perubahan jadwal disimpan sebagai draft pada browser ini.")
     setActiveCell(null)
   }
 
+  function chooseCuti(cutiJenis: string) {
+    if (!cutiTarget || !canEditCells) return
+    const key = getCellKey(cutiTarget.employeeId, cutiTarget.tanggal)
+    applyCell(key, { status: "cuti", cutiJenis })
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage(`Cuti disimpan dengan jenis: ${cutiJenis}.`)
+    setCutiTarget(null)
+  }
+
   function buildVisibleCells() {
-    const cells: { employeeId: string; tanggal: string; status: ScheduleStatus }[] = []
+    const cells: { employeeId: string; tanggal: string; status: ScheduleStatus; cutiJenis?: string }[] = []
     for (const employee of employees) {
       for (const day of days) {
-        const status = getCellStatus(employee.id, getDateKey(period.year, period.month, day))
-        if (!status) continue
-        cells.push({ employeeId: employee.id, tanggal: getDateKey(period.year, period.month, day), status })
+        const value = getCellValue(employee.id, getDateKey(period.year, period.month, day))
+        if (!value) continue
+        cells.push({
+          employeeId: employee.id,
+          tanggal: getDateKey(period.year, period.month, day),
+          status: value.status,
+          cutiJenis: value.cutiJenis,
+        })
       }
     }
     return cells
@@ -244,7 +444,7 @@ export function BuatJadwalPage() {
     if (!user) return
     setSaving(true)
     setMessage("")
-    setError("")
+    setActionError("")
     try {
       const idToken = await user.getIdToken()
       const visibleCells = buildVisibleCells()
@@ -254,7 +454,9 @@ export function BuatJadwalPage() {
         if (!byTanggal.has(cell.tanggal)) {
           byTanggal.set(cell.tanggal, { tanggal: cell.tanggal })
         }
-        byTanggal.get(cell.tanggal)![cell.employeeId] = cell.status
+        const payload: Record<string, unknown> = { status: cell.status }
+        if (cell.status === "cuti" && cell.cutiJenis) payload.cutiJenis = cell.cutiJenis
+        byTanggal.get(cell.tanggal)![cell.employeeId] = payload
       }
       byTanggal.forEach((entry) => daysPayload.push(entry))
 
@@ -275,6 +477,7 @@ export function BuatJadwalPage() {
       }
       setSavedDrafts(visibleCells.map((cell) => ({ ...cell } as FirestoreSchedule)))
       setDraftChanges({})
+      if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
       setPhase("Draft")
       setMessage("Draft berhasil disimpan dan dapat dilanjutkan.")
     } catch (saveError) {
@@ -289,7 +492,7 @@ export function BuatJadwalPage() {
   async function finishSchedule() {
     if (!user) return
     const hasEmptyCell = employees.some((employee) =>
-      days.some((day) => !getCellStatus(employee.id, getDateKey(period.year, period.month, day))),
+      days.some((day) => !getCellValue(employee.id, getDateKey(period.year, period.month, day))),
     )
     if (hasEmptyCell) {
       setActionError("")
@@ -321,8 +524,10 @@ export function BuatJadwalPage() {
       setSchedules(cells.map((cell) => ({ ...cell } as FirestoreSchedule)))
       setSavedDrafts([])
       setDraftChanges({})
+      if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
       setPhase("Selesai")
-      setMessage("Jadwal berhasil disimpan sebagai jadwal final.")
+      setEditing(false)
+      setMessage("Jadwal berhasil disimpan sebagai jadwal final dan terkunci.")
     } catch (finalizeError) {
       console.error("Failed to finalize schedule:", finalizeError)
       setActionError(finalizeError instanceof Error ? finalizeError.message : "Jadwal gagal difinalkan.")
@@ -347,12 +552,12 @@ export function BuatJadwalPage() {
   const monthLabel = monthFormatter.format(new Date(period.year, period.month, 1)).toUpperCase()
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-4">
+      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">BUAT JADWAL SHIFT</h1>
-            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+            <h1 className="text-lg font-semibold tracking-tight">BUAT JADWAL SHIFT</h1>
+            <div className="mt-1.5 space-y-0.5 text-sm text-muted-foreground">
               <p>
                 Toko: <span className="font-medium text-foreground">{store?.nama ?? "Toko tidak ditemukan"}</span>
               </p>
@@ -361,14 +566,14 @@ export function BuatJadwalPage() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg bg-muted px-3 py-2 text-sm">
+          <div className="rounded-lg bg-muted px-3 py-1.5 text-sm">
             Status: <span className="font-semibold text-foreground">{phase}</span>
           </div>
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="rounded-xl border border-border bg-card p-3 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background p-1 sm:w-fit">
             <Button variant="ghost" size="icon" aria-label="Bulan sebelumnya" onClick={() => changeMonth(-1)}>
               <ChevronLeft className="size-4" />
@@ -378,47 +583,61 @@ export function BuatJadwalPage() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={saveDraft} disabled={saving}>
-              {saving ? "Menyimpan..." : "Simpan Draft"}
-            </Button>
-            <Button onClick={finishSchedule} disabled={saving}>
-              {saving ? "Memproses..." : "Selesai"}
-            </Button>
-            <Button variant="outline" disabled title="Ekspor PDF akan tersedia pada tahap berikutnya.">
-              <FileDown className="mr-2 size-4" />
-              Simpan sebagai PDF
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isLocked ? (
+              <Button onClick={startEditing}>
+                Edit
+              </Button>
+            ) : (
+              <>
+                {editing && (
+                  <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
+                    Batal
+                  </Button>
+                )}
+                <Button variant="outline" onClick={saveDraft} disabled={saving}>
+                  {saving ? "Menyimpan..." : "Simpan Draft"}
+                </Button>
+                <Button onClick={finishSchedule} disabled={saving}>
+                  {saving ? "Memproses..." : "Selesai"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 text-xs">
-          {SHIFT_OPTIONS.map((option) => (
-            <span key={option.status} className={cn("rounded-md px-2 py-1 text-xs font-bold ring-1", option.className)}>
-              {option.label}
-            </span>
-          ))}
-        </div>
+        {isLocked && (
+          <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground">
+            <LockKeyhole className="size-4" />
+            Jadwal telah selesai dan terkunci. Klik <span className="font-semibold text-foreground">Edit</span> untuk mengubahnya.
+          </p>
+        )}
+
+        {editing && (
+          <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-700 dark:text-amber-300">
+            Mode edit aktif — status jadwal yang selesai sedang dapat diubah. Simpan Draft, Selesai, atau Batal.
+          </p>
+        )}
 
         {actionError && (
-          <p className="mt-4 rounded-lg border border-status-sakit/30 bg-status-sakit-bg px-3 py-2 text-sm text-status-sakit" role="alert">
+          <p className="mt-3 rounded-lg border border-status-sakit/30 bg-status-sakit-bg px-3 py-1.5 text-sm text-status-sakit" role="alert">
             {actionError}
           </p>
         )}
 
-        {message && <p className="mt-4 text-sm text-muted-foreground" role="status">{message}</p>}
+        {message && <p className="mt-3 text-sm text-muted-foreground" role="status">{message}</p>}
 
-        <div className="mt-5 overflow-x-auto rounded-lg border border-border">
+        <div className="mt-2 overflow-x-auto rounded-lg border border-border/60">
           <table className="min-w-[1220px] border-separate border-spacing-0 text-xs">
             <thead className="bg-muted/60 text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-20 min-w-56 border-b border-r border-border bg-muted/60 px-4 py-3 text-left font-semibold">Karyawan</th>
+                <th className="sticky left-0 z-20 min-w-48 border-b border-r border-border bg-muted/60 px-3 py-2 text-left font-semibold">Karyawan</th>
                 {days.map((day) => {
                   const date = new Date(period.year, period.month, day)
                   return (
-                    <th key={day} className="min-w-16 border-b border-r border-border px-1 py-2 text-center font-semibold last:border-r-0">
-                      <span className="block text-sm text-foreground">{day}</span>
-                      <span className="block uppercase">{weekdayFormatter.format(date)}</span>
+                    <th key={day} className="min-w-12 border-b border-r border-border px-0.5 py-1 text-center font-semibold last:border-r-0">
+                      <span className="block text-xs text-foreground">{day}</span>
+                      <span className="block text-[0.6rem] uppercase">{weekdayFormatter.format(date)}</span>
                     </th>
                   )
                 })}
@@ -427,28 +646,51 @@ export function BuatJadwalPage() {
             <tbody>
               {employees.map((employee) => (
                 <tr key={employee.id} className="bg-card">
-                  <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-4 py-3 align-top">
+                  <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5 align-top">
                     <p className="font-semibold text-foreground">{employee.name}</p>
-                    <p className="mt-1 text-muted-foreground">NIK: {employee.nik ?? "-"}</p>
+                    <p className="mt-0.5 text-muted-foreground">NIK: {employee.nik ?? "-"}</p>
                     <p className="text-muted-foreground">{employee.posisi ?? "-"}</p>
                   </td>
                   {days.map((day) => {
                     const tanggal = getDateKey(period.year, period.month, day)
-                    const status = getCellStatus(employee.id, tanggal)
+                    const value = getCellValue(employee.id, tanggal)
+                    const status = value?.status
                     const option = getShiftOption(status)
                     const isActive = activeCell?.employeeId === employee.id && activeCell.tanggal === tanggal
+                    const title = option
+                      ? option.status === "cuti" && value?.cutiJenis
+                        ? `${option.label} — ${value.cutiJenis}`
+                        : option.label
+                      : "Belum dijadwalkan"
+
+                    if (isLocked) {
+                      return (
+                        <td key={tanggal} className="border-b border-r border-border p-0 text-center last:border-r-0">
+                          <span
+                            title={title}
+                            className={cn(
+                              "mx-auto flex size-7 items-center justify-center rounded-md text-xs font-bold ring-1",
+                              option ? option.className : "bg-background text-muted-foreground ring-border",
+                            )}
+                          >
+                            {option?.code ?? "-"}
+                          </span>
+                        </td>
+                      )
+                    }
+
                     return (
-                      <td key={tanggal} className="border-b border-r border-border p-1 text-center last:border-r-0">
+                      <td key={tanggal} className="border-b border-r border-border p-0 text-center last:border-r-0">
                         <button
                           type="button"
-                          title={option?.label ?? "Belum dijadwalkan"}
-                          aria-label={`${employee.name}, ${tanggal}: ${option?.label ?? "Belum dijadwalkan"}`}
+                          title={title}
+                          aria-label={`${employee.name}, ${tanggal}: ${title}`}
                           onClick={(event) => {
                             const rect = event.currentTarget.getBoundingClientRect()
                             setActiveCell({ employeeId: employee.id, tanggal, x: rect.left, y: rect.bottom })
                           }}
                           className={cn(
-                            "flex size-9 items-center justify-center rounded-md text-sm font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "mx-auto flex size-7 items-center justify-center rounded-md text-xs font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             option ? option.className : "bg-background text-muted-foreground ring-border",
                             isActive && "ring-2 ring-ring",
                           )}
@@ -465,17 +707,49 @@ export function BuatJadwalPage() {
         </div>
 
         {employees.length === 0 && (
-          <p className="mt-4 text-sm text-muted-foreground">Belum ada karyawan aktif pada toko ini.</p>
+          <p className="mt-3 text-sm text-muted-foreground">Belum ada karyawan aktif pada toko ini.</p>
         )}
+
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            KETERANGAN STATUS
+          </p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2.5">
+            {SHIFT_OPTIONS.map((option) => (
+              <span key={option.status} className="flex items-center gap-2 text-sm">
+                <span
+                  className={cn(
+                    "flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ring-1",
+                    option.className,
+                  )}
+                >
+                  {option.code}
+                </span>
+                <span className="text-muted-foreground">
+                  {option.status === "libur" ? "LIBUR" : option.label}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
       </section>
 
-      {activeCell && (
+      {activeCell && canEditCells && (
         <ShiftPopover
           x={activeCell.x}
           y={activeCell.y}
-          currentStatus={getCellStatus(activeCell.employeeId, activeCell.tanggal)}
+          currentStatus={getCellValue(activeCell.employeeId, activeCell.tanggal)?.status}
           onSelect={chooseShift}
           onClose={() => setActiveCell(null)}
+        />
+      )}
+
+      {cutiTarget && canEditCells && (
+        <CutiPopover
+          x={cutiTarget.x}
+          y={cutiTarget.y}
+          onSelect={chooseCuti}
+          onClose={() => setCutiTarget(null)}
         />
       )}
     </div>

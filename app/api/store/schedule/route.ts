@@ -34,6 +34,69 @@ function scheduleId(
 }
 
 // ============================================================
+// PARSING NILAI SEL JADWAL
+//
+// Mendukung dua bentuk nilai sel agar tetap kompatibel:
+//   - string lama, mis. "shift_pagi"
+//   - objek baru, mis. { status: "cuti", cutiJenis: "Cuti Tahunan" }
+// sehingga data lama yang hanya berisi status tetap terbaca.
+// ============================================================
+
+type ParsedCell = {
+  status: string
+  cutiJenis?: string
+}
+
+function parseCellValue(
+  raw: unknown,
+): ParsedCell | null {
+  if (
+    typeof raw === "string"
+  ) {
+    return VALID_STATUS.has(raw)
+      ? { status: raw }
+      : null
+  }
+
+  if (
+    raw &&
+    typeof raw === "object"
+  ) {
+    const obj = raw as Record<
+      string,
+      unknown
+    >
+
+    const status =
+      typeof obj.status ===
+        "string"
+        ? obj.status
+        : ""
+
+    if (
+      !VALID_STATUS.has(status)
+    ) {
+      return null
+    }
+
+    const cutiJenis =
+      typeof obj.cutiJenis ===
+        "string" &&
+        obj.cutiJenis.trim() !==
+          ""
+        ? obj.cutiJenis.trim()
+        : undefined
+
+    return {
+      status,
+      cutiJenis,
+    }
+  }
+
+  return null
+}
+
+// ============================================================
 // DATA AKUN YANG SEDANG LOGIN
 // ============================================================
 
@@ -258,6 +321,8 @@ export async function GET(
               data?.tanggal ?? "",
             status:
               data?.status ?? "",
+            cutiJenis:
+              data?.cutiJenis ?? "",
           }
         })
         .filter(
@@ -418,17 +483,37 @@ export async function POST(
             continue
           }
 
+          const parsed =
+            parseCellValue(
+              day[employeeId],
+            )
+
+          if (!parsed) {
+            continue
+          }
+
           const status =
-            day[employeeId]
+            parsed.status
+
+          const docData: Record<
+            string,
+            unknown
+          > = {
+            storeId,
+            cabangId,
+            employeeId,
+            tanggal,
+            status,
+            updatedAt:
+              FieldValue.serverTimestamp(),
+          }
 
           if (
-            typeof status !==
-              "string" ||
-            !VALID_STATUS.has(
-              status,
-            )
+            status === "cuti" &&
+            parsed.cutiJenis
           ) {
-            continue
+            docData.cutiJenis =
+              parsed.cutiJenis
           }
 
           const docId =
@@ -444,20 +529,9 @@ export async function POST(
                 "schedule_drafts",
               )
               .doc(docId)
-              .set(
-                {
-                  storeId,
-                  cabangId,
-                  employeeId,
-                  tanggal,
-                  status,
-                  updatedAt:
-                    FieldValue.serverTimestamp(),
-                },
-                {
-                  merge: true,
-                },
-              ),
+              .set(docData, {
+                merge: true,
+              }),
           )
 
           wrote += 1
@@ -565,13 +639,19 @@ export async function POST(
             cell?.tanggal ?? "",
           ).trim()
 
-        const status =
-          cell?.status
-
         if (
           !employeeId ||
           !isValidDateISO(tanggal)
         ) {
+          continue
+        }
+
+        const parsed =
+          parseCellValue(
+            cell?.status,
+          )
+
+        if (!parsed) {
           continue
         }
 
@@ -584,14 +664,28 @@ export async function POST(
           continue
         }
 
+        const status =
+          parsed.status
+
+        const docData: Record<
+          string,
+          unknown
+        > = {
+          storeId,
+          cabangId,
+          employeeId,
+          tanggal,
+          status,
+          updatedAt:
+            FieldValue.serverTimestamp(),
+        }
+
         if (
-          typeof status !==
-            "string" ||
-          !VALID_STATUS.has(
-            status,
-          )
+          status === "cuti" &&
+          parsed.cutiJenis
         ) {
-          continue
+          docData.cutiJenis =
+            parsed.cutiJenis
         }
 
         // UPSERT berdasarkan identitas unik
@@ -608,20 +702,9 @@ export async function POST(
                 employeeId,
               ),
             )
-            .set(
-              {
-                storeId,
-                cabangId,
-                employeeId,
-                tanggal,
-                status,
-                updatedAt:
-                  FieldValue.serverTimestamp(),
-              },
-              {
-                merge: true,
-              },
-            ),
+            .set(docData, {
+              merge: true,
+            }),
         )
 
         wrote += 1

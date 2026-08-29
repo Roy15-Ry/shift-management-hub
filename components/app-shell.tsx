@@ -82,10 +82,11 @@ function PageContent() {
 function Shell() {
   const [mobileOpen, setMobileOpen] =
     React.useState(false)
+  const { sidebarCollapsed } = useApp()
 
   return (
     <div className="flex min-h-svh bg-background">
-      <DesktopSidebar />
+      {!sidebarCollapsed && <DesktopSidebar />}
 
       <MobileSidebar
         open={mobileOpen}
