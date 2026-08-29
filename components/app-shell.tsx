@@ -13,7 +13,7 @@ import { DashboardPage } from "@/components/pages/dashboard"
 import { BuatJadwalPage } from "@/components/pages/buat-jadwal"
 import { PengaturanPage } from "@/components/pages/pengaturan"
 import { RevisiPage } from "@/components/pages/revisi"
-import { ShiftPage } from "@/components/pages/shift"
+import { ShiftPage, ShiftCabangPage } from "@/components/pages/shift"
 import { HistoryPage } from "@/components/pages/history"
 import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
 
@@ -38,6 +38,7 @@ function PageContent() {
     "buat-jadwal",
     "revisi",
     "shift",
+    "shift-cabang",
     "history",
   ]
 
@@ -66,6 +67,9 @@ function PageContent() {
 
     case "shift":
       return <ShiftPage />
+
+    case "shift-cabang":
+      return <ShiftCabangPage />
 
     case "history":
       return <HistoryPage />

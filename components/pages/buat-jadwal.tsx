@@ -17,12 +17,12 @@ import {
 import { cn } from "@/lib/utils"
 
 const SHIFT_OPTIONS = [
-  { code: "P", status: "shift_pagi", label: "Shift Pagi", className: "bg-status-pagi-bg text-status-pagi ring-status-pagi/20" },
-  { code: "S", status: "shift_siang", label: "Shift Siang", className: "bg-status-siang-bg text-status-siang ring-status-siang/20" },
-  { code: "L", status: "libur", label: "Libur", className: "bg-status-libur-bg text-status-libur ring-status-libur/20" },
-  { code: "C", status: "cuti", label: "Cuti", className: "bg-status-cuti-bg text-status-cuti ring-status-cuti/20" },
-  { code: "I", status: "izin", label: "Izin", className: "bg-status-izin-bg text-status-izin ring-status-izin/20" },
-  { code: "K", status: "sakit", label: "Sakit", className: "bg-status-sakit-bg text-status-sakit ring-status-sakit/20" },
+  { code: "P", status: "shift_pagi", label: "SHIFT PAGI", className: "bg-amber-500 text-white ring-amber-500/30" },
+  { code: "S", status: "shift_siang", label: "SHIFT SIANG", className: "bg-blue-600 text-white ring-blue-600/30" },
+  { code: "OFF", status: "libur", label: "OFF", className: "bg-red-600 text-white ring-red-600/30" },
+  { code: "C", status: "cuti", label: "CUTI", className: "bg-emerald-600 text-white ring-emerald-600/30" },
+  { code: "I", status: "izin", label: "IZIN", className: "bg-violet-600 text-white ring-violet-600/30" },
+  { code: "K", status: "sakit", label: "SAKIT", className: "bg-rose-900 text-white ring-rose-900/30" },
 ] as const
 
 type ScheduleStatus = (typeof SHIFT_OPTIONS)[number]["status"]
@@ -51,8 +51,70 @@ function getShiftOption(status?: string | null) {
   return SHIFT_OPTIONS.find((option) => option.status === status)
 }
 
+function ShiftPopover(props: {
+  x: number
+  y: number
+  currentStatus?: string
+  onSelect: (status: ScheduleStatus) => void
+  onClose: () => void
+}) {
+  const { x, y, currentStatus, onSelect, onClose } = props
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ top: y, left: x })
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const margin = 8
+    const rect = node.getBoundingClientRect()
+    const maxLeft = window.innerWidth - rect.width - margin
+    const maxTop = window.innerHeight - rect.height - margin
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    })
+  }, [x, y])
+
+  React.useEffect(() => {
+    function handlePointer(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener("pointerdown", handlePointer)
+    return () => document.removeEventListener("pointerdown", handlePointer)
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Pilih status shift"
+      className="fixed z-50 rounded-lg border border-border bg-card p-2 shadow-lg"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <div className="space-y-1">
+        {SHIFT_OPTIONS.map((option) => (
+          <button
+            key={option.status}
+            type="button"
+            onClick={() => onSelect(option.status)}
+            className={cn(
+              "flex w-48 items-center justify-center rounded-md px-3 py-2.5 text-sm font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              option.className,
+              currentStatus === option.status && "ring-2 ring-ring",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function BuatJadwalPage() {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const [period, setPeriod] = React.useState(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
@@ -60,11 +122,14 @@ export function BuatJadwalPage() {
   const [store, setStore] = React.useState<FirestoreStore | null>(null)
   const [employees, setEmployees] = React.useState<FirestoreEmployee[]>([])
   const [schedules, setSchedules] = React.useState<FirestoreSchedule[]>([])
+  const [savedDrafts, setSavedDrafts] = React.useState<FirestoreSchedule[]>([])
   const [draftChanges, setDraftChanges] = React.useState<Record<string, ScheduleStatus>>({})
-  const [activeCell, setActiveCell] = React.useState<{ employeeId: string; tanggal: string } | null>(null)
+  const [activeCell, setActiveCell] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
   const [phase, setPhase] = React.useState<SchedulePhase>("Belum dibuat")
   const [message, setMessage] = React.useState("")
   const [loading, setLoading] = React.useState(true)
+  const [saving, setSaving] = React.useState(false)
+  const [actionError, setActionError] = React.useState("")
   const [error, setError] = React.useState("")
 
   const isStore = profile?.role?.trim().toLowerCase() === "store"
@@ -73,7 +138,7 @@ export function BuatJadwalPage() {
   const days = React.useMemo(() => getDaysInMonth(period.year, period.month), [period])
 
   React.useEffect(() => {
-    if (!isStore || !storeId) {
+    if (!isStore || !storeId || !user) {
       setLoading(false)
       return
     }
@@ -83,19 +148,40 @@ export function BuatJadwalPage() {
     setError("")
     setMessage("")
 
+    const authedUser = user
+
+    async function loadDrafts() {
+      const idToken = await authedUser.getIdToken()
+      const response = await fetch(
+        `/api/store/schedule?year=${period.year}&month=${period.month}`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        },
+      )
+      if (!response.ok) throw new Error("Draft tidak dapat dimuat.")
+      const data = await response.json()
+      return Array.isArray(data.drafts) ? data.drafts : []
+    }
+
     Promise.all([
       getFirestoreStores("store", storeId, cabangId),
       getFirestoreEmployees(storeId),
       getFirestoreMonthlySchedules(storeId, period.year, period.month),
+      loadDrafts(),
     ])
-      .then(([stores, storeEmployees, monthlySchedules]) => {
+      .then(([stores, storeEmployees, monthlySchedules, drafts]) => {
         if (cancelled) return
         setStore(stores[0] ?? null)
         setEmployees(storeEmployees.filter((employee) => employee.aktif !== false))
         setSchedules(monthlySchedules)
+        setSavedDrafts(drafts)
         setDraftChanges({})
         setActiveCell(null)
-        setPhase(monthlySchedules.length > 0 ? "Draft" : "Belum dibuat")
+        const hasDraft = drafts.length > 0
+        const hasFinal = monthlySchedules.length > 0
+        setPhase(hasFinal ? "Selesai" : hasDraft ? "Draft" : "Belum dibuat")
       })
       .catch((loadError) => {
         if (cancelled) return
@@ -109,21 +195,23 @@ export function BuatJadwalPage() {
     return () => {
       cancelled = true
     }
-  }, [cabangId, isStore, period.month, period.year, storeId])
+  }, [cabangId, isStore, period.month, period.year, storeId, user])
 
   const savedScheduleByCell = React.useMemo(() => {
     return new Map(schedules.map((schedule) => [getCellKey(schedule.employeeId, schedule.tanggal), schedule.status]))
   }, [schedules])
 
+  const savedDraftByCell = React.useMemo(() => {
+    return new Map(savedDrafts.map((draft) => [getCellKey(draft.employeeId, draft.tanggal), draft.status as ScheduleStatus]))
+  }, [savedDrafts])
+
   const getCellStatus = React.useCallback(
     (employeeId: string, tanggal: string) => {
       const key = getCellKey(employeeId, tanggal)
-      return draftChanges[key] ?? savedScheduleByCell.get(key)
+      return draftChanges[key] ?? savedDraftByCell.get(key) ?? savedScheduleByCell.get(key)
     },
-    [draftChanges, savedScheduleByCell],
+    [draftChanges, savedDraftByCell, savedScheduleByCell],
   )
-
-  const activeEmployee = activeCell ? employees.find((employee) => employee.id === activeCell.employeeId) : null
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -140,23 +228,108 @@ export function BuatJadwalPage() {
     setActiveCell(null)
   }
 
-  function saveDraft() {
-    setPhase("Draft")
-    setMessage("Draft disiapkan pada sesi ini. Penyimpanan Firestore akan diaktifkan pada tahap berikutnya.")
+  function buildVisibleCells() {
+    const cells: { employeeId: string; tanggal: string; status: ScheduleStatus }[] = []
+    for (const employee of employees) {
+      for (const day of days) {
+        const status = getCellStatus(employee.id, getDateKey(period.year, period.month, day))
+        if (!status) continue
+        cells.push({ employeeId: employee.id, tanggal: getDateKey(period.year, period.month, day), status })
+      }
+    }
+    return cells
   }
 
-  function finishSchedule() {
+  async function saveDraft() {
+    if (!user) return
+    setSaving(true)
+    setMessage("")
+    setError("")
+    try {
+      const idToken = await user.getIdToken()
+      const visibleCells = buildVisibleCells()
+      const daysPayload: Record<string, unknown>[] = []
+      const byTanggal = new Map<string, Record<string, unknown>>()
+      for (const cell of visibleCells) {
+        if (!byTanggal.has(cell.tanggal)) {
+          byTanggal.set(cell.tanggal, { tanggal: cell.tanggal })
+        }
+        byTanggal.get(cell.tanggal)![cell.employeeId] = cell.status
+      }
+      byTanggal.forEach((entry) => daysPayload.push(entry))
+
+      const response = await fetch(
+        "/api/store/schedule?mode=draft",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ days: daysPayload }),
+        },
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data?.message ?? "Draft gagal disimpan.")
+      }
+      setSavedDrafts(visibleCells.map((cell) => ({ ...cell } as FirestoreSchedule)))
+      setDraftChanges({})
+      setPhase("Draft")
+      setMessage("Draft berhasil disimpan dan dapat dilanjutkan.")
+    } catch (saveError) {
+      console.error("Failed to save draft:", saveError)
+      setActionError(saveError instanceof Error ? saveError.message : "Draft gagal disimpan.")
+      setMessage("")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function finishSchedule() {
+    if (!user) return
     const hasEmptyCell = employees.some((employee) =>
       days.some((day) => !getCellStatus(employee.id, getDateKey(period.year, period.month, day))),
     )
-
     if (hasEmptyCell) {
+      setActionError("")
       setMessage("Jadwal belum lengkap.")
       return
     }
 
-    setPhase("Selesai")
-    setMessage("Status selesai disiapkan pada sesi ini. Belum ada data yang ditulis ke Firestore.")
+    setSaving(true)
+    setMessage("")
+    setActionError("")
+    try {
+      const idToken = await user.getIdToken()
+      const cells = buildVisibleCells()
+      const response = await fetch(
+        "/api/store/schedule?mode=final",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ year: period.year, month: period.month, cells }),
+        },
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data?.message ?? "Jadwal gagal difinalkan.")
+      }
+      setSchedules(cells.map((cell) => ({ ...cell } as FirestoreSchedule)))
+      setSavedDrafts([])
+      setDraftChanges({})
+      setPhase("Selesai")
+      setMessage("Jadwal berhasil disimpan sebagai jadwal final.")
+    } catch (finalizeError) {
+      console.error("Failed to finalize schedule:", finalizeError)
+      setActionError(finalizeError instanceof Error ? finalizeError.message : "Jadwal gagal difinalkan.")
+      setMessage("")
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!isStore) {
@@ -206,8 +379,12 @@ export function BuatJadwalPage() {
             </Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={saveDraft}>Simpan Draft</Button>
-            <Button onClick={finishSchedule}>Selesai</Button>
+            <Button variant="outline" onClick={saveDraft} disabled={saving}>
+              {saving ? "Menyimpan..." : "Simpan Draft"}
+            </Button>
+            <Button onClick={finishSchedule} disabled={saving}>
+              {saving ? "Memproses..." : "Selesai"}
+            </Button>
             <Button variant="outline" disabled title="Ekspor PDF akan tersedia pada tahap berikutnya.">
               <FileDown className="mr-2 size-4" />
               Simpan sebagai PDF
@@ -217,36 +394,19 @@ export function BuatJadwalPage() {
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs">
           {SHIFT_OPTIONS.map((option) => (
-            <span key={option.status} className={cn("rounded-md px-2 py-1 font-medium ring-1", option.className)}>
-              {option.code} = {option.label}
+            <span key={option.status} className={cn("rounded-md px-2 py-1 text-xs font-bold ring-1", option.className)}>
+              {option.label}
             </span>
           ))}
         </div>
 
-        {message && <p className="mt-4 text-sm text-muted-foreground" role="status">{message}</p>}
-
-        {activeCell && (
-          <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
-            <p className="text-sm font-medium">
-              Pilih shift untuk {activeEmployee?.name ?? "karyawan"} — {activeCell.tanggal}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {SHIFT_OPTIONS.map((option) => (
-                <button
-                  key={option.status}
-                  type="button"
-                  onClick={() => chooseShift(option.status)}
-                  className={cn(
-                    "rounded-md px-3 py-2 text-sm font-semibold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    option.className,
-                  )}
-                >
-                  {option.code} — {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        {actionError && (
+          <p className="mt-4 rounded-lg border border-status-sakit/30 bg-status-sakit-bg px-3 py-2 text-sm text-status-sakit" role="alert">
+            {actionError}
+          </p>
         )}
+
+        {message && <p className="mt-4 text-sm text-muted-foreground" role="status">{message}</p>}
 
         <div className="mt-5 overflow-x-auto rounded-lg border border-border">
           <table className="min-w-[1220px] border-separate border-spacing-0 text-xs">
@@ -283,9 +443,12 @@ export function BuatJadwalPage() {
                           type="button"
                           title={option?.label ?? "Belum dijadwalkan"}
                           aria-label={`${employee.name}, ${tanggal}: ${option?.label ?? "Belum dijadwalkan"}`}
-                          onClick={() => setActiveCell({ employeeId: employee.id, tanggal })}
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setActiveCell({ employeeId: employee.id, tanggal, x: rect.left, y: rect.bottom })
+                          }}
                           className={cn(
-                            "flex size-9 items-center justify-center rounded-md text-sm font-semibold ring-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "flex size-9 items-center justify-center rounded-md text-sm font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             option ? option.className : "bg-background text-muted-foreground ring-border",
                             isActive && "ring-2 ring-ring",
                           )}
@@ -305,6 +468,16 @@ export function BuatJadwalPage() {
           <p className="mt-4 text-sm text-muted-foreground">Belum ada karyawan aktif pada toko ini.</p>
         )}
       </section>
+
+      {activeCell && (
+        <ShiftPopover
+          x={activeCell.x}
+          y={activeCell.y}
+          currentStatus={getCellStatus(activeCell.employeeId, activeCell.tanggal)}
+          onSelect={chooseShift}
+          onClose={() => setActiveCell(null)}
+        />
+      )}
     </div>
   )
 }

@@ -23,6 +23,7 @@ export type PageKey =
   | "pengaturan"
   | "revisi"
   | "shift"
+  | "shift-cabang"
   | "history"
   | "manajemen-akun"
   | "buat-jadwal"

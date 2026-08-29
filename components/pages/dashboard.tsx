@@ -24,7 +24,6 @@ import {
 } from "@/lib/firestore-data"
 
 import {
-  STATUS_LABEL,
   STATUS_ORDER,
   formatTanggal,
   type ShiftStatus,
@@ -44,41 +43,84 @@ const summaryMeta: {
 }[] = [
     {
       key: "shift_pagi",
-      bg: "bg-status-pagi-bg",
-      text: "text-status-pagi",
-      ring: "ring-status-pagi/20",
+      bg: "bg-amber-500",
+      text: "text-white",
+      ring: "ring-amber-500/30",
     },
     {
       key: "shift_siang",
-      bg: "bg-status-siang-bg",
-      text: "text-status-siang",
-      ring: "ring-status-siang/20",
+      bg: "bg-blue-600",
+      text: "text-white",
+      ring: "ring-blue-600/30",
     },
     {
       key: "libur",
-      bg: "bg-status-libur-bg",
-      text: "text-status-libur",
-      ring: "ring-status-libur/20",
+      bg: "bg-red-600",
+      text: "text-white",
+      ring: "ring-red-600/30",
     },
     {
       key: "sakit",
-      bg: "bg-status-sakit-bg",
-      text: "text-status-sakit",
-      ring: "ring-status-sakit/20",
+      bg: "bg-rose-900",
+      text: "text-white",
+      ring: "ring-rose-900/30",
     },
     {
       key: "izin",
-      bg: "bg-status-izin-bg",
-      text: "text-status-izin",
-      ring: "ring-status-izin/20",
+      bg: "bg-violet-600",
+      text: "text-white",
+      ring: "ring-violet-600/30",
     },
     {
       key: "cuti",
-      bg: "bg-status-cuti-bg",
-      text: "text-status-cuti",
-      ring: "ring-status-cuti/20",
+      bg: "bg-emerald-600",
+      text: "text-white",
+      ring: "ring-emerald-600/30",
     },
   ]
+
+// ============================================================
+// KARTU KARYAWAN — STATUS BADGE
+// ============================================================
+
+const STATUS_BADGE_CLASS: Record<ShiftStatus, string> = {
+  shift_pagi: "bg-amber-500 text-white ring-amber-500/30",
+  shift_siang: "bg-blue-600 text-white ring-blue-600/30",
+  libur: "bg-red-600 text-white ring-red-600/30",
+  cuti: "bg-emerald-600 text-white ring-emerald-600/30",
+  izin: "bg-violet-600 text-white ring-violet-600/30",
+  sakit: "bg-rose-900 text-white ring-rose-900/30",
+}
+
+function statusDisplayLabel(status: ShiftStatus) {
+  switch (status) {
+    case "shift_pagi":
+      return "SHIFT PAGI"
+    case "shift_siang":
+      return "SHIFT SIANG"
+    case "libur":
+      return "OFF"
+    case "cuti":
+      return "CUTI"
+    case "izin":
+      return "IZIN"
+    case "sakit":
+      return "SAKIT"
+  }
+}
+
+// ============================================================
+// URUTAN PRIORITAS STATUS KARYAWAN
+// ============================================================
+
+const STATUS_PRIORITY: Record<ShiftStatus, number> = {
+  shift_pagi: 1,
+  shift_siang: 2,
+  libur: 3,
+  cuti: 4,
+  izin: 5,
+  sakit: 6,
+}
 
 const STORE_HEADER_THEMES = [
   {
@@ -698,16 +740,16 @@ export function DashboardPage() {
 
               <div
                 className={cn(
-                  "inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                  "inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold ring-1 ring-inset",
                   m.bg,
                   m.text,
                   m.ring,
                 )}
               >
                 {
-                  STATUS_LABEL[
+                  statusDisplayLabel(
                   m.key
-                  ]
+                  )
                 }
               </div>
 
@@ -854,9 +896,9 @@ export function DashboardPage() {
                     value:
                       status,
                     label:
-                      STATUS_LABEL[
+                      statusDisplayLabel(
                       status
-                      ],
+                      ),
                   }),
                 ),
               ]}
@@ -1048,6 +1090,33 @@ export function DashboardPage() {
                                 )
                                 ] ?? []
 
+                              const sortedEmployees =
+                                [...storeEmployees].sort(
+                                  (a, b) => {
+                                    const statusA =
+                                      storeSchedules.find(
+                                        (item) =>
+                                          item.employeeId ===
+                                          a.id,
+                                      )?.status
+                                    const statusB =
+                                      storeSchedules.find(
+                                        (item) =>
+                                          item.employeeId ===
+                                          b.id,
+                                      )?.status
+                                    const priorityA =
+                                      statusA
+                                        ? STATUS_PRIORITY[statusA]
+                                        : 99
+                                    const priorityB =
+                                      statusB
+                                        ? STATUS_PRIORITY[statusB]
+                                        : 99
+                                    return priorityA - priorityB
+                                  },
+                                )
+
                               return (
                                 <div
                                   key={monitoringDate}
@@ -1063,7 +1132,7 @@ export function DashboardPage() {
                                     </p>
                                   )}
 
-                                  {storeEmployees.map(
+                                  {sortedEmployees.map(
                                     (employee) => {
                                       const schedule =
                                         storeSchedules.find(
@@ -1083,10 +1152,10 @@ export function DashboardPage() {
                                         <div
                                           key={employee.id}
                                           className={cn(
-                                            "flex rounded-lg border border-border bg-muted/20 px-3 py-2 transition-colors hover:bg-muted/40",
+                                            "flex rounded-lg border border-border bg-muted/20 transition-colors hover:bg-muted/40",
                                             isStore
-                                              ? "flex-col items-start gap-2"
-                                              : "items-center justify-between",
+                                              ? "flex-row items-center justify-between gap-3 px-3 py-2.5"
+                                              : "items-center justify-between px-3 py-2",
                                           )}
                                         >
 
@@ -1106,14 +1175,30 @@ export function DashboardPage() {
 
                                           </div>
 
-                                          <span className={cn(
-                                            "text-xs font-medium text-muted-foreground",
-                                            isStore && "rounded-md bg-card/70 px-2 py-1 whitespace-nowrap",
-                                          )}>
-                                            {schedule
-                                              ? STATUS_LABEL[schedule.status]
-                                              : "Belum dijadwalkan"}
-                                          </span>
+                                          {schedule ? (
+                                            <span
+                                              className={cn(
+                                                "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-bold ring-1 ring-inset",
+                                                isStore
+                                                  ? "min-w-32 px-3 py-2 text-sm"
+                                                  : "min-w-28 px-2.5 py-1 text-[13px]",
+                                                STATUS_BADGE_CLASS[schedule.status],
+                                              )}
+                                            >
+                                              {statusDisplayLabel(schedule.status)}
+                                            </span>
+                                          ) : (
+                                            <span
+                                              className={cn(
+                                                "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold ring-1 ring-inset",
+                                                isStore
+                                                  ? "min-w-32 bg-muted px-3 py-2 text-sm text-muted-foreground ring-border"
+                                                  : "min-w-28 bg-muted px-2.5 py-1 text-[13px] text-muted-foreground ring-border",
+                                              )}
+                                            >
+                                              Belum dijadwalkan
+                                            </span>
+                                          )}
 
                                         </div>
                                       )
