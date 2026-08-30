@@ -975,7 +975,7 @@ export function DashboardPage() {
 
           <div className={cn(
             "grid grid-cols-1 gap-4",
-            !isStore && "xl:grid-cols-2 2xl:grid-cols-3",
+            !isStore && "xl:grid-cols-3",
           )}>
 
             {visibleStores.map(

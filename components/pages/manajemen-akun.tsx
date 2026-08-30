@@ -5,6 +5,7 @@ import * as React from "react"
 type ModalType =
   | "central"
   | "store"
+  | "edit"
   | null
 
 type ConfirmAction =
@@ -49,6 +50,13 @@ export function ManajemenAkunPage() {
       action: null,
       account: null,
     })
+
+  // =====================================================
+  // AKUN YANG SEDANG DIEDIT
+  // =====================================================
+
+  const [editAccount, setEditAccount] =
+    React.useState<Account | null>(null)
 
   // =====================================================
   // FORM
@@ -421,6 +429,7 @@ export function ManajemenAkunPage() {
     if (loading) return
 
     setModal(null)
+    setEditAccount(null)
     resetForm()
   }
 
@@ -971,6 +980,122 @@ export function ManajemenAkunPage() {
   }
 
   // =====================================================
+  // BUKA MODAL EDIT AKUN
+  // =====================================================
+
+  function openEditModal(
+    account: Account,
+  ) {
+    resetForm()
+
+    setEditAccount(account)
+    setNama(
+      account.nama ||
+      account.namaStore ||
+      "",
+    )
+    setEmail(
+      account.email ||
+      "",
+    )
+    // Password sengaja dikosongkan.
+    // Tidak pernah menampilkan password lama.
+    setPassword("")
+
+    setModal("edit")
+  }
+
+  // =====================================================
+  // SIMPAN PERUBAHAN AKUN
+  // =====================================================
+
+  async function handleEditAccount(
+    event: React.FormEvent,
+  ) {
+    event.preventDefault()
+
+    if (!editAccount) {
+      setMessage(
+        "Data akun tidak ditemukan.",
+      )
+      return
+    }
+
+    setLoading(true)
+    setMessage("")
+
+    try {
+      const user =
+        await import("@/lib/auth")
+
+      const currentUser =
+        user.auth.currentUser
+
+      if (!currentUser) {
+        setMessage(
+          "Anda belum login.",
+        )
+        return
+      }
+
+      const idToken =
+        await currentUser.getIdToken()
+
+      const response =
+        await fetch(
+          "/api/admin/users",
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              uid:
+                editAccount.uid,
+              nama,
+              email,
+              // Password kosong = tidak diubah.
+              // Tidak pernah dikirim ke Firestore.
+              password,
+            }),
+          },
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+          "Gagal memperbarui akun.",
+        )
+      }
+
+      setMessage(
+        "Akun berhasil diperbarui.",
+      )
+
+      await loadAccounts()
+
+      setTimeout(() => {
+        setEditAccount(null)
+        closeModal()
+      }, 1000)
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Terjadi kesalahan.",
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // =====================================================
   // NAMA AKUN
   // =====================================================
 
@@ -1172,6 +1297,10 @@ export function ManajemenAkunPage() {
                     STATUS
                   </th>
 
+                  <th className="px-4 py-3 text-center font-semibold">
+                    EDIT
+                  </th>
+
                   <th className="px-4 py-3 text-right font-semibold">
                     AKSI
                   </th>
@@ -1235,6 +1364,43 @@ export function ManajemenAkunPage() {
                             ? "AKTIF"
                             : "NONAKTIF"}
                         </span>
+
+                      </td>
+
+                      {/* EDIT */}
+
+                      <td className="px-4 py-3">
+
+                        {canManageAccount(
+                          account,
+                        ) ? (
+
+                          <div className="flex items-center justify-center">
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openEditModal(
+                                  account,
+                                )
+                              }
+                              disabled={
+                                loading
+                              }
+                              className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                            >
+                              EDIT
+                            </button>
+
+                          </div>
+
+                        ) : (
+
+                          <div className="text-center text-xs text-muted-foreground">
+                            -
+                          </div>
+
+                        )}
 
                       </td>
 
@@ -1310,6 +1476,178 @@ export function ManajemenAkunPage() {
         )}
 
       </div>
+
+      {/* =================================================
+          MODAL EDIT AKUN
+      ================================================= */}
+
+      {modal === "edit" &&
+        editAccount && (
+
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+
+            <div className="w-full max-w-lg rounded-xl border border-border bg-background shadow-xl">
+
+              <div className="flex items-center justify-between border-b border-border p-5">
+
+                <div>
+
+                  <h2 className="text-lg font-semibold">
+                    EDIT AKUN
+                  </h2>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Mengubah data akun {editAccount.role}
+                    .
+                  </p>
+
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeModal
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="rounded-md px-2 py-1 text-lg hover:bg-muted"
+                >
+                  ×
+                </button>
+
+              </div>
+
+              <form
+                onSubmit={
+                  handleEditAccount
+                }
+                className="space-y-4 p-5"
+              >
+
+                {/* NAMA */}
+
+                <div>
+
+                  <label className="mb-1 block text-sm font-medium">
+                    Nama
+                  </label>
+
+                  <input
+                    type="text"
+                    value={nama}
+                    onChange={(
+                      e,
+                    ) =>
+                      setNama(
+                        e.target.value,
+                      )
+                    }
+                    placeholder="Nama akun"
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+
+                </div>
+
+                {/* EMAIL */}
+
+                <div>
+
+                  <label className="mb-1 block text-sm font-medium">
+                    Email
+                  </label>
+
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(
+                      e,
+                    ) =>
+                      setEmail(
+                        e.target.value,
+                      )
+                    }
+                    placeholder="akun@contoh.com"
+                    required
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+
+                </div>
+
+                {/* PASSWORD */}
+
+                <div>
+
+                  <label className="mb-1 block text-sm font-medium">
+                    Password (opsional)
+                  </label>
+
+                  <input
+                    type="password"
+                    value={
+                      password
+                    }
+                    onChange={(
+                      e,
+                    ) =>
+                      setPassword(
+                        e.target.value,
+                      )
+                    }
+                    placeholder="Kosongkan jika tidak diubah (min. 6 karakter)"
+                    minLength={6}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+
+                </div>
+
+                {/* PESAN */}
+
+                {message && (
+                  <div className="rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
+                    {message}
+                  </div>
+                )}
+
+                {/* AKSI */}
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+
+                  <button
+                    type="button"
+                    onClick={
+                      closeModal
+                    }
+                    disabled={
+                      loading
+                    }
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    BATAL
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      loading
+                    }
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {loading
+                      ? "MENYIMPAN..."
+                      : "SIMPAN"}
+                  </button>
+
+                </div>
+
+              </form>
+
+            </div>
+
+          </div>
+
+        )}
 
       {/* =================================================
           MODAL KONFIRMASI AKTIF / NONAKTIF / HAPUS

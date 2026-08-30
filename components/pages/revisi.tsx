@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Layers,
@@ -56,6 +57,50 @@ function todayISO(): string {
     pad(now.getMonth() + 1),
     pad(now.getDate()),
   ].join("-")
+}
+
+// Formatter nama bulan Indonesia (contoh: "Agustus 2026")
+const monthFormatter = new Intl.DateTimeFormat(
+  "id-ID",
+  {
+    month: "long",
+    year: "numeric",
+  },
+)
+
+// ============================================================
+// FILTER REVISI SESUAI BULAN & TAHUN
+//
+// Difilter berdasarkan tanggal pengajuan (tanggal) agar data
+// benar-benar mengikuti bulan yang dipilih. Bulan sebelumnya
+// tidak ikut ditampilkan.
+// ============================================================
+
+function revisiInMonth(
+  list: Revisi[],
+  year: number,
+  monthIndex: number,
+): Revisi[] {
+  return list.filter((r) => {
+    const parts = String(
+      r.tanggal ?? "",
+    )
+      .split("-")
+      .map(Number)
+
+    if (
+      parts.length !== 3 ||
+      Number.isNaN(parts[0]) ||
+      Number.isNaN(parts[1])
+    ) {
+      return false
+    }
+
+    return (
+      parts[0] === year &&
+      parts[1] === monthIndex + 1
+    )
+  })
 }
 
 // ============================================================
@@ -903,8 +948,8 @@ function CentralStoreDetail({
       ) : items.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
-          title="Tidak ada pengajuan"
-          description="Toko ini belum memiliki pengajuan revisi absensi."
+          title="Tidak ada riwayat pengerjaan"
+          description="Tidak ada riwayat pengerjaan pada bulan ini."
         />
       ) : (
         <div className="space-y-3">
@@ -972,9 +1017,11 @@ function CentralStoreDetail({
 function StoreSubmissions({
   revisi,
   isLoading,
+  monthLabel,
 }: {
   revisi: Revisi[]
   isLoading: boolean
+  monthLabel: string
 }) {
   const sorted = [...revisi].sort((a, b) =>
     b.tanggalPengajuan.localeCompare(
@@ -990,10 +1037,11 @@ function StoreSubmissions({
         </div>
         <div>
           <h2 className="text-base font-semibold tracking-tight">
-            Riwayat Pengajuan
+            Riwayat Pengajuan {monthLabel}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Revisi yang telah Anda ajukan beserta statusnya.
+            Revisi yang telah Anda ajukan pada bulan{" "}
+            {monthLabel} beserta statusnya.
           </p>
         </div>
       </div>
@@ -1004,7 +1052,7 @@ function StoreSubmissions({
         <EmptyState
           icon={CheckCircle2}
           title="Belum ada pengajuan"
-          description="Ajukan revisi absensi melalui formulir di atas."
+          description="Belum ada riwayat pengajuan bulan ini."
         />
       ) : (
         <div className="space-y-3">
@@ -1039,12 +1087,61 @@ export function RevisiPage() {
   const [selected, setSelected] =
     React.useState<string | null>(null)
 
+  // ============================================================
+  // PERIODE BULAN (CENTRAL)
+  //
+  // STORE tidak memiliki filter bulan dan selalu menggunakan
+  // bulan berjalan. CENTRAL memilih bulan pada halaman depan.
+  // ============================================================
+
+  const [period, setPeriod] =
+    React.useState(() => {
+      const now = new Date()
+      return {
+        year: now.getFullYear(),
+        month: now.getMonth(),
+      }
+    })
+
   const role = profile?.role
 
   const isStore = role === "store"
   const isCentral =
     role === "central_cabang" ||
     role === "central_pusat"
+
+  function changeMonth(offset: number) {
+    setPeriod((current) => {
+      const d = new Date(
+        current.year,
+        current.month + offset,
+        1,
+      )
+      return {
+        year: d.getFullYear(),
+        month: d.getMonth(),
+      }
+    })
+  }
+
+  const monthLabel =
+    monthFormatter
+      .format(
+        new Date(
+          period.year,
+          period.month,
+          1,
+        ),
+      )
+      .toUpperCase()
+
+  // Data yang tampil benar-benar mengikuti bulan yang dipilih.
+  const monthRevisi =
+    revisiInMonth(
+      revisi,
+      period.year,
+      period.month,
+    )
 
   React.useEffect(() => {
     let active = true
@@ -1082,15 +1179,33 @@ export function RevisiPage() {
     stores.find((s) => s.id === selected)
 
   // Store tidak perlu halaman detail, langsung tampil
-  // form + riwayat.
+  // form + riwayat. STORE tidak memiliki filter/dropdown
+  // bulan; selalu menampilkan bulan berjalan saja.
   if (isStore) {
+    const now = new Date()
+
+    const storeMonthLabel =
+      monthFormatter
+        .format(now)
+        .toUpperCase()
+
+    const storeMonthRevisi =
+      revisiInMonth(
+        revisi,
+        now.getFullYear(),
+        now.getMonth(),
+      )
+
     return (
       <div className="space-y-6">
         <StoreRevisiForm />
 
         <StoreSubmissions
-          revisi={revisi}
+          revisi={storeMonthRevisi}
           isLoading={loadingRevisi}
+          monthLabel={
+            storeMonthLabel
+          }
         />
       </div>
     )
@@ -1127,19 +1242,46 @@ export function RevisiPage() {
             )}
           </p>
         </div>
+
+        {/* PILIHAN BULAN (SEBELUM DAFTAR TOKO) */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Bulan sebelumnya"
+            onClick={() =>
+              changeMonth(-1)
+            }
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <p className="min-w-40 text-center text-sm font-semibold">
+            {monthLabel}
+          </p>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Bulan berikutnya"
+            onClick={() =>
+              changeMonth(1)
+            }
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
       </div>
 
       {selected && selectedStore ? (
         <CentralStoreDetail
           store={selectedStore}
-          revisi={revisi}
+          revisi={monthRevisi}
           onBack={() => setSelected(null)}
           isLoading={loadingRevisi}
         />
       ) : (
         <CentralStoreList
           stores={stores}
-          revisi={revisi}
+          revisi={monthRevisi}
           onSelect={setSelected}
         />
       )}

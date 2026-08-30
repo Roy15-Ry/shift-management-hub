@@ -172,6 +172,18 @@ function canManageTarget(
 }
 
 // =====================================================
+// VALIDASI EMAIL
+// =====================================================
+
+function isValidEmail(
+  value: string,
+): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    value,
+  )
+}
+
+// =====================================================
 // GET
 // =====================================================
 
@@ -777,6 +789,356 @@ export async function DELETE(
           error instanceof Error
             ? error.message
             : "Gagal menghapus akun.",
+      },
+      {
+        status: 500,
+      },
+    )
+  }
+}
+
+// =====================================================
+// PUT
+// EDIT AKUN — Nama / Email / Password
+//
+// Hanya memperbarui field yang benar-benar berubah.
+// Password TIDAK pernah disimpan ke Firestore, hanya
+// dikirim ke Firebase Authentication (via Admin SDK).
+// Role, cabangId, storeId, aktif TIDAK diubah.
+// =====================================================
+
+export async function PUT(
+  request: Request,
+) {
+  try {
+    const currentUser =
+      await getCurrentUser(
+        request,
+      )
+
+    // =================================================
+    // HANYA CENTRAL
+    // =================================================
+
+    if (
+      currentUser.role !==
+      "central_pusat" &&
+      currentUser.role !==
+      "central_cabang"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Anda tidak memiliki izin mengubah akun.",
+        },
+        {
+          status: 403,
+        },
+      )
+    }
+
+    const body =
+      await request.json()
+
+    const targetUid =
+      String(
+        body.uid ?? "",
+      ).trim()
+
+    if (!targetUid) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "UID akun wajib diisi.",
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    // =================================================
+    // TIDAK BOLEH MENGUBAH DIRI SENDIRI
+    // =================================================
+
+    if (
+      targetUid ===
+      currentUser.uid
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Anda tidak dapat mengubah akun sendiri.",
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    const targetUser =
+      await getTargetUser(
+        targetUid,
+      )
+
+    if (!targetUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Akun yang dituju tidak ditemukan.",
+        },
+        {
+          status: 404,
+        },
+      )
+    }
+
+    // =================================================
+    // CENTRAL PUSAT TIDAK BOLEH DIUBAH DARI APLIKASI
+    // =================================================
+
+    if (
+      targetUser.role ===
+      "central_pusat"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Akun Central Pusat hanya dapat dikelola melalui Firebase.",
+        },
+        {
+          status: 403,
+        },
+      )
+    }
+
+    // =================================================
+    // CEK HAK AKSES
+    // =================================================
+
+    if (
+      !canManageTarget(
+        currentUser,
+        targetUser,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Anda tidak memiliki izin mengubah akun tersebut.",
+        },
+        {
+          status: 403,
+        },
+      )
+    }
+
+    // =================================================
+    // NORMALISASI + VALIDASI
+    // =================================================
+
+    const newNama =
+      String(
+        body.nama ?? "",
+      ).trim()
+
+    const newEmail =
+      String(
+        body.email ?? "",
+      )
+        .trim()
+        .toLowerCase()
+
+    // Password optional. Jika kosong, tidak diubah.
+    const newPassword =
+      String(
+        body.password ?? "",
+      )
+
+    if (!newNama) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Nama wajib diisi.",
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    if (
+      !isValidEmail(newEmail)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Email tidak valid.",
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    if (
+      newPassword.length > 0 &&
+      newPassword.length < 6
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Password minimal 6 karakter.",
+        },
+        {
+          status: 400,
+        },
+      )
+    }
+
+    // =================================================
+    // UPDATE FIREBASE AUTHUTENTICATION
+    //
+    // Email / password dikirim ke Admin SDK. Password
+    // tidak pernah disimpan ke Firestore.
+    // =================================================
+
+    const authUpdate: Record<
+      string,
+      unknown
+    > = {}
+
+    const prevEmail =
+      String(
+        targetUser.email ?? "",
+      )
+        .trim()
+        .toLowerCase()
+
+    if (
+      newEmail &&
+      newEmail !== prevEmail
+    ) {
+      authUpdate.email =
+        newEmail
+    }
+
+    if (newPassword) {
+      authUpdate.password =
+        newPassword
+    }
+
+    if (
+      Object.keys(authUpdate).length >
+      0
+    ) {
+      await adminAuth.updateUser(
+        targetUid,
+        authUpdate,
+      )
+    }
+
+    // =================================================
+    // UPDATE FIRESTORE users/{uid}
+    //
+    // Hanya menyinkronkan nama & email yang berubah.
+    // Field lain (role/cabangId/storeId/aktif) TIDAK
+    // diubah. Password tidak disimpan.
+    // =================================================
+
+    const docUpdate: Record<
+      string,
+      unknown
+    > = {}
+
+    if (
+      newNama !==
+      String(
+        targetUser.nama ?? "",
+      )
+    ) {
+      docUpdate.nama =
+        newNama
+    }
+
+    if (
+      newEmail !== prevEmail
+    ) {
+      docUpdate.email =
+        newEmail
+    }
+
+    if (
+      Object.keys(docUpdate).length >
+      0
+    ) {
+      await adminDb
+        .collection("users")
+        .doc(targetUid)
+        .update(docUpdate)
+    }
+
+    return NextResponse.json({
+      success: true,
+      message:
+        "Akun berhasil diperbarui.",
+    })
+  } catch (error: unknown) {
+    console.error(
+      "UPDATE USER ACCOUNT ERROR:",
+      error,
+    )
+
+    if (
+      error instanceof Error &&
+      error.message ===
+      "AUTH_REQUIRED"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Tidak terautentikasi.",
+        },
+        {
+          status: 401,
+        },
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message ===
+      "USER_PROFILE_NOT_FOUND"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Profil pengguna tidak ditemukan.",
+        },
+        {
+          status: 403,
+        },
+      )
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Gagal memperbarui akun.",
       },
       {
         status: 500,
