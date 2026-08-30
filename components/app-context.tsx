@@ -34,6 +34,7 @@ export type PageKey =
   | "history"
   | "manajemen-akun"
   | "buat-jadwal"
+  | "jadwal-libur"
 
 type AppContextValue = {
   page: PageKey

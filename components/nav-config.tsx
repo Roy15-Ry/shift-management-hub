@@ -4,6 +4,7 @@ import {
   ClipboardList,
   CalendarDays,
   History,
+  Palmtree,
   UsersRound,
   type LucideIcon,
 } from "lucide-react"
@@ -52,6 +53,11 @@ export const CENTRAL_NAV_ITEMS: NavItem[] = [
     key: "history",
     label: "HISTORY",
     icon: History,
+  },
+  {
+    key: "jadwal-libur",
+    label: "JADWAL LIBUR",
+    icon: Palmtree,
   },
 ]
 
@@ -112,4 +118,5 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   shift: "JADWAL SHIFT",
   "shift-cabang": "SHIFT CABANG",
   history: "HISTORY",
+  "jadwal-libur": "JADWAL LIBUR",
 }

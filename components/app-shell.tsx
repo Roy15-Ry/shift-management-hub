@@ -16,6 +16,7 @@ import { RevisiPage } from "@/components/pages/revisi"
 import { ShiftPage, ShiftCabangPage } from "@/components/pages/shift"
 import { HistoryPage } from "@/components/pages/history"
 import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
+import { JadwalLiburPage } from "@/components/pages/jadwal-libur"
 
 function PageContent() {
   const { page, setPage } = useApp()
@@ -73,6 +74,9 @@ function PageContent() {
 
     case "history":
       return <HistoryPage />
+
+    case "jadwal-libur":
+      return <JadwalLiburPage />
 
     default:
       return null
