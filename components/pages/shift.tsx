@@ -1,17 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, FileDown } from "lucide-react"
-import { Segmented, DateField, Field } from "@/components/controls"
-import { StoreDayCard } from "@/components/store-day"
+import { ChevronLeft, ChevronRight, FileDown, RotateCcw } from "lucide-react"
+import { Segmented, DateField, Field, SelectField } from "@/components/controls"
 import type { UserOptions as AutoTableUserOptions } from "jspdf-autotable"
-import {
-  daysInMonth,
-  employeesByStore,
-  getEmployeeStatus,
-  monthName,
-  stores,
-} from "@/lib/data"
+import { formatTanggal } from "@/lib/data"
 import {
   SHIFT_STATUS_ITEMS,
   getShiftStatusItem,
@@ -41,6 +34,23 @@ const weekdayFormatter = new Intl.DateTimeFormat("id-ID", { weekday: "short" })
 
 function getDateKey(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+// Normalisasi tanggal ke format terpakai project "YYYY-MM-DD" (string),
+// agar pembandingan tanggal pada filter HARIAN selalu konsisten meski
+// nilai asal mungkin berupa string ISO (ada komponen waktu) atau objek Date.
+function normalizeDateKey(value: unknown): string {
+  if (!value) return ""
+  let source: string
+  if (value instanceof Date) {
+    const y = value.getFullYear()
+    const m = String(value.getMonth() + 1).padStart(2, "0")
+    const d = String(value.getDate()).padStart(2, "0")
+    source = `${y}-${m}-${d}`
+  } else {
+    source = String(value).trim()
+  }
+  return `${source.slice(0, 4)}-${source.slice(5, 7)}-${source.slice(8, 10)}`
 }
 
 function getDaysInMonth(year: number, month: number) {
@@ -265,12 +275,6 @@ function StoreJadwalShift() {
                       <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs md:font-semibold">
                         {employee.name}
                       </p>
-                      <p className="truncate text-[0.55rem] text-muted-foreground md:text-[0.7rem]">
-                        NIK: {employee.nik ?? "-"}
-                      </p>
-                      <p className="truncate text-[0.55rem] text-muted-foreground md:text-[0.7rem]">
-                        {employee.posisi ?? "-"}
-                      </p>
                     </td>
                     {days.map((day) => {
                       const tanggal = getDateKey(period.year, period.month, day)
@@ -281,7 +285,7 @@ function StoreJadwalShift() {
                           <span
                             title={option?.title ?? "Belum dijadwalkan"}
                             className={cn(
-                              "flex h-5 items-center justify-center truncate rounded px-0.5 text-[0.55rem] font-bold ring-1 md:mx-auto md:h-6 md:min-w-11 md:px-1 md:text-[0.62rem] md:whitespace-nowrap",
+                              "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
                               option ? option.className : "bg-background text-muted-foreground ring-border",
                             )}
                           >
@@ -310,7 +314,7 @@ function StoreJadwalShift() {
               <span key={option.status} className="flex items-center gap-2 text-sm">
                 <span
                   className={cn(
-                    "flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
+                    "flex h-7 min-w-9 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1.5 text-[0.68rem] font-bold ring-1",
                     option.className,
                   )}
                 >
@@ -327,8 +331,26 @@ function StoreJadwalShift() {
 }
 
 // ============================================================
-// TAMPILAN CENTRAL (SHIFT CABANG)
+// TAMPILAN SHIFT CABANG
+//
+// Digunakan oleh akun STORE, CENTRAL CABANG, dan CENTRAL
+// PUSAT untuk MELIHAT jadwal shift seluruh toko dalam
+// cakupannya (READ-ONLY). Tidak ada aksi tulis/edit.
+//
+// Cakupan data:
+//   STORE / CENTRAL CABANG -> hanya toko pada cabangId akun
+//   CENTRAL PUSAT          -> seluruh cabang & toko
+//
+// Warna/label bersumber dari lib/shift-status agar konsisten.
 // ============================================================
+
+function getLocalDateISO(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
+}
 
 function Legend() {
   return (
@@ -337,7 +359,7 @@ function Legend() {
         <div key={item.status} className="flex items-center gap-1.5">
           <span
             className={cn(
-              "flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
+              "flex h-7 min-w-9 items-center justify-center whitespace-nowrap rounded-md px-1.5 text-[0.68rem] font-bold ring-1",
               item.className,
             )}
           >
@@ -352,155 +374,313 @@ function Legend() {
   )
 }
 
-function MonthlyView() {
-  const [year] = React.useState(2026)
-  const [month, setMonth] = React.useState(8) // Agustus
-  const days = daysInMonth(year, month)
-  const dayList = Array.from({ length: days }, (_, i) => i + 1)
+// Tabel jadwal bulanan satu toko (mengikuti visual JADWAL SHIFT).
+function StoreMonthlyTable({
+  store,
+  index,
+  employees,
+  schedules,
+  period,
+}: {
+  store: FirestoreStore
+  index: number
+  employees: FirestoreEmployee[]
+  schedules: FirestoreSchedule[]
+  period: { year: number; month: number }
+}) {
+  const days = getDaysInMonth(period.year, period.month)
+
+  const scheduleByCell = React.useMemo(() => {
+    return new Map(schedules.map((s) => [`${s.employeeId}:${s.tanggal}`, s.status]))
+  }, [schedules])
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label="Bulan sebelumnya"
-            onClick={() => setMonth((m) => (m > 1 ? m - 1 : 12))}
-            className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <div className="min-w-40 text-center text-base font-semibold">
-            {monthName(month)} {year}
-          </div>
-          <button
-            type="button"
-            aria-label="Bulan berikutnya"
-            onClick={() => setMonth((m) => (m < 12 ? m + 1 : 1))}
-            className="flex size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted"
-          >
-            <ChevronRight className="size-4" />
-          </button>
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-3">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+          {index}
         </div>
-        <Legend />
+        <p className="truncate text-sm font-semibold">{store.nama}</p>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {employees.length} karyawan
+        </span>
       </div>
 
-      <div className="space-y-4">
-        {stores.map((s) => {
-          const emps = employeesByStore(s.id)
-          return (
-            <div
-              key={s.id}
-              className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
-            >
-              <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-3">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
-                  {s.kode.slice(-1)}
-                </div>
-                <p className="text-sm font-semibold">{s.name}</p>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {emps.length} karyawan
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                        Karyawan
-                      </th>
-                      {dayList.map((d) => (
-                        <th
-                          key={d}
-                          className="border-b border-border px-0.5 py-2 text-center text-[0.7rem] font-medium text-muted-foreground"
-                          style={{ minWidth: 44 }}
-                        >
-                          {d}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {emps.map((e) => (
-                      <tr key={e.id}>
-                        <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5 text-xs font-medium whitespace-nowrap">
-                          {e.name}
-                        </td>
-                        {dayList.map((d) => {
-                          const iso = `${year}-08-${String(d).padStart(2, "0")}`
-                          const status = getEmployeeStatus(e, iso)
-                          const item = getShiftStatusItem(status)
-                          return (
-                            <td
-                              key={d}
-                              className="border-b border-border/50 p-0.5 text-center"
-                            >
-                              <span
-                                title={item?.title ?? "Belum dijadwalkan"}
-                                className={cn(
-                                  "mx-auto flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded text-[0.6rem] font-bold ring-1",
-                                  item?.className ?? "bg-background text-muted-foreground ring-border",
-                                )}
-                              >
-                                {item?.label ?? "-"}
-                              </span>
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )
-        })}
+      <div className="overflow-x-auto">
+        <table className="w-full border-separate border-spacing-0 text-xs">
+          <thead className="bg-muted/60 text-muted-foreground">
+            <tr>
+              <th className="sticky left-0 z-20 min-w-[9rem] border-b border-r border-border bg-muted/60 px-1.5 py-2 text-left align-middle font-semibold sm:px-2 md:min-w-[12rem] md:py-2.5">
+                Karyawan
+              </th>
+              {days.map((day) => {
+                const date = new Date(period.year, period.month, day)
+                return (
+                  <th
+                    key={day}
+                    className="min-w-9 overflow-hidden border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0 md:min-w-12"
+                  >
+                    <span className="block truncate text-[0.7rem] leading-tight text-foreground md:text-sm">{day}</span>
+                    <span className="block truncate text-[0.5rem] uppercase leading-tight md:text-[0.65rem]">
+                      {weekdayFormatter.format(date)}
+                    </span>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((employee) => (
+              <tr key={employee.id}>
+                <td className="sticky left-0 z-10 min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]">
+                  <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs md:font-semibold">
+                    {employee.name}
+                  </p>
+                </td>
+                {days.map((day) => {
+                  const tanggal = getDateKey(period.year, period.month, day)
+                  const status = scheduleByCell.get(`${employee.id}:${tanggal}`)
+                  const option = getShiftStatusItem(status)
+                  return (
+                    <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                      <span
+                        title={option?.title ?? "Belum dijadwalkan"}
+                        className={cn(
+                          "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
+                          option ? option.className : "bg-background text-muted-foreground ring-border",
+                        )}
+                      >
+                        {option?.label ?? "-"}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+
+      {employees.length === 0 && (
+        <p className="px-4 py-3 text-sm text-muted-foreground">Belum ada karyawan aktif pada toko ini.</p>
+      )}
     </div>
   )
 }
 
-function DailyView() {
-  const [date, setDate] = React.useState("2026-08-12")
+// Tabel jadwal harian satu toko (berdasarkan tanggal terpilih).
+function StoreDailyTable({
+  store,
+  index,
+  employees,
+  schedules,
+  tanggal,
+}: {
+  store: FirestoreStore
+  index: number
+  employees: FirestoreEmployee[]
+  schedules: FirestoreSchedule[]
+  tanggal: string
+}) {
+  const scheduleByEmployee = React.useMemo(() => {
+    const key = normalizeDateKey(tanggal)
+    return new Map(
+      schedules
+        .filter((s) => normalizeDateKey(s.tanggal) === key)
+        .map((s) => [s.employeeId, s.status] as [string, string]),
+    )
+  }, [schedules, tanggal])
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="w-full sm:w-56">
-          <Field label="Pilih Tanggal">
-            <DateField value={date} onChange={setDate} />
-          </Field>
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-3">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+          {index}
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {SHIFT_STATUS_ITEMS.map((item) => (
-            <div key={item.status} className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "flex h-5 min-w-7 items-center justify-center whitespace-nowrap rounded px-1 text-[0.6rem] font-bold ring-1",
-                  item.className,
-                )}
-              >
-                {item.label}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {item.title}
-              </span>
-            </div>
-          ))}
-        </div>
+        <p className="truncate text-sm font-semibold">{store.nama}</p>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {employees.length} karyawan
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-        {stores.map((s) => (
-          <StoreDayCard key={s.id} storeId={s.id} dateISO={date} />
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full border-separate border-spacing-0 text-xs">
+          <thead className="bg-muted/60 text-muted-foreground">
+            <tr>
+              <th className="min-w-[9rem] border-b border-r border-border bg-muted/60 px-1.5 py-2 text-left align-middle font-semibold sm:px-2 md:min-w-[12rem] md:py-2.5">
+                Karyawan
+              </th>
+              <th className="min-w-9 border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0 md:min-w-28">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((employee) => {
+              const status = scheduleByEmployee.get(employee.id)
+              const option = getShiftStatusItem(status)
+              return (
+                <tr key={employee.id}>
+                  <td className="min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]">
+                    <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs md:font-semibold">
+                      {employee.name}
+                    </p>
+                  </td>
+                  <td className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                    <span
+                      title={option?.title ?? "Belum dijadwalkan"}
+                      className={cn(
+                        "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-16 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
+                        option ? option.className : "bg-background text-muted-foreground ring-border",
+                      )}
+                    >
+                      {option?.label ?? "-"}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {employees.length === 0 && (
+        <p className="px-4 py-3 text-sm text-muted-foreground">Belum ada karyawan aktif pada toko ini.</p>
+      )}
     </div>
   )
 }
 
 export function ShiftCabangPage() {
+  const { profile, user } = useAuth()
+  const role = profile?.role?.trim().toLowerCase()
+
+  const isCentralPusat = role === "central_pusat"
+
   const [mode, setMode] = React.useState<"bulanan" | "harian">("bulanan")
+  const initialModeRef = React.useRef(mode)
+  const [period, setPeriod] = React.useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
+  const [date, setDate] = React.useState<string>(() => getLocalDateISO())
+  const [storeFilter, setStoreFilter] = React.useState("all")
+  const [cabangFilter, setCabangFilter] = React.useState("all")
+
+  const [stores, setStores] = React.useState<FirestoreStore[]>([])
+  const [employeesByStoreId, setEmployeesByStoreId] = React.useState<Record<string, FirestoreEmployee[]>>({})
+  const [schedulesByStore, setSchedulesByStore] = React.useState<Record<string, FirestoreSchedule[]>>({})
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState("")
+
+  React.useEffect(() => {
+    // Butuh user (untuk ID token) + profile agar mengirim token yang sah.
+    if (!profile || !user) {
+      setLoading(false)
+      return
+    }
+
+    const authedUser = user
+    let cancelled = false
+    setLoading(true)
+    setError("")
+
+    async function loadData() {
+      try {
+        const idToken = await authedUser.getIdToken()
+
+        // Data dimuat melalui server (Admin SDK) sehingga scope role
+        // (STORE/CENTRAL CABANG -> cabang akun; CENTRAL PUSAT -> semua)
+        // dipaksakan di sisi server, bukan bergantung pada Firestore
+        // Rules klien. Hanya GET/read.
+        const params = new URLSearchParams({
+          year: String(period.year),
+          month: String(period.month),
+        })
+
+        const response = await fetch(
+          `/api/shift-cabang?${params.toString()}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+            cache: "no-store",
+          },
+        )
+
+        if (!response.ok) {
+          throw new Error("Data shift cabang tidak dapat dimuat.")
+        }
+
+        const data = await response.json()
+
+        if (cancelled) return
+
+        setStores(Array.isArray(data.stores) ? data.stores : [])
+        setEmployeesByStoreId(
+          data.employeesByStoreId && typeof data.employeesByStoreId === "object"
+            ? data.employeesByStoreId
+            : {},
+        )
+        setSchedulesByStore(
+          data.schedulesByStore && typeof data.schedulesByStore === "object"
+            ? data.schedulesByStore
+            : {},
+        )
+      } catch (loadError) {
+        console.error("Gagal memuat data Shift Cabang:", loadError)
+        if (!cancelled) setError("Data jadwal belum dapat dimuat. Silakan coba lagi.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    loadData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [profile, user, period.year, period.month])
+
+  const branchOptions = React.useMemo(() => {
+    return Array.from(new Set(stores.map((s) => s.cabangId).filter(Boolean)))
+  }, [stores])
+
+  const visibleStores = React.useMemo(() => {
+    return stores
+      .filter((s) => {
+        if (isCentralPusat && cabangFilter !== "all" && s.cabangId !== cabangFilter) return false
+        if (storeFilter !== "all" && s.id !== storeFilter) return false
+        return true
+      })
+      .sort((a, b) => a.nama.localeCompare(b.nama, "id", { sensitivity: "base" }))
+  }, [stores, isCentralPusat, cabangFilter, storeFilter])
+
+  function changeMonth(offset: number) {
+    setPeriod((current) => {
+      const d = new Date(current.year, current.month + offset, 1)
+      return { year: d.getFullYear(), month: d.getMonth() }
+    })
+  }
+
+  function changeDate(next: string) {
+    const normalized = normalizeDateKey(next)
+    setDate(normalized)
+    if (normalized) {
+      setMode("harian")
+      const [y, m] = normalized.split("-").map(Number)
+      if (!Number.isNaN(y) && !Number.isNaN(m)) {
+        setPeriod({ year: y, month: m - 1 })
+      }
+    }
+  }
+
+  const monthLabel = monthFormatter.format(new Date(period.year, period.month, 1)).toUpperCase()
+
+  if (loading) {
+    return <LoadingState label="Memuat jadwal shift cabang..." />
+  }
 
   return (
     <div className="space-y-5">
@@ -508,7 +688,7 @@ export function ShiftCabangPage() {
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Shift Cabang</h2>
           <p className="text-sm text-muted-foreground">
-            Lihat jadwal seluruh toko secara bulanan atau berdasarkan tanggal.
+            Lihat jadwal shift seluruh toko
           </p>
         </div>
         <Segmented
@@ -521,7 +701,120 @@ export function ShiftCabangPage() {
         />
       </div>
 
-      {mode === "bulanan" ? <MonthlyView /> : <DailyView />}
+      {/* FILTER */}
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3 sm:grid-cols-2",
+            isCentralPusat ? "lg:grid-cols-3" : "lg:grid-cols-2",
+          )}
+        >
+          {isCentralPusat && (
+            <Field label="Cabang">
+              <SelectField
+                value={cabangFilter}
+                onChange={setCabangFilter}
+                options={[
+                  { value: "all", label: "Semua Cabang" },
+                  ...branchOptions.map((b) => ({ value: b, label: b })),
+                ]}
+              />
+            </Field>
+          )}
+
+          <Field label="Toko">
+            <SelectField
+              value={storeFilter}
+              onChange={setStoreFilter}
+              options={[
+                { value: "all", label: "Semua Toko" },
+                ...stores.map((s) => ({ value: s.id, label: s.nama })),
+              ]}
+            />
+          </Field>
+
+          <Field label="Hari / Tanggal">
+            <DateField value={date} onChange={changeDate} />
+          </Field>
+        </div>
+
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setStoreFilter("all")
+              setCabangFilter("all")
+              setDate(getLocalDateISO())
+              setMode(initialModeRef.current)
+            }}
+          >
+            <RotateCcw className="mr-1.5 size-3.5" />
+            Reset Filter
+          </Button>
+        </div>
+
+        {error && (
+          <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      {/* LEGENDA */}
+      <Legend />
+
+      {visibleStores.length === 0 ? (
+        <EmptyState
+          title="Tidak ada toko"
+          description={isCentralPusat ? "Belum ada data toko." : "Belum ada toko aktif pada cabang ini."}
+        />
+      ) : mode === "bulanan" ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" aria-label="Bulan sebelumnya" onClick={() => changeMonth(-1)}>
+                <ChevronLeft className="size-4" />
+              </Button>
+              <p className="min-w-40 text-center text-sm font-semibold">{monthLabel}</p>
+              <Button variant="ghost" size="icon" aria-label="Bulan berikutnya" onClick={() => changeMonth(1)}>
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {visibleStores.length} toko ditampilkan
+            </span>
+          </div>
+
+          {visibleStores.map((store, index) => (
+            <StoreMonthlyTable
+              key={store.id}
+              store={store}
+              index={index + 1}
+              employees={employeesByStoreId[store.id] ?? []}
+              schedules={schedulesByStore[store.id] ?? []}
+              period={period}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Jadwal tanggal <span className="font-medium text-foreground">{formatTanggal(date)}</span> · {visibleStores.length} toko
+          </p>
+          {visibleStores.map((store, index) => (
+            <StoreDailyTable
+              key={store.id}
+              store={store}
+              index={index + 1}
+              employees={employeesByStoreId[store.id] ?? []}
+              schedules={schedulesByStore[store.id] ?? []}
+              tanggal={date}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

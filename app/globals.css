@@ -85,18 +85,18 @@
   --chart-5: oklch(0.62 0.19 25);
   --radius: 0.65rem;
 
-  --status-pagi: oklch(0.55 0.13 70);
-  --status-pagi-bg: oklch(0.95 0.05 80);
-  --status-siang: oklch(0.5 0.15 258);
-  --status-siang-bg: oklch(0.95 0.03 258);
-  --status-libur: oklch(0.5 0.02 260);
-  --status-libur-bg: oklch(0.95 0.006 260);
-  --status-cuti: oklch(0.5 0.1 190);
-  --status-cuti-bg: oklch(0.95 0.03 190);
-  --status-izin: oklch(0.5 0.14 300);
-  --status-izin-bg: oklch(0.95 0.03 300);
-  --status-sakit: oklch(0.55 0.19 25);
-  --status-sakit-bg: oklch(0.95 0.04 25);
+  --status-pagi: oklch(0.696 0.17 149);
+  --status-pagi-bg: oklch(0.95 0.05 149);
+  --status-siang: oklch(0.55 0.17 264);
+  --status-siang-bg: oklch(0.95 0.03 264);
+  --status-libur: oklch(0.577 0.245 27);
+  --status-libur-bg: oklch(0.95 0.04 27);
+  --status-cuti: oklch(0.577 0.245 27);
+  --status-cuti-bg: oklch(0.95 0.04 27);
+  --status-izin: oklch(0.577 0.245 27);
+  --status-izin-bg: oklch(0.95 0.04 27);
+  --status-sakit: oklch(0.577 0.245 27);
+  --status-sakit-bg: oklch(0.95 0.04 27);
 
   --sidebar: oklch(0.24 0.03 262);
   --sidebar-foreground: oklch(0.9 0.01 260);

@@ -149,6 +149,70 @@ export async function getFirestoreStores(
 }
 
 // ============================================================
+// STORES BY CABANG
+//
+// Mengambil semua toko yang berada pada satu cabang.
+// Dipakai oleh SHIFT CABANG untuk akun STORE dan CENTRAL
+// CABANG agar keduanya hanya melihat toko pada cabang mereka.
+// ============================================================
+
+export async function getFirestoreStoresByCabang(
+  cabangId: string,
+): Promise<FirestoreStore[]> {
+  const storesRef = collection(
+    db,
+    "stores",
+  )
+
+  // Gunakan satu klausa (cabangId) agar tidak membutuhkan composite
+  // index; penyaringan aktif dilakukan di sisi klien.
+  const q = query(
+    storesRef,
+    where(
+      "cabangId",
+      "==",
+      cabangId,
+    ),
+  )
+
+  const snapshot =
+    await getDocs(q)
+
+  return snapshot.docs
+    .map(
+      (doc) => {
+        const data = doc.data()
+
+        return {
+          id:
+            data.storeId ??
+            doc.id,
+
+          nama:
+            data.namaStore ??
+            data.nama ??
+            "-",
+
+          kode:
+            data.storeId ??
+            doc.id,
+
+          cabangId:
+            data.cabangId ??
+            "",
+
+          aktif:
+            data.aktif !== false,
+        }
+      },
+    )
+    .filter(
+      (store) =>
+        store.aktif !== false,
+    )
+}
+
+// ============================================================
 // EMPLOYEES
 // ============================================================
 

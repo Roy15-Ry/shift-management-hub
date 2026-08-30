@@ -43,39 +43,39 @@ const summaryMeta: {
 }[] = [
     {
       key: "shift_pagi",
-      bg: "bg-amber-500",
+      bg: "bg-green-500",
       text: "text-white",
-      ring: "ring-amber-500/30",
+      ring: "ring-green-500/30",
     },
     {
       key: "shift_siang",
-      bg: "bg-blue-600",
+      bg: "bg-blue-500",
       text: "text-white",
-      ring: "ring-blue-600/30",
+      ring: "ring-blue-500/30",
     },
     {
       key: "libur",
-      bg: "bg-red-600",
+      bg: "bg-red-500",
       text: "text-white",
-      ring: "ring-red-600/30",
+      ring: "ring-red-500/30",
     },
     {
       key: "sakit",
-      bg: "bg-rose-900",
+      bg: "bg-red-500",
       text: "text-white",
-      ring: "ring-rose-900/30",
+      ring: "ring-red-500/30",
     },
     {
       key: "izin",
-      bg: "bg-violet-600",
+      bg: "bg-red-500",
       text: "text-white",
-      ring: "ring-violet-600/30",
+      ring: "ring-red-500/30",
     },
     {
       key: "cuti",
-      bg: "bg-emerald-600",
+      bg: "bg-red-500",
       text: "text-white",
-      ring: "ring-emerald-600/30",
+      ring: "ring-red-500/30",
     },
   ]
 
@@ -84,12 +84,12 @@ const summaryMeta: {
 // ============================================================
 
 const STATUS_BADGE_CLASS: Record<ShiftStatus, string> = {
-  shift_pagi: "bg-amber-500 text-white ring-amber-500/30",
-  shift_siang: "bg-blue-600 text-white ring-blue-600/30",
-  libur: "bg-red-600 text-white ring-red-600/30",
-  cuti: "bg-emerald-600 text-white ring-emerald-600/30",
-  izin: "bg-violet-600 text-white ring-violet-600/30",
-  sakit: "bg-rose-900 text-white ring-rose-900/30",
+  shift_pagi: "bg-green-500 text-white ring-green-500/30",
+  shift_siang: "bg-blue-500 text-white ring-blue-500/30",
+  libur: "bg-red-500 text-white ring-red-500/30",
+  cuti: "bg-red-500 text-white ring-red-500/30",
+  izin: "bg-red-500 text-white ring-red-500/30",
+  sakit: "bg-red-500 text-white ring-red-500/30",
 }
 
 function statusDisplayLabel(status: ShiftStatus) {
@@ -99,7 +99,7 @@ function statusDisplayLabel(status: ShiftStatus) {
     case "shift_siang":
       return "SHIFT SIANG"
     case "libur":
-      return "OFF"
+      return "LIBUR"
     case "cuti":
       return "CUTI"
     case "izin":
@@ -1163,14 +1163,6 @@ export function DashboardPage() {
 
                                             <p className="text-sm font-medium">
                                               {employee.name || "-"}
-                                            </p>
-
-                                            <p className="text-xs text-muted-foreground">
-                                              NIK: {employee.nik?.trim() || "-"}
-                                            </p>
-
-                                            <p className="text-xs text-muted-foreground">
-                                              {employee.posisi || "-"}
                                             </p>
 
                                           </div>

@@ -622,17 +622,18 @@ export function BuatJadwalPage() {
 
         {message && <p className="mt-3 text-sm text-muted-foreground" role="status">{message}</p>}
 
-        <div className="mt-2 overflow-x-auto rounded-lg border border-border/60">
-          <table className="min-w-[1220px] border-separate border-spacing-0 text-xs">
+        <div className="mt-5 rounded-lg border border-border">
+          <div className="overflow-x-auto">
+            <table className="w-full border-separate border-spacing-0 text-xs">
             <thead className="bg-muted/60 text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-20 min-w-48 border-b border-r border-border bg-muted/60 px-3 py-2 text-left font-semibold">Karyawan</th>
+                <th className="sticky left-0 z-20 min-w-[9rem] border-b border-r border-border bg-muted/60 px-1.5 py-2 text-left align-middle font-semibold sm:px-2 md:min-w-[12rem] md:py-2.5">Karyawan</th>
                 {days.map((day) => {
                   const date = new Date(period.year, period.month, day)
                   return (
-                    <th key={day} className="min-w-12 border-b border-r border-border px-0.5 py-1 text-center font-semibold last:border-r-0">
-                      <span className="block text-xs text-foreground">{day}</span>
-                      <span className="block text-[0.6rem] uppercase">{weekdayFormatter.format(date)}</span>
+                    <th key={day} className="min-w-9 overflow-hidden border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0 md:min-w-12">
+                      <span className="block truncate text-[0.7rem] leading-tight text-foreground md:text-sm">{day}</span>
+                      <span className="block truncate text-[0.5rem] uppercase leading-tight md:text-[0.65rem]">{weekdayFormatter.format(date)}</span>
                     </th>
                   )
                 })}
@@ -641,10 +642,8 @@ export function BuatJadwalPage() {
             <tbody>
               {employees.map((employee) => (
                 <tr key={employee.id} className="bg-card">
-                  <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5 align-top">
-                    <p className="font-semibold text-foreground">{employee.name}</p>
-                    <p className="mt-0.5 text-muted-foreground">NIK: {employee.nik ?? "-"}</p>
-                    <p className="text-muted-foreground">{employee.posisi ?? "-"}</p>
+                  <td className="sticky left-0 z-10 min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]">
+                    <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs md:font-semibold">{employee.name}</p>
                   </td>
                   {days.map((day) => {
                     const tanggal = getDateKey(period.year, period.month, day)
@@ -660,11 +659,11 @@ export function BuatJadwalPage() {
 
                     if (isLocked) {
                       return (
-                        <td key={tanggal} className="border-b border-r border-border p-0 text-center last:border-r-0">
+                        <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                           <span
                             title={title}
                             className={cn(
-                              "mx-auto flex h-6 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
+                              "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
                               option ? option.className : "bg-background text-muted-foreground ring-border",
                             )}
                           >
@@ -675,7 +674,7 @@ export function BuatJadwalPage() {
                     }
 
                     return (
-                      <td key={tanggal} className="border-b border-r border-border p-0 text-center last:border-r-0">
+                      <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                         <button
                           type="button"
                           title={title}
@@ -685,7 +684,7 @@ export function BuatJadwalPage() {
                             setActiveCell({ employeeId: employee.id, tanggal, x: rect.left, y: rect.bottom })
                           }}
                           className={cn(
-                            "mx-auto flex h-7 min-w-8 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
                             option ? option.className : "bg-background text-muted-foreground ring-border",
                             isActive && "ring-2 ring-ring",
                           )}
@@ -699,6 +698,7 @@ export function BuatJadwalPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         {employees.length === 0 && (
@@ -714,7 +714,7 @@ export function BuatJadwalPage() {
               <span key={option.status} className="flex items-center gap-2 text-sm">
                 <span
                   className={cn(
-                    "flex h-6 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1 text-[0.62rem] font-bold ring-1",
+                    "flex h-7 min-w-9 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1.5 text-[0.68rem] font-bold ring-1",
                     option.className,
                   )}
                 >
