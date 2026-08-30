@@ -1,550 +1,588 @@
 "use client"
 
 import * as React from "react"
-import { Store as StoreIcon } from "lucide-react"
+import { ChevronLeft, ChevronRight, ClipboardList, History as HistoryIcon } from "lucide-react"
 
 import { useAuth } from "@/components/auth-context"
-import {
-  EmptyState,
-  Field,
-  SelectField,
-  useSimulatedLoading,
-  LoadingState,
-} from "@/components/controls"
+import { EmptyState, LoadingState } from "@/components/controls"
 import { Button } from "@/components/ui/button"
+import { RevisiStatusBadge } from "@/components/ui/badge"
 
 import {
-  getStore,
-  history,
-  stores,
-  type HistoryJenis,
-  type Store,
+  getRevisiJenisItem,
+  formatTanggal,
 } from "@/lib/data"
-
+import {
+  SHIFT_STATUS_ITEMS,
+  getShiftStatusItem,
+} from "@/lib/shift-status"
 import { cn } from "@/lib/utils"
 
 // ============================================================
-// STYLE JENIS
+// UTILITAS TANGGAL
 // ============================================================
 
-const jenisStyle: Record<HistoryJenis, string> = {
-  Cuti: "bg-status-cuti-bg text-status-cuti",
-  Sakit: "bg-status-sakit-bg text-status-sakit",
-  Izin: "bg-status-izin-bg text-status-izin",
+const monthFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
+
+function getDateKey(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
 
-function JenisBadge({
-  jenis,
+function getDaysInMonth(year: number, month: number) {
+  return Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1)
+}
+
+// ============================================================
+// TIPE DATA HISTORY (hasil API server)
+// ============================================================
+
+type HistoryStore = {
+  id: string
+  nama: string
+  cabangId: string
+  aktif: boolean
+}
+
+type HistoryEmployee = {
+  id: string
+  name: string
+  storeId: string
+  posisi: string
+  aktif: boolean
+}
+
+type HistorySchedule = {
+  id: string
+  storeId: string
+  cabangId: string
+  employeeId: string
+  tanggal: string
+  status: string
+  cutiJenis?: string
+}
+
+type HistoryRevisi = {
+  id: string
+  storeId: string
+  storeName: string
+  cabangId: string
+  employeeId: string
+  employeeName: string
+  tanggal: string
+  jenisRevisi: string
+  jenisRevisiLainnya: string
+  keterangan: string
+  tanggalPengajuan: string
+  status: string
+  prosesOleh: string
+}
+
+type HistoryData = {
+  stores: HistoryStore[]
+  employeesByStoreId: Record<string, HistoryEmployee[]>
+  schedulesByStore: Record<string, HistorySchedule[]>
+  revisi: HistoryRevisi[]
+}
+
+// ============================================================
+// TABEL JADWAL BULANAN SATU TOKO (READ-ONLY)
+// ============================================================
+
+function HistoryMonthlyTable({
+  store,
+  index,
+  employees,
+  schedules,
+  period,
 }: {
-  jenis: HistoryJenis
+  store: HistoryStore
+  index: number
+  employees: HistoryEmployee[]
+  schedules: HistorySchedule[]
+  period: { year: number; month: number }
 }) {
+  const days = getDaysInMonth(period.year, period.month)
+
+  const scheduleByCell = React.useMemo(() => {
+    return new Map(
+      schedules.map((s) => [`${s.employeeId}:${s.tanggal}`, s.status]),
+    )
+  }, [schedules])
+
+  const weekdayFormatter = new Intl.DateTimeFormat("id-ID", { weekday: "short" })
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-3">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+          {index}
+        </div>
+        <p className="truncate text-sm font-semibold">{store.nama}</p>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {employees.length} karyawan
+        </span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-separate border-spacing-0 text-xs">
+          <thead className="bg-muted/60 text-muted-foreground">
+            <tr>
+              <th className="min-w-[9rem] border-b border-r border-border bg-muted/60 px-1.5 py-2 text-left align-middle font-semibold sm:px-2 md:min-w-[12rem] md:py-2.5">
+                Karyawan
+              </th>
+              {days.map((day) => {
+                const date = new Date(period.year, period.month, day)
+                return (
+                  <th
+                    key={day}
+                    className="min-w-9 overflow-hidden border-b border-r border-border px-0.5 py-1 text-center align-middle font-semibold last:border-r-0 md:min-w-12"
+                  >
+                    <span className="block truncate text-[0.7rem] leading-tight text-foreground md:text-sm">{day}</span>
+                    <span className="block truncate text-[0.5rem] uppercase leading-tight md:text-[0.65rem]">
+                      {weekdayFormatter.format(date)}
+                    </span>
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((employee) => (
+              <tr key={employee.id}>
+                <td className="min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]">
+                  <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs md:font-semibold">
+                    {employee.name}
+                  </p>
+                </td>
+                {days.map((day) => {
+                  const tanggal = getDateKey(period.year, period.month, day)
+                  const status = scheduleByCell.get(`${employee.id}:${tanggal}`)
+                  const option = getShiftStatusItem(status)
+                  return (
+                    <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                      <span
+                        title={option?.title ?? "Belum dijadwalkan"}
+                        className={cn(
+                          "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
+                          option ? option.className : "bg-background text-muted-foreground ring-border",
+                        )}
+                      >
+                        {option?.label ?? "-"}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {employees.length === 0 && (
+        <p className="px-4 py-3 text-sm text-muted-foreground">Belum ada data jadwal pada toko ini.</p>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// BADGE STATUS (dari lib/shift-status)
+// ============================================================
+
+function StatusBadge({ status }: { status: string | undefined }) {
+  const option = getShiftStatusItem(status)
+  if (!option) return <span className="text-muted-foreground">-</span>
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium",
-        jenisStyle[jenis],
+        "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold",
+        option.className,
       )}
     >
-      {jenis}
+      {option.label}
     </span>
   )
 }
 
 // ============================================================
-// HELPER
+// TABLE WRAPPER (list)
 // ============================================================
 
-function isStoreRole(role?: string) {
-  return role?.toUpperCase() === "STORE"
-}
-
-/**
- * Mencari toko berdasarkan profile akun STORE.
- *
- * Prioritas:
- * 1. storeId
- * 2. kode
- * 3. akunStore
- * 4. namaStore
- */
-function resolveStore(
-  profile: {
-    storeId?: string
-    namaStore?: string
-  } | null,
-): Store | undefined {
-  if (!profile) return undefined
-
-  const storeId =
-    profile.storeId?.trim().toLowerCase()
-
-  const namaStore =
-    profile.namaStore?.trim().toLowerCase()
-
-  return stores.find((store) => {
-    if (
-      storeId &&
-      (
-        store.id.toLowerCase() === storeId ||
-        store.kode.toLowerCase() === storeId ||
-        store.akunStore.toLowerCase() === storeId
-      )
-    ) {
-      return true
-    }
-
-    if (
-      namaStore &&
-      store.name.toLowerCase() === namaStore
-    ) {
-      return true
-    }
-
-    return false
-  })
+function HistoryTable({
+  headers,
+  children,
+}: {
+  headers: string[]
+  children: React.ReactNode
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+              {headers.map((h) => (
+                <th key={h} className="px-4 py-3 font-medium">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 // ============================================================
-// HISTORY PAGE
+// HALAMAN UTAMA
 // ============================================================
 
 export function HistoryPage() {
-  const { profile, loading: authLoading } =
-    useAuth()
+  const { profile, user } = useAuth()
 
-  const storeAccount =
-    isStoreRole(profile?.role)
+  const [period, setPeriod] = React.useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
 
-  /*
-   * Jika akun STORE:
-   * otomatis tentukan toko dari profile Firebase.
-   *
-   * Jika CENTRAL:
-   * user bebas memilih toko.
-   */
-  const storeProfile =
-    storeAccount
-      ? resolveStore(profile)
-      : undefined
+  const [stores, setStores] = React.useState<HistoryStore[]>([])
+  const [employeesByStoreId, setEmployeesByStoreId] = React.useState<Record<string, HistoryEmployee[]>>({})
+  const [schedulesByStore, setSchedulesByStore] = React.useState<Record<string, HistorySchedule[]>>({})
+  const [revisi, setRevisi] = React.useState<HistoryRevisi[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState("")
 
-  const [storeId, setStoreId] =
-    React.useState("")
-
-  const [periode, setPeriode] =
-    React.useState("all")
-
-  const [karyawan, setKaryawan] =
-    React.useState("all")
-
-  const [jenis, setJenis] =
-    React.useState("all")
-
-  // ============================================================
-  // AUTO SELECT STORE UNTUK AKUN STORE
-  // ============================================================
+  // ==========================================================
+  // AMBIL DATA HISTORY MELALUI SERVER (Admin SDK)
+  // ==========================================================
 
   React.useEffect(() => {
-    if (!storeAccount) return
-
-    if (storeProfile) {
-      setStoreId(storeProfile.id)
+    if (!profile || !user) {
+      setLoading(false)
+      return
     }
-  }, [
-    storeAccount,
-    storeProfile?.id,
-  ])
 
-  // ============================================================
-  // STORE YANG BOLEH DILIHAT
-  // ============================================================
+    const authedUser = user
+    let cancelled = false
+    setLoading(true)
+    setError("")
 
-  const visibleStores =
-    storeAccount
-      ? storeProfile
-        ? [storeProfile]
-        : []
-      : stores
+    async function loadData() {
+      try {
+        const idToken = await authedUser.getIdToken()
 
-  // ============================================================
-  // DATA HISTORY
-  // ============================================================
+        const params = new URLSearchParams({
+          year: String(period.year),
+          month: String(period.month),
+        })
 
-  const storeHistory =
-    history.filter(
-      (h) =>
-        h.storeId === storeId,
-    )
-
-  const karyawanOptions =
-    Array.from(
-      new Set(
-        storeHistory.map(
-          (h) => h.name,
-        ),
-      ),
-    )
-
-  const filtered =
-    storeHistory.filter((h) => {
-      if (
-        karyawan !== "all" &&
-        h.name !== karyawan
-      ) {
-        return false
-      }
-
-      if (
-        jenis !== "all" &&
-        h.jenis !== jenis
-      ) {
-        return false
-      }
-
-      if (
-        periode !== "all" &&
-        !h.tanggalISO.startsWith(
-          periode,
+        const response = await fetch(
+          `/api/history?${params.toString()}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+            cache: "no-store",
+          },
         )
-      ) {
-        return false
+
+        if (!response.ok) {
+          throw new Error("Data history tidak dapat dimuat.")
+        }
+
+        const data = (await response.json()) as HistoryData & { success: boolean }
+
+        if (cancelled) return
+
+        setStores(Array.isArray(data.stores) ? data.stores : [])
+        setEmployeesByStoreId(
+          data.employeesByStoreId && typeof data.employeesByStoreId === "object"
+            ? data.employeesByStoreId
+            : {},
+        )
+        setSchedulesByStore(
+          data.schedulesByStore && typeof data.schedulesByStore === "object"
+            ? data.schedulesByStore
+            : {},
+        )
+        setRevisi(Array.isArray(data.revisi) ? data.revisi : [])
+      } catch (loadError) {
+        console.error("Gagal memuat data History:", loadError)
+        if (!cancelled) {
+          setError("History tidak dapat dimuat. Silakan coba lagi.")
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
+    }
 
-      return true
+    loadData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [profile, user, period.year, period.month])
+
+  function changeMonth(offset: number) {
+    setPeriod((current) => {
+      const d = new Date(current.year, current.month + offset, 1)
+      return { year: d.getFullYear(), month: d.getMonth() }
     })
-
-  const loading =
-    useSimulatedLoading([
-      storeId,
-      periode,
-      karyawan,
-      jenis,
-    ])
-
-  // ============================================================
-  // AUTH LOADING
-  // ============================================================
-
-  if (authLoading) {
-    return (
-      <div className="rounded-xl border border-border bg-card">
-        <LoadingState />
-      </div>
-    )
   }
 
-  // ============================================================
-  // AKUN STORE TIDAK DITEMUKAN
-  // ============================================================
+  const monthLabel = monthFormatter.format(new Date(period.year, period.month, 1)).toUpperCase()
 
-  if (
-    storeAccount &&
-    !storeProfile
-  ) {
-    return (
-      <div className="space-y-5">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">
-            HISTORY
-          </h2>
+  // ==========================================================
+  // DATA LIBUR / CUTI / IZIN / SAKIT
+  // ==========================================================
 
-          <p className="text-sm text-muted-foreground">
-            Riwayat cuti, sakit, dan izin.
-          </p>
-        </div>
+  const statusItems = React.useMemo(() => {
+    const STATUS_KEYS = new Set(["libur", "cuti", "izin", "sakit"])
 
-        <EmptyState
-          icon={StoreIcon}
-          title="Toko akun tidak ditemukan"
-          description="Akun STORE belum terhubung dengan data toko. Silakan periksa storeId atau namaStore pada profil Firebase."
-        />
-      </div>
+    const items: {
+      key: string
+      storeId: string
+      employeeName: string
+      tanggal: string
+      status: string
+      keterangan: string
+    }[] = []
+
+    for (const store of stores) {
+      const employees = employeesByStoreId[store.id] ?? []
+
+      const nameByEmployeeId = new Map(
+        employees.map((e) => [e.id, e.name]),
+      )
+
+      for (const schedule of schedulesByStore[store.id] ?? []) {
+        if (!STATUS_KEYS.has(schedule.status)) continue
+
+        items.push({
+          key: schedule.id,
+          storeId: store.id,
+          employeeName:
+            nameByEmployeeId.get(schedule.employeeId) ?? "-",
+          tanggal: schedule.tanggal,
+          status: schedule.status,
+          keterangan:
+            schedule.status === "cuti"
+              ? schedule.cutiJenis ?? "-"
+              : "-",
+        })
+      }
+    }
+
+    items.sort((a, b) =>
+      a.tanggal.localeCompare(b.tanggal) ||
+      a.employeeName.localeCompare(b.employeeName, "id", { sensitivity: "base" }),
     )
-  }
 
-  // ============================================================
-  // PAGE
-  // ============================================================
+    return items
+  }, [stores, employeesByStoreId, schedulesByStore])
+
+  // ==========================================================
+  // DATA REVISI ABSENSI (urutan terbaru dahulu)
+  // ==========================================================
+
+  const revisiItems = React.useMemo(() => {
+    return [...revisi].sort((a, b) =>
+      b.tanggalPengajuan.localeCompare(a.tanggalPengajuan),
+    )
+  }, [revisi])
+
+  const anyStore = stores.length > 0
 
   return (
     <div className="space-y-5">
       {/* ======================================================
-          HEADER
+          HEADER + FILTER BULAN
       ====================================================== */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <HistoryIcon className="size-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">History</h2>
+            <p className="text-sm text-muted-foreground">
+              Riwayat jadwal shift, libur/cuti/izin/sakit, dan revisi absensi.
+            </p>
+          </div>
+        </div>
 
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">
-          HISTORY
-        </h2>
-
-        <p className="text-sm text-muted-foreground">
-          Riwayat cuti, sakit, dan izin per toko.
-        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" aria-label="Bulan sebelumnya" onClick={() => changeMonth(-1)}>
+            <ChevronLeft className="size-4" />
+          </Button>
+          <p className="min-w-40 text-center text-sm font-semibold">{monthLabel}</p>
+          <Button variant="ghost" size="icon" aria-label="Bulan berikutnya" onClick={() => changeMonth(1)}>
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
       </div>
 
       {/* ======================================================
-          FILTER
+          LEGENDA STATUS
       ====================================================== */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card p-4 shadow-sm">
+        {SHIFT_STATUS_ITEMS.map((item) => (
+          <div key={item.status} className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                "flex h-6 min-w-9 items-center justify-center whitespace-nowrap rounded-md px-1.5 text-[0.68rem] font-bold ring-1",
+                item.className,
+              )}
+            >
+              {item.label}
+            </span>
+            <span className="text-xs text-muted-foreground">{item.title}</span>
+          </div>
+        ))}
+      </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3",
-            storeAccount
-              ? "sm:grid-cols-3"
-              : "sm:grid-cols-2 lg:grid-cols-4",
-          )}
-        >
-          {/* --------------------------------------------------
-              TOKO
-              Hanya tampil untuk CENTRAL
-          -------------------------------------------------- */}
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
 
-          {!storeAccount && (
-            <Field label="Pilih Toko">
-              <SelectField
-                value={storeId}
-                onChange={(value) => {
-                  setStoreId(value)
-                  setKaryawan("all")
-                }}
-                options={[
-                  {
-                    value: "",
-                    label: "— Pilih Toko —",
-                  },
-                  ...visibleStores.map(
-                    (store) => ({
-                      value: store.id,
-                      label: store.name,
-                    }),
-                  ),
-                ]}
-              />
-            </Field>
-          )}
-
-          {/* --------------------------------------------------
-              PERIODE
-          -------------------------------------------------- */}
-
-          <Field label="Periode">
-            <SelectField
-              value={periode}
-              onChange={setPeriode}
-              options={[
-                {
-                  value: "all",
-                  label: "Semua Periode",
-                },
-                {
-                  value: "2026-08",
-                  label: "Agustus 2026",
-                },
-                {
-                  value: "2026-07",
-                  label: "Juli 2026",
-                },
-              ]}
-            />
-          </Field>
-
-          {/* --------------------------------------------------
-              KARYAWAN
-          -------------------------------------------------- */}
-
-          <Field label="Karyawan">
-            <SelectField
-              value={karyawan}
-              onChange={setKaryawan}
-              options={[
-                {
-                  value: "all",
-                  label: "Semua Karyawan",
-                },
-                ...karyawanOptions.map(
-                  (name) => ({
-                    value: name,
-                    label: name,
-                  }),
-                ),
-              ]}
-            />
-          </Field>
-
-          {/* --------------------------------------------------
-              JENIS
-          -------------------------------------------------- */}
-
-          <Field label="Jenis">
-            <SelectField
-              value={jenis}
-              onChange={setJenis}
-              options={[
-                {
-                  value: "all",
-                  label: "Semua Jenis",
-                },
-                {
-                  value: "Cuti",
-                  label: "Cuti",
-                },
-                {
-                  value: "Sakit",
-                  label: "Sakit",
-                },
-                {
-                  value: "Izin",
-                  label: "Izin",
-                },
-              ]}
-            />
-          </Field>
+      {/* ======================================================
+          HISTORY JADWAL SHIFT
+      ====================================================== */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <ClipboardList className="size-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold tracking-tight">History Jadwal Shift</h3>
+            <p className="text-sm text-muted-foreground">
+              Jadwal shift yang tersimpan pada {monthLabel.toLowerCase()}.
+            </p>
+          </div>
         </div>
 
-        {/* ----------------------------------------------------
-            STORE ACCOUNT INFO
-        ---------------------------------------------------- */}
-
-        {storeAccount &&
-          storeProfile && (
-            <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2">
-              <p className="text-xs text-muted-foreground">
-                Toko
-              </p>
-
-              <p className="text-sm font-medium">
-                {storeProfile.name}
-              </p>
-            </div>
-          )}
-
-        {/* ----------------------------------------------------
-            RESET
-        ---------------------------------------------------- */}
-
-        {storeId && (
-          <div className="mt-3 flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setPeriode("all")
-                setKaryawan("all")
-                setJenis("all")
-              }}
-            >
-              Reset Filter
-            </Button>
+        {loading ? (
+          <LoadingState label="Memuat jadwal shift..." />
+        ) : !anyStore ? (
+          <EmptyState
+            title="Tidak ada jadwal shift pada bulan ini."
+            description="Belum ada toko pada cakupan Anda."
+          />
+        ) : (
+          <div className="space-y-4">
+            {stores.map((store, index) => (
+              <HistoryMonthlyTable
+                key={store.id}
+                store={store}
+                index={index + 1}
+                employees={employeesByStoreId[store.id] ?? []}
+                schedules={schedulesByStore[store.id] ?? []}
+                period={period}
+              />
+            ))}
           </div>
         )}
-      </div>
+      </section>
 
       {/* ======================================================
-          CONTENT
+          HISTORY LIBUR, CUTI, IZIN, SAKIT
       ====================================================== */}
-
-      {!storeId ? (
-        <EmptyState
-          icon={StoreIcon}
-          title="Belum ada toko dipilih"
-          description="Silakan pilih toko terlebih dahulu untuk menampilkan riwayat cuti, sakit, dan izin."
-        />
-      ) : loading ? (
-        <div className="rounded-xl border border-border bg-card">
-          <LoadingState />
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          title="Tidak ada riwayat"
-          description={`Tidak ada data history untuk ${
-            getStore(storeId)?.name
-          } dengan filter ini.`}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          {/* --------------------------------------------------
-              TABLE HEADER
-          -------------------------------------------------- */}
-
-          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
-            <p className="text-sm font-semibold">
-              Riwayat{" "}
-              {getStore(storeId)?.name}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <HistoryIcon className="size-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold tracking-tight">History Libur, Cuti, Izin, Sakit</h3>
+            <p className="text-sm text-muted-foreground">
+              Siapa yang libur, cuti, izin, atau sakit pada {monthLabel.toLowerCase()}.
             </p>
-
-            <span className="text-xs text-muted-foreground">
-              {filtered.length} data
-            </span>
-          </div>
-
-          {/* --------------------------------------------------
-              TABLE
-          -------------------------------------------------- */}
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">
-                    Tanggal
-                  </th>
-
-                  <th className="px-4 py-3 font-medium">
-                    Nama
-                  </th>
-
-                  <th className="px-4 py-3 font-medium">
-                    Toko
-                  </th>
-
-                  <th className="px-4 py-3 font-medium">
-                    Jenis
-                  </th>
-
-                  <th className="px-4 py-3 font-medium">
-                    Keterangan
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filtered.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-border/60 last:border-0 hover:bg-muted/30"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 font-medium">
-                      {item.tanggal}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {item.name}
-                    </td>
-
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {
-                        getStore(
-                          item.storeId,
-                        )?.name
-                      }
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <JenisBadge
-                        jenis={item.jenis}
-                      />
-                    </td>
-
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {item.keterangan}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
-      )}
+
+        {loading ? (
+          <LoadingState label="Memuat data status..." />
+        ) : statusItems.length === 0 ? (
+          <EmptyState
+            title="Tidak ada data libur, cuti, izin, atau sakit pada bulan ini."
+          />
+        ) : (
+          <HistoryTable headers={["Tanggal", "Karyawan", "Status", "Keterangan"]}>
+            {statusItems.map((item) => (
+              <tr
+                key={item.key}
+                className="border-b border-border/60 last:border-0 hover:bg-muted/30"
+              >
+                <td className="whitespace-nowrap px-4 py-3 font-medium">
+                  {formatTanggal(item.tanggal)}
+                </td>
+                <td className="px-4 py-3">{item.employeeName}</td>
+                <td className="px-4 py-3">
+                  <StatusBadge status={item.status} />
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{item.keterangan}</td>
+              </tr>
+            ))}
+          </HistoryTable>
+        )}
+      </section>
+
+      {/* ======================================================
+          HISTORY REVISI ABSENSI
+      ====================================================== */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <ClipboardList className="size-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold tracking-tight">History Revisi Absensi</h3>
+            <p className="text-sm text-muted-foreground">
+              Pengajuan revisi absensi pada {monthLabel.toLowerCase()}.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <LoadingState label="Memuat data revisi..." />
+        ) : revisiItems.length === 0 ? (
+          <EmptyState
+            title="Tidak ada revisi absensi pada bulan ini."
+          />
+        ) : (
+          <HistoryTable headers={["Tanggal", "Karyawan", "Jenis Revisi", "Keterangan", "Status"]}>
+            {revisiItems.map((item) => {
+              const jenis = getRevisiJenisItem(item.jenisRevisi)
+              return (
+                <tr
+                  key={item.id}
+                  className="border-b border-border/60 last:border-0 hover:bg-muted/30"
+                >
+                  <td className="whitespace-nowrap px-4 py-3 font-medium">
+                    {formatTanggal(item.tanggal)}
+                  </td>
+                  <td className="px-4 py-3">{item.employeeName}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{jenis?.label ?? item.jenisRevisi}</p>
+                    {item.jenisRevisiLainnya && (
+                      <p className="text-xs text-muted-foreground">{item.jenisRevisiLainnya}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{item.keterangan}</td>
+                  <td className="px-4 py-3">
+                    <RevisiStatusBadge status={item.status as "BARU" | "PROSES" | "SELESAI"} />
+                  </td>
+                </tr>
+              )
+            })}
+          </HistoryTable>
+        )}
+      </section>
     </div>
   )
 }
