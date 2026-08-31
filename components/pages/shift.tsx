@@ -155,53 +155,128 @@ function StoreJadwalShift() {
 
     const filename = `JADWAL_SHIFT_${slugifyStoreName(storeDisplayName)}_${monthNameIndo.toUpperCase()}_${period.year}.pdf`
 
+    // Ubah HEX status (sama dengan WEB, dari lib/shift-status) ke RGB.
+    function hexToRgb(hex: string): [number, number, number] {
+      const value = hex.replace("#", "")
+      const int = parseInt(value, 16)
+      return [(int >> 16) & 255, (int >> 8) & 255, int & 255]
+    }
+
     const doc = new jsPDF({
       orientation: "landscape",
       unit: "mm",
       format: "a4",
     })
 
+    // Header PDF — tanpa "SHIFT MANAGEMENT HUB".
     doc.setFontSize(16)
     doc.setFont("helvetica", "bold")
-    doc.text("SHIFT MANAGEMENT HUB", 14, 18)
-    doc.setFontSize(13)
-    doc.text("JADWAL SHIFT", 14, 25)
+    doc.text("JADWAL SHIFT", 8, 14)
     doc.setFont("helvetica", "normal")
     doc.setFontSize(10)
-    doc.text(`Toko: ${storeDisplayName}`, 14, 32)
-    doc.text(`Periode: ${monthLabel}`, 14, 37)
-    doc.text(`Jumlah Karyawan: ${employees.length}`, 14, 42)
+    doc.text(`Toko: ${storeDisplayName}`, 8, 21)
+    doc.text(`Periode: ${monthLabel}`, 8, 26)
+    doc.text(`Jumlah Karyawan: ${employees.length}`, 8, 31)
 
-    const head = ["Karyawan", "NIK", "Jabatan", ...days.map(String)]
+    // Singkatan hari (dinamis, berdasar kalender bulan terpilih).
+    const DAY_ABBR = ["MIN", "SEN", "SEL", "RAB", "KAM", "JUM", "SAB"]
+    const dayAbbr = (day: number) => DAY_ABBR[new Date(period.year, period.month, day).getDay()] ?? ""
 
-    const body = employees.map((employee) => {
-      const row: string[] = [employee.name, employee.nik ?? "-", employee.posisi ?? "-"]
-      days.forEach((day) => {
-        const tanggal = getDateKey(period.year, period.month, day)
-        const status = scheduleByCell.get(`${employee.id}:${tanggal}`)
-        const option = getStoreShiftOption(status)
-        row.push(option?.code ?? "-")
+    // Render SEGMEN tanggal (kolom Karyawan + kolom-kolom tanggal tsb)
+    // sebagai satu tabel ber-badge berwarna. Mengembalikan Y terakhir tabel.
+    function drawShiftBlock(startY: number, blockDays: number[]): number {
+      // Baris header 1: angka tanggal. Baris header 2: singkatan hari.
+      const head = [
+        ["Karyawan", ...blockDays.map(String)],
+        ["", ...blockDays.map(dayAbbr)],
+      ]
+
+      // Kolom pertama berisi NAMA karyawan saja; tanggal memakai nama status lengkap.
+      const body: string[][] = employees.map((employee) => {
+        const row: string[] = [employee.name]
+        blockDays.forEach((day) => {
+          const tanggal = getDateKey(period.year, period.month, day)
+          const option = getStoreShiftOption(scheduleByCell.get(`${employee.id}:${tanggal}`))
+          row.push(option?.label ?? "-")
+        })
+        return row
       })
-      return row
-    })
 
-    const options: AutoTableUserOptions = {
-      startY: 47,
-      head: [head],
-      body,
-      margin: { left: 14, right: 14, top: 47, bottom: 14 },
-      styles: { fontSize: 7, cellPadding: 1.2, valign: "middle" },
-      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 6.5, valign: "middle" },
-      bodyStyles: { textColor: [30, 30, 30] },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
-      columnStyles: {
-        0: { cellWidth: 42, fontStyle: "bold" },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 28 },
-      },
+      // Status per sel (untuk pewarnaan badge) — indeks kolom: 0 = Karyawan, 1..n = tanggal.
+      const statusesByCell: (string | undefined)[][] = employees.map((employee) => {
+        const cells: (string | undefined)[] = [undefined]
+        blockDays.forEach((day) => {
+          const tanggal = getDateKey(period.year, period.month, day)
+          const option = getStoreShiftOption(scheduleByCell.get(`${employee.id}:${tanggal}`))
+          cells.push(option?.status)
+        })
+        return cells
+      })
+
+      const options: AutoTableUserOptions = {
+        startY,
+        head,
+        body,
+        theme: "grid",
+        margin: { left: 6, right: 6, top: 30, bottom: 6 },
+        styles: {
+          fontSize: 7,
+          cellPadding: { left: 1.4, right: 1.4, top: 1.1, bottom: 1.1 },
+          valign: "middle",
+          lineColor: [150, 150, 150],
+          lineWidth: 0.25,
+        },
+        tableLineColor: [110, 110, 110],
+        tableLineWidth: 0.5,
+        headStyles: {
+          fillColor: [37, 99, 235],
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 8,
+          halign: "center",
+          valign: "middle",
+          lineColor: [37, 99, 235],
+          lineWidth: 0.3,
+        },
+        bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
+        columnStyles: {
+          0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
+        },
+        didParseCell: (data) => {
+          // Kolom tanggal: render status sebagai badge berwarna.
+          if (data.section === "body" && data.column.index >= 1) {
+            const shiftStatus = statusesByCell[data.row.index]?.[data.column.index]
+            const item = shiftStatus ? getShiftStatusItem(shiftStatus) : undefined
+            if (item) {
+              data.cell.styles.fillColor = hexToRgb(item.hex)
+              data.cell.styles.textColor = 255
+              data.cell.styles.halign = "center"
+              // Garis putih tipis agar tiap badge terpisah jelas (kolom & baris).
+              data.cell.styles.lineColor = [255, 255, 255]
+              data.cell.styles.lineWidth = 0.4
+            } else {
+              data.cell.styles.fillColor = [245, 247, 250]
+              data.cell.styles.textColor = [30, 30, 30]
+              data.cell.styles.halign = "center"
+              data.cell.styles.lineColor = [150, 150, 150]
+              data.cell.styles.lineWidth = 0.25
+            }
+          } else if (data.section === "body" && data.column.index === 0) {
+            data.cell.styles.fillColor = [245, 247, 250]
+            data.cell.styles.lineWidth = 0.25
+          }
+        },
+      }
+
+      autoTable(doc, options)
+      return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
     }
 
-    autoTable(doc, options)
+    // BLOK 1: tanggal 1..15
+    const block1EndY = drawShiftBlock(34, days.slice(0, 15))
+
+    // BLOK 2: tanggal 16..31 (diberi jarak cukup dari blok 1)
+    drawShiftBlock(block1EndY + 8, days.slice(15))
 
     doc.save(filename)
   }
