@@ -3,3 +3,7 @@ allowBuilds:
   core-js: true
   msw: true
   protobufjs: true
+
+overrides:
+  hono: 4.12.25
+  nanoid: 3.3.18
