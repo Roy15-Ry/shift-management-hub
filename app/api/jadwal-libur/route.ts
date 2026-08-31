@@ -98,10 +98,12 @@ function allowedCabangForRole(
 ): string | null {
   const role = user.role?.trim().toLowerCase()
 
-  if (role === "central_cabang") {
+  // CENTRAL CABANG & STORE -> hanya cabang akun
+  if (role === "central_cabang" || role === "store") {
     return normalize(user.cabangId)
   }
 
+  // CENTRAL PUSAT -> semua cabang (dapat difilter via param cabang)
   if (role === "central_pusat") {
     return null
   }
@@ -139,11 +141,13 @@ export async function GET(
 
     const role = user.role?.trim().toLowerCase()
 
-    // HANYA CENTRAL CABANG & CENTRAL PUSAT.
-    // Role STORE tidak mendapatkan akses fitur ini.
+    // CENTRAL CABANG & CENTRAL PUSAT untuk halaman JADWAL LIBUR.
+    // STORE diizinkan hanya untuk membaca (read-only) sebagai
+    // sumber data section JADWAL LIBUR pada DASHBOARD STORE.
     if (
       role !== "central_cabang" &&
-      role !== "central_pusat"
+      role !== "central_pusat" &&
+      role !== "store"
     ) {
       return NextResponse.json(
         { success: false, message: "Anda tidak memiliki izin." },
@@ -162,10 +166,25 @@ export async function GET(
     }
 
     // =====================================================
-    // PARAMETER TAMBAHAN (HANYA FILTER SETELAH OTORISASI)
+    // FILTER CABANG UNTUK CENTRAL PUSAT
+    //
+    // Central Pusat memilih satu cabang (param "cabang") atau
+    // "Semua Cabang" (""). Parameter ini HANYA dipakai oleh
+    // Central Pusat; Central Cabang & Store selalu memakai cabang
+    // akunnya sendiri.
     // =====================================================
 
     const url = new URL(request.url)
+
+    const rawCabangFilter = url.searchParams.get("cabang") ?? ""
+    const cabangFilter =
+      isCentralPusat
+        ? normalize(rawCabangFilter)
+        : null
+
+    // =====================================================
+    // PARAMETER TAMBAHAN (HANYA FILTER SETELAH OTORISASI)
+    // =====================================================
 
     const year = Number(url.searchParams.get("year"))
     const month = Number(url.searchParams.get("month"))
@@ -207,7 +226,15 @@ export async function GET(
           store.aktif !== false &&
           store.cabangId === allowedCabang,
       )
+    } else if (cabangFilter && cabangFilter !== "ALL") {
+      // CENTRAL PUSAT dengan cabang terpilih -> hanya cabang itu.
+      stores = stores.filter(
+        (store) =>
+          store.aktif !== false &&
+          store.cabangId === cabangFilter,
+      )
     } else {
+      // CENTRAL PUSAT "Semua Cabang" -> semua toko aktif.
       stores = stores.filter(
         (store) =>
           store.aktif !== false,
@@ -319,9 +346,27 @@ export async function GET(
     const userCabangId =
       normalize(user.cabangId)
 
-    // Scope:
-    // - CENTRAL PUSAT  -> semua keterangan (global "" + tiap cabang)
-    // - CENTRAL CABANG -> keterangan cabangnya sendiri + global ""
+    // Scope keterangan:
+    // - CENTRAL PUSAT "Semua Cabang" -> semua keterangan tiap cabang
+    //   (tidak ada lagi keterangan global "" yang ikut tampil)
+    // - CENTRAL PUSAT cabang terpilih -> hanya cabang tersebut
+    // - CENTRAL CABANG / STORE      -> hanya cabang akunnya
+    const keteranganScopeIsPusatAll =
+      isCentralPusat &&
+      (!cabangFilter || cabangFilter === "ALL")
+
+    const keteranganMatchesBranch = (
+      itemCabang: string,
+    ) => {
+      if (keteranganScopeIsPusatAll) {
+        return true
+      }
+      if (isCentralPusat) {
+        return itemCabang === cabangFilter
+      }
+      return itemCabang === userCabangId
+    }
+
     const keterangan =
       keteranganSnapshot.docs
         .map((doc) => {
@@ -340,9 +385,9 @@ export async function GET(
           (item) =>
             (!bulanKey ||
               item.bulan === bulanKey) &&
-            (isCentralPusat ||
-              item.cabangId === "" ||
-              item.cabangId === userCabangId),
+            keteranganMatchesBranch(
+              item.cabangId,
+            ),
         )
 
     return NextResponse.json({
@@ -553,10 +598,44 @@ export async function POST(request: Request) {
       }
     }
 
-    // Scope penyimpanan berdasar role akun.
-    const cabangId = actor.role === "central_pusat"
-      ? ""
-      : actor.cabangId
+    // =====================================================
+    // SCOPE PENYIMPANAN BERDASAR ROLE + CABANG TUJUAN
+    //
+    // CENTRAL PUSAT  -> wajib memilih cabang tujuan (param "cabang").
+    //                   Tidak ada lagi keterangan global (cabangId "").
+    // CENTRAL CABANG -> cabang otomatis dari akun (actor.cabangId).
+    // =====================================================
+
+    let cabangId: string
+
+    if (actor.role === "central_pusat") {
+      const targetCabang = normalize(body.cabang)
+
+      if (!targetCabang || targetCabang === "ALL" || targetCabang === "__ALL__") {
+        return NextResponse.json(
+          { success: false, message: "Pilih cabang tujuan untuk keterangan terlebih dahulu." },
+          { status: 400 },
+        )
+      }
+
+      // Validasi cabang tujuan benar-benar ada.
+      const branchSnapshot =
+        await adminDb
+          .collection("branches")
+          .where("cabangId", "==", targetCabang)
+          .get()
+
+      if (branchSnapshot.empty) {
+        return NextResponse.json(
+          { success: false, message: "Cabang tujuan tidak ditemukan." },
+          { status: 400 },
+        )
+      }
+
+      cabangId = targetCabang
+    } else {
+      cabangId = actor.cabangId
+    }
 
     const now = fmtDateTime()
 

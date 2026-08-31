@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/toast"
 import {
   EmptyState,
   LoadingState,
+  SelectField,
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
@@ -41,7 +42,7 @@ import { useAuth } from "@/components/auth-context"
 // divalidasi di sisi server.
 // ============================================================
 
-type KeteranganJenis =
+export type KeteranganJenis =
   | "kegiatan"
   | "operasional"
   | "tanggal"
@@ -92,7 +93,7 @@ const LIBUR_CUTI = new Set(["libur", "cuti"])
 // TYPES
 // ============================================================
 
-type JadwalLiburStore = {
+export type JadwalLiburStore = {
   id: string
   nama: string
   kode: string
@@ -100,7 +101,7 @@ type JadwalLiburStore = {
   aktif: boolean
 }
 
-type JadwalLiburEmployee = {
+export type JadwalLiburEmployee = {
   id: string
   name: string
   nik: string
@@ -110,7 +111,7 @@ type JadwalLiburEmployee = {
   aktif: boolean
 }
 
-type JadwalLiburSchedule = {
+export type JadwalLiburSchedule = {
   id: string
   storeId: string
   cabangId: string
@@ -120,7 +121,7 @@ type JadwalLiburSchedule = {
   cutiJenis?: string
 }
 
-type JadwalLiburKeterangan = {
+export type JadwalLiburKeterangan = {
   id: string
   jenis: KeteranganJenis
   teks: string
@@ -129,7 +130,7 @@ type JadwalLiburKeterangan = {
   cabangId: string
 }
 
-type JadwalLiburData = {
+export type JadwalLiburData = {
   stores: JadwalLiburStore[]
   employeesByStoreId: Record<
     string,
@@ -234,6 +235,14 @@ export function JadwalLiburPage() {
       }
     })
 
+  // Filter cabang HANYA untuk CENTRAL PUSAT.
+  // "" = Semua Cabang; selain itu = cabang terpilih.
+  const [cabangFilter, setCabangFilter] =
+    React.useState("")
+  // Daftar cabang untuk dropdown CENTRAL PUSAT.
+  const [branchOptions, setBranchOptions] =
+    React.useState<string[]>([])
+
   const [data, setData] =
     React.useState<JadwalLiburData | null>(null)
   const [loading, setLoading] =
@@ -244,6 +253,66 @@ export function JadwalLiburPage() {
   const isCentral =
     profile?.role === "central_cabang" ||
     profile?.role === "central_pusat"
+
+  const isCentralPusat =
+    profile?.role === "central_pusat"
+
+  // Muat daftar cabang untuk dropdown CENTRAL PUSAT.
+  React.useEffect(() => {
+    if (!isCentralPusat || !user) {
+      return
+    }
+
+    const authedUser = user
+    let cancelled = false
+
+    async function loadBranches() {
+      try {
+        const idToken = await authedUser.getIdToken()
+        const response = await fetch(
+          "/api/admin/branches",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+            cache: "no-store",
+          },
+        )
+
+        if (!response.ok) return
+
+        const result =
+          (await response.json()) as {
+            success?: boolean
+            branches?: {
+              cabangId?: string
+              nama?: string
+            }[]
+          }
+
+        if (cancelled || !result.success) return
+
+        const list = (result.branches ?? [])
+          .map((b) => String(b.cabangId ?? "").trim().toUpperCase())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+
+        setBranchOptions(list)
+      } catch (branchError) {
+        console.error(
+          "Gagal memuat daftar cabang:",
+          branchError,
+        )
+      }
+    }
+
+    loadBranches()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isCentralPusat, user])
 
   React.useEffect(() => {
     if (!profile || !user || !isCentral) {
@@ -265,6 +334,10 @@ export function JadwalLiburPage() {
           year: String(period.year),
           month: String(period.month),
         })
+
+        if (isCentralPusat && cabangFilter) {
+          params.set("cabang", cabangFilter)
+        }
 
         const response = await fetch(
           `/api/jadwal-libur?${params.toString()}`,
@@ -346,7 +419,7 @@ export function JadwalLiburPage() {
     return () => {
       cancelled = true
     }
-  }, [profile, user, isCentral, period.year, period.month])
+  }, [profile, user, isCentral, isCentralPusat, cabangFilter, period.year, period.month])
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -481,6 +554,10 @@ export function JadwalLiburPage() {
       if (payload.tanggal) {
         body.tanggal = payload.tanggal
       }
+      // CENTRAL PUSAT: simpan keterangan sesuai filter cabang aktif.
+      if (isCentralPusat && cabangFilter) {
+        body.cabang = cabangFilter
+      }
 
       const response = await fetch(
         "/api/jadwal-libur",
@@ -609,6 +686,10 @@ export function JadwalLiburPage() {
         month: String(period.month),
       })
 
+      if (isCentralPusat && cabangFilter) {
+        params.set("cabang", cabangFilter)
+      }
+
       const response = await fetch(
         `/api/jadwal-libur?${params.toString()}`,
         {
@@ -682,6 +763,38 @@ export function JadwalLiburPage() {
           monthLabel={monthLabel}
           changeMonth={changeMonth}
         />
+
+        {isCentralPusat && (
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold tracking-tight">
+                Cabang
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Pilih cabang untuk melihat dan mengelola jadwal liburnya.
+              </p>
+            </div>
+            <div className="w-full sm:w-60">
+              <SelectField
+                value={cabangFilter}
+                onChange={setCabangFilter}
+                options={[
+                  {
+                    value: "",
+                    label: "Semua Cabang",
+                  },
+                  ...branchOptions.map(
+                    (cabangId) => ({
+                      value: cabangId,
+                      label: cabangId,
+                    }),
+                  ),
+                ]}
+              />
+            </div>
+          </div>
+        )}
+
         <EmptyState
           icon={Palmtree}
           title="Tidak ada toko"
@@ -701,6 +814,39 @@ export function JadwalLiburPage() {
         monthLabel={monthLabel}
         changeMonth={changeMonth}
       />
+
+      {/* FILTER CABANG — HANYA CENTRAL PUSAT */}
+      {isCentralPusat && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight">
+              Cabang
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Pilih cabang untuk melihat dan mengelola jadwal liburnya.
+              Keterangan baru akan disimpan pada cabang terpilih.
+            </p>
+          </div>
+          <div className="w-full sm:w-60">
+            <SelectField
+              value={cabangFilter}
+              onChange={setCabangFilter}
+              options={[
+                {
+                  value: "",
+                  label: "Semua Cabang",
+                },
+                ...branchOptions.map(
+                  (cabangId) => ({
+                    value: cabangId,
+                    label: cabangId,
+                  }),
+                ),
+              ]}
+            />
+          </div>
+        </div>
+      )}
 
       {/* KETERANGAN TOKO (legenda warna toko) */}
       <StoreLegend
@@ -780,7 +926,7 @@ function PageHeader({
 // LEGENDA WARNA TOKO
 // ============================================================
 
-function StoreLegend({
+export function StoreLegend({
   stores,
   colorByStoreId,
 }: {
@@ -825,7 +971,7 @@ function StoreLegend({
 // KALENDER BULANAN (7 KOLOM)
 // ============================================================
 
-function CalendarGrid({
+export function CalendarGrid({
   period,
   stores,
   data,
@@ -1226,7 +1372,7 @@ function CalendarGrid({
                           <div
                             key={k.id}
                             title={k.teks}
-                            className="truncate rounded-sm border border-white/90 bg-black px-1 py-0.5 text-center text-[0.6rem] font-medium leading-tight text-white"
+                            className="whitespace-normal overflow-wrap-anywhere rounded-sm border border-white/90 bg-black px-1 py-0.5 text-center text-[0.6rem] font-medium leading-tight text-white"
                           >
                             {k.teks}
                           </div>
@@ -1316,7 +1462,7 @@ function ActionButton({
 // KETERANGAN BULAN (KOLOM DI BAWAH KALENDER)
 // ============================================================
 
-function KeteranganSection({
+export function KeteranganSection({
   title,
   items,
   addJenis,
@@ -1465,7 +1611,7 @@ function KeteranganSection({
               className="rounded-lg border border-border bg-muted/30 px-3 py-2"
             >
               <span
-                className="block min-w-0 whitespace-pre-line text-sm text-foreground"
+                className="block min-w-0 whitespace-pre-line overflow-wrap-anywhere text-center text-sm text-foreground"
                 title={item.teks}
               >
                 {item.teks}

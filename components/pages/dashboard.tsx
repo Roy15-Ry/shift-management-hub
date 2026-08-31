@@ -31,6 +31,8 @@ import {
 
 import { cn } from "@/lib/utils"
 
+import { DashboardJadwalLibur } from "@/components/pages/dashboard-jadwal-libur"
+
 // ============================================================
 // SUMMARY STYLE
 // ============================================================
@@ -1221,6 +1223,14 @@ export function DashboardPage() {
         )}
 
       </div>
+
+      {/* ================================================== */}
+      {/* JADWAL LIBUR — STORE ONLY (READ-ONLY) */}
+      {/* ================================================== */}
+
+      {isStore && (
+        <DashboardJadwalLibur />
+      )}
 
     </div>
   )
