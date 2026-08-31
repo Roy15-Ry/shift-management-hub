@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/ui/modal"
 import { useToast } from "@/components/ui/toast"
 import {
   EmptyState,
@@ -249,6 +250,10 @@ export function JadwalLiburPage() {
     React.useState(true)
   const [error, setError] =
     React.useState("")
+
+  // Keterangan yang menunggu konfirmasi HAPUS (custom dialog).
+  const [pendingDelete, setPendingDelete] =
+    React.useState<JadwalLiburKeterangan | null>(null)
 
   const isCentral =
     profile?.role === "central_cabang" ||
@@ -611,17 +616,20 @@ export function JadwalLiburPage() {
     }
   }
 
-  async function handleDeleteKeterangan(
+  // Membuka dialog konfirmasi HAPUS (pengganti window.confirm).
+  function handleDeleteKeterangan(
     item: JadwalLiburKeterangan,
   ) {
     if (!user) return
-    if (
-      !window.confirm(
-        "Hapus keterangan ini?",
-      )
-    ) {
-      return
-    }
+    setPendingDelete(item)
+  }
+
+  // Eksekusi delete existing (dipanggil saat user menekan HAPUS
+  // pada dialog konfirmasi).
+  async function performDeleteKeterangan(
+    item: JadwalLiburKeterangan,
+  ) {
+    if (!user) return
 
     try {
       const idToken = await user.getIdToken()
@@ -867,6 +875,43 @@ export function JadwalLiburPage() {
 
       {/* DUA KOLOM KETERANGAN DI BAWAH KALENDER */}
       {bottomColumns}
+
+      {/* DIALOG KONFIRMASI HAPUS KETERANGAN (custom, bukan window.confirm) */}
+      <Modal
+        open={pendingDelete !== null}
+        onClose={() =>
+          setPendingDelete(null)
+        }
+        title="Hapus Keterangan?"
+        description="Apakah Anda yakin ingin menghapus keterangan ini?"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setPendingDelete(null)
+              }
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const item =
+                  pendingDelete
+                setPendingDelete(null)
+                if (item) {
+                  performDeleteKeterangan(
+                    item,
+                  )
+                }
+              }}
+            >
+              Hapus
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }

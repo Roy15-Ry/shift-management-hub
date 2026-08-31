@@ -85,6 +85,8 @@
   --chart-5: oklch(0.62 0.19 25);
   --radius: 0.65rem;
 
+  --app-bg-image: url('/tania-bg-01.webp');
+
   --status-pagi: oklch(0.696 0.17 149);
   --status-pagi-bg: oklch(0.95 0.05 149);
   --status-siang: oklch(0.55 0.17 264);
@@ -185,6 +187,33 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+  }
+
+  /*
+   * Background foto Tania Perfume (VISUAL SEMATA).
+   *
+   * Lapisan fixed di belakang seluruh UI, di-blur, dan diberi
+   * overlay tipis agar foto tetap terlihat sebagai identitas
+   * visual namun tidak mengganggu keterbacaan aplikasi.
+   *
+   * HANYA lapisan background yang di-blur. Komponen UI (sidebar,
+   * header, card, tabel, teks, tombol, kalender, modal) tetap
+   * tajam karena berada di atas lapisan ini.
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(rgba(248, 250, 252, 0.4), rgba(248, 250, 252, 0.4)),
+      var(--app-bg-image);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(14px);
+    transform: scale(1.12);
+    pointer-events: none;
   }
 }

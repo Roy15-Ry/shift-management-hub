@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 
 import { ToastProvider } from '@/components/ui/toast'
+import { AppBackground } from '@/components/app-background'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -16,21 +17,7 @@ export const metadata: Metadata = {
   description: 'Pusat Informasi dan Monitoring Jadwal Shift',
   generator: 'v0.app',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/api/icon',
   },
 }
 
@@ -50,9 +37,10 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`light ${inter.variable} bg-background`}
+      className={`light ${inter.variable}`}
     >
       <body className="font-sans antialiased">
+        <AppBackground />
         <ToastProvider>
           {children}
         </ToastProvider>
