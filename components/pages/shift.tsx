@@ -22,6 +22,8 @@ import {
   type FirestoreSchedule,
   type FirestoreStore,
 } from "@/lib/firestore-data"
+import { computeRekapRows, type RekapRow } from "@/lib/rekap-jumlah-masuk"
+import { RekapJumlahMasukTable } from "@/components/rekap-jumlah-masuk"
 
 // ============================================================
 // KODE WARNA & STATUS (dipakai Central maupun Store)
@@ -127,6 +129,18 @@ function StoreJadwalShift() {
   const scheduleByCell = React.useMemo(() => {
     return new Map(schedules.map((schedule) => [`${schedule.employeeId}:${schedule.tanggal}`, schedule.status]))
   }, [schedules])
+
+  const rekapRows = React.useMemo<RekapRow[]>(() => {
+    return computeRekapRows(
+      employees,
+      period.year,
+      period.month,
+      (employeeId, tanggal) => scheduleByCell.get(`${employeeId}:${tanggal}`),
+      getDateKey,
+    )
+  }, [employees, period.month, period.year, scheduleByCell])
+
+  const rekapTitle = `JUMLAH MASUK BULAN ${monthNameFormatter.format(new Date(period.year, period.month, 1)).toUpperCase()} ${period.year}`
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -272,13 +286,75 @@ function StoreJadwalShift() {
       return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
     }
 
-    // BLOK 1: tanggal 1..15
-    const block1EndY = drawShiftBlock(34, days.slice(0, 15))
+    // BAGIAN BAWAH PDF — REKAP JUMLAH MASUK BULANAN
+    function drawRekapPdf(startY: number) {
+      // Judul rekap (menggunakan label bulan lokal, sama seperti web).
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.text(rekapTitle, 8, startY + 3)
 
-    // BLOK 2: tanggal 16..31 (diberi jarak cukup dari blok 1)
-    drawShiftBlock(block1EndY + 8, days.slice(15))
+      const heads = ["NAMA", "PAGI", "SIANG", "LIBUR", "CUTI", "SAKIT / IZIN", "TOTAL"]
+      const body = rekapRows.map((row) => [
+        row.name,
+        String(row.pagi),
+        String(row.siang),
+        String(row.libur),
+        String(row.cuti),
+        String(row.sakitIzin),
+        String(row.total),
+      ])
+
+      autoTable(doc, {
+        startY: startY + 6,
+        head: [heads],
+        body,
+        theme: "grid",
+        margin: { left: 6, right: 6, top: 30, bottom: 6 },
+        styles: {
+          fontSize: 8,
+          cellPadding: { left: 1.6, right: 1.6, top: 1.4, bottom: 1.4 },
+          valign: "middle",
+          lineColor: [150, 150, 150],
+          lineWidth: 0.25,
+        },
+        tableLineColor: [110, 110, 110],
+        tableLineWidth: 0.4,
+        headStyles: {
+          fillColor: [37, 99, 235],
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 8,
+          halign: "center",
+          valign: "middle",
+          lineColor: [37, 99, 235],
+          lineWidth: 0.3,
+        },
+        bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
+        columnStyles: {
+          0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
+        },
+        didParseCell: (data) => {
+          // Hanya beri warna halus pada kolom angka rekap.
+          if (data.section === "body" && data.column.index >= 1) {
+            data.cell.styles.fillColor = [247, 248, 250]
+          } else if (data.section === "body" && data.column.index === 0) {
+            data.cell.styles.fillColor = [245, 247, 250]
+          }
+        },
+      } as AutoTableUserOptions)
+    }
+
+    // Render BLOK jadwal, lalu rekap di bagian bawah PDF.
+    const block1EndY = drawShiftBlock(34, days.slice(0, 15))
+    const block2EndY = drawShiftBlock(block1EndY + 8, days.slice(15))
+
+    drawRekapPdf(block2EndY + 10)
 
     doc.save(filename)
+  }
+
+  if (loading) {
+    return <LoadingState label="Memuat jadwal shift..." />
   }
 
   return (
@@ -401,6 +477,8 @@ function StoreJadwalShift() {
           </div>
         </div>
       </section>
+
+      <RekapJumlahMasukTable title={rekapTitle} rows={rekapRows} />
     </div>
   )
 }

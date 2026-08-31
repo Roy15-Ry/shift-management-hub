@@ -43,11 +43,7 @@ service cloud.firestore {
           || isCentralPusat()
         );
 
-      allow create, update: if isSignedIn()
-        && (
-          request.auth.uid == userId
-          || isCentralPusat()
-        );
+      allow create, update: if isCentralPusat();
 
       allow delete: if isCentralPusat();
     }

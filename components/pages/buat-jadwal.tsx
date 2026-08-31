@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, LockKeyhole } from "lucide-react"
+import { ChevronLeft, ChevronRight, FileDown, LockKeyhole } from "lucide-react"
 
 import { useAuth } from "@/components/auth-context"
 import { EmptyState, LoadingState } from "@/components/controls"
@@ -19,6 +19,9 @@ import {
   SHIFT_STATUS_ITEMS as SHIFT_OPTIONS,
   type ShiftStatusItem,
 } from "@/lib/shift-status"
+import type { UserOptions as AutoTableUserOptions } from "jspdf-autotable"
+import { computeRekapRows, type RekapRow } from "@/lib/rekap-jumlah-masuk"
+import { RekapJumlahMasukTable } from "@/components/rekap-jumlah-masuk"
 
 type ScheduleStatus = (typeof SHIFT_OPTIONS)[number]["status"]
 type SchedulePhase = "Belum dibuat" | "Draft" | "Selesai"
@@ -352,6 +355,19 @@ export function BuatJadwalPage() {
     [draftChanges, savedDraftByCell, savedScheduleByCell],
   )
 
+  // REKAP JUMLAH MASUK BULANAN — dihitung lokal dari data draft/editor.
+  const rekapRows = React.useMemo<RekapRow[]>(() => {
+    return computeRekapRows(
+      employees,
+      period.year,
+      period.month,
+      (employeeId, tanggal) => getCellValue(employeeId, tanggal)?.status,
+      getDateKey,
+    )
+  }, [employees, getCellValue, period.month, period.year])
+
+  const rekapTitle = `JUMLAH MASUK BULAN ${monthFormatter.format(new Date(period.year, period.month, 1)).toUpperCase()}`
+
   // Jadwal yang sudah SELESAI terkunci sampai tombol Edit ditekan.
   const isLocked = phase === "Selesai" && !editing
   const canEditCells = !isLocked
@@ -532,6 +548,191 @@ export function BuatJadwalPage() {
     }
   }
 
+  function slugifyStoreName(name: string) {
+    const normalized = name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+    return normalized || "toko"
+  }
+
+  function hexToRgb(hex: string): [number, number, number] {
+    const value = hex.replace("#", "")
+    const int = parseInt(value, 16)
+    return [(int >> 16) & 255, (int >> 8) & 255, int & 255]
+  }
+
+  async function handleDownloadPdf() {
+    if (!store) return
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ])
+
+    const filename = `JADWAL_SHIFT_${slugifyStoreName(store.nama ?? "toko")}_${monthFormatter
+      .format(new Date(period.year, period.month, 1))
+      .toUpperCase()}.pdf`
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    })
+
+    doc.setFontSize(16)
+    doc.setFont("helvetica", "bold")
+    doc.text("JADWAL SHIFT", 8, 14)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(10)
+    doc.text(`Toko: ${store.nama ?? "-"}`, 8, 21)
+    doc.text(`Periode: ${monthLabel}`, 8, 26)
+    doc.text(`Jumlah Karyawan: ${employees.length}`, 8, 31)
+
+    const DAY_ABBR = ["MIN", "SEN", "SEL", "RAB", "KAM", "JUM", "SAB"]
+    const dayAbbr = (day: number) => DAY_ABBR[new Date(period.year, period.month, day).getDay()] ?? ""
+
+    function drawShiftBlock(startY: number, blockDays: number[]): number {
+      const head = [
+        ["Karyawan", ...blockDays.map(String)],
+        ["", ...blockDays.map(dayAbbr)],
+      ]
+      const body: string[][] = employees.map((employee) => {
+        const row: string[] = [employee.name]
+        blockDays.forEach((day) => {
+          const tanggal = getDateKey(period.year, period.month, day)
+          const value = getCellValue(employee.id, tanggal)
+          const option = getShiftOption(value?.status)
+          row.push(option?.label ?? "-")
+        })
+        return row
+      })
+      const statusesByCell: (string | undefined)[][] = employees.map((employee) => {
+        const cells: (string | undefined)[] = [undefined]
+        blockDays.forEach((day) => {
+          const tanggal = getDateKey(period.year, period.month, day)
+          const value = getCellValue(employee.id, tanggal)
+          cells.push(value?.status)
+        })
+        return cells
+      })
+
+      autoTable(doc, {
+        startY,
+        head,
+        body,
+        theme: "grid",
+        margin: { left: 6, right: 6, top: 30, bottom: 6 },
+        styles: {
+          fontSize: 7,
+          cellPadding: { left: 1.4, right: 1.4, top: 1.1, bottom: 1.1 },
+          valign: "middle",
+          lineColor: [150, 150, 150],
+          lineWidth: 0.25,
+        },
+        tableLineColor: [110, 110, 110],
+        tableLineWidth: 0.5,
+        headStyles: {
+          fillColor: [37, 99, 235],
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 8,
+          halign: "center",
+          valign: "middle",
+          lineColor: [37, 99, 235],
+          lineWidth: 0.3,
+        },
+        bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
+        columnStyles: {
+          0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
+        },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index >= 1) {
+            const shiftStatus = statusesByCell[data.row.index]?.[data.column.index]
+            const item = shiftStatus ? getShiftOption(shiftStatus) : undefined
+            if (item) {
+              data.cell.styles.fillColor = hexToRgb(item.hex)
+              data.cell.styles.textColor = 255
+              data.cell.styles.halign = "center"
+              data.cell.styles.lineColor = [255, 255, 255]
+              data.cell.styles.lineWidth = 0.4
+            } else {
+              data.cell.styles.fillColor = [245, 247, 250]
+              data.cell.styles.textColor = [30, 30, 30]
+              data.cell.styles.halign = "center"
+              data.cell.styles.lineColor = [150, 150, 150]
+              data.cell.styles.lineWidth = 0.25
+            }
+          } else if (data.section === "body" && data.column.index === 0) {
+            data.cell.styles.fillColor = [245, 247, 250]
+            data.cell.styles.lineWidth = 0.25
+          }
+        },
+      } as AutoTableUserOptions)
+      return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    }
+
+    const block1EndY = drawShiftBlock(34, days.slice(0, 15))
+    const block2EndY = drawShiftBlock(block1EndY + 8, days.slice(15))
+
+    // BAGIAN BAWAH PDF — REKAP JUMLAH MASUK BULANAN
+    doc.setFontSize(12)
+    doc.setFont("helvetica", "bold")
+    doc.text(rekapTitle, 8, block2EndY + 13)
+
+    const heads = ["NAMA", "PAGI", "SIANG", "LIBUR", "CUTI", "SAKIT / IZIN", "TOTAL"]
+    const body = rekapRows.map((row) => [
+      row.name,
+      String(row.pagi),
+      String(row.siang),
+      String(row.libur),
+      String(row.cuti),
+      String(row.sakitIzin),
+      String(row.total),
+    ])
+
+    autoTable(doc, {
+      startY: block2EndY + 16,
+      head: [heads],
+      body,
+      theme: "grid",
+      margin: { left: 6, right: 6, top: 30, bottom: 6 },
+      styles: {
+        fontSize: 8,
+        cellPadding: { left: 1.6, right: 1.6, top: 1.4, bottom: 1.4 },
+        valign: "middle",
+        lineColor: [150, 150, 150],
+        lineWidth: 0.25,
+      },
+      tableLineColor: [110, 110, 110],
+      tableLineWidth: 0.4,
+      headStyles: {
+        fillColor: [37, 99, 235],
+        textColor: 255,
+        fontStyle: "bold",
+        fontSize: 8,
+        halign: "center",
+        valign: "middle",
+        lineColor: [37, 99, 235],
+        lineWidth: 0.3,
+      },
+      bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
+      columnStyles: {
+        0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
+      },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index >= 1) {
+          data.cell.styles.fillColor = [247, 248, 250]
+        } else if (data.section === "body" && data.column.index === 0) {
+          data.cell.styles.fillColor = [245, 247, 250]
+        }
+      },
+    } as AutoTableUserOptions)
+
+    doc.save(filename)
+  }
+
   if (!isStore) {
     return <EmptyState title="Halaman khusus Store" description="Buat Jadwal Shift pada tahap ini hanya tersedia untuk akun Store." />
   }
@@ -598,6 +799,10 @@ export function BuatJadwalPage() {
                 </Button>
               </>
             )}
+            <Button variant="outline" onClick={handleDownloadPdf} disabled={!store}>
+              <FileDown className="mr-2 size-4" />
+              Simpan sebagai PDF
+            </Button>
           </div>
         </div>
 
@@ -726,6 +931,8 @@ export function BuatJadwalPage() {
           </div>
         </div>
       </section>
+
+      <RekapJumlahMasukTable title={rekapTitle} rows={rekapRows} />
 
       {activeCell && canEditCells && (
         <ShiftPopover
