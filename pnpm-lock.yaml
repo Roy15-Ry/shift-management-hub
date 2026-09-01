@@ -7,6 +7,7 @@ settings:
 overrides:
   hono: 4.12.25
   nanoid: 3.3.18
+  jwks-rsa>jose: 4.15.9
 
 importers:
 
@@ -1939,6 +1940,9 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
+
+  jose@4.15.9:
+    resolution: {integrity: sha512-1vUQX+IdDMVPj4k8kOxgUqlcK518yluMuGZwqlr44FS1ppZB/5GWh4rZG89erpOBOJjU/OBsnCVFfapsRz6nEA==}
 
   jose@6.2.3:
     resolution: {integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==}
@@ -5013,6 +5017,8 @@ snapshots:
 
   jiti@2.7.0: {}
 
+  jose@4.15.9: {}
+
   jose@6.2.3: {}
 
   js-tokens@4.0.0: {}
@@ -5081,7 +5087,7 @@ snapshots:
     dependencies:
       '@types/jsonwebtoken': 9.0.10
       debug: 4.4.3
-      jose: 6.2.3
+      jose: 4.15.9
       limiter: 1.1.5
       lru-cache: 11.5.2
       lru-memoizer: 3.0.0

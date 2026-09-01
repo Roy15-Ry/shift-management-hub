@@ -7,3 +7,4 @@ allowBuilds:
 overrides:
   hono: 4.12.25
   nanoid: 3.3.18
+  'jwks-rsa>jose': 4.15.9
