@@ -76,16 +76,91 @@ const NEXT_STATUS: Record<
   SELESAI: "SELESAI",
 }
 
+const PAGE_STORAGE_KEY =
+  "shift-management-hub-page"
+
+const VALID_PAGE_KEYS: PageKey[] = [
+  "dashboard",
+  "pengaturan",
+  "revisi",
+  "shift",
+  "shift-cabang",
+  "history",
+  "manajemen-akun",
+  "buat-jadwal",
+  "jadwal-libur",
+]
+
+function getSavedPage(): PageKey {
+  if (
+    typeof window === "undefined"
+  ) {
+    return "dashboard"
+  }
+
+  const savedPage =
+    window.localStorage.getItem(
+      PAGE_STORAGE_KEY,
+    )
+
+  if (
+    savedPage &&
+    VALID_PAGE_KEYS.includes(
+      savedPage as PageKey,
+    )
+  ) {
+    return savedPage as PageKey
+  }
+
+  return "dashboard"
+}
+
 export function AppProvider({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { profile, loading: authLoading, user } =
-    useAuth()
+  const {
+    profile,
+    loading: authLoading,
+    user,
+  } = useAuth()
 
-  const [page, setPage] =
-    React.useState<PageKey>("dashboard")
+  // ============================================================
+  // HALAMAN AKTIF
+  // ============================================================
+  //
+  // Halaman terakhir disimpan di localStorage.
+  // Dengan demikian ketika browser di-refresh,
+  // aplikasi tetap membuka halaman terakhir.
+  //
+  // ============================================================
+
+  const [page, setPageState] =
+    React.useState<PageKey>(
+      getSavedPage,
+    )
+
+  const setPage =
+    React.useCallback(
+      (nextPage: PageKey) => {
+        setPageState(nextPage)
+
+        if (
+          typeof window !== "undefined"
+        ) {
+          window.localStorage.setItem(
+            PAGE_STORAGE_KEY,
+            nextPage,
+          )
+        }
+      },
+      [],
+    )
+
+  // ============================================================
+  // STATE REVISI
+  // ============================================================
 
   const [revisi, setRevisi] =
     React.useState<Revisi[]>([])
@@ -99,17 +174,31 @@ export function AppProvider({
   const [isBatchProcessing, setIsBatchProcessing] =
     React.useState(false)
 
+  // ============================================================
+  // SIDEBAR
+  // ============================================================
+
   const [sidebarCollapsed, setSidebarCollapsed] =
     React.useState(false)
 
-  const toggleSidebar = React.useCallback(
-    () => setSidebarCollapsed((c) => !c),
-    [],
-  )
+  const toggleSidebar =
+    React.useCallback(
+      () =>
+        setSidebarCollapsed(
+          (current) => !current,
+        ),
+      [],
+    )
+
+  // ============================================================
+  // LOAD REVISI
+  // ============================================================
 
   const refreshRevisi =
     React.useCallback(async () => {
-      if (authLoading) return
+      if (authLoading) {
+        return
+      }
 
       if (!profile) {
         setRevisi([])
@@ -137,28 +226,26 @@ export function AppProvider({
           profile.role === "store" &&
           profile.storeId
         ) {
-          snapshot = await getDocs(
-            query(
-              revisiRef,
-              where(
-                "storeId",
-                "==",
-                profile.storeId,
+          snapshot =
+            await getDocs(
+              query(
+                revisiRef,
+                where(
+                  "storeId",
+                  "==",
+                  profile.storeId,
+                ),
               ),
-            ),
-          )
+            )
         }
 
         // ====================================================
         // CENTRAL CABANG
-        // Query harus dibatasi cabang agar dapat dibuktikan
-        // oleh Firestore Rules. Setiap dokumen revisi harus
-        // menyimpan cabangId yang sesuai dengan Store-nya.
         // ====================================================
 
         else if (
           profile.role ===
-            "central_cabang" &&
+          "central_cabang" &&
           profile.cabangId
         ) {
           snapshot =
@@ -176,7 +263,6 @@ export function AppProvider({
 
         // ====================================================
         // CENTRAL PUSAT
-        // Bisa melihat seluruh revisi.
         // ====================================================
 
         else {
@@ -215,6 +301,10 @@ export function AppProvider({
     refreshRevisi()
   }, [refreshRevisi])
 
+  // ============================================================
+  // ADVANCE REVISI
+  // ============================================================
+
   const advanceRevisi =
     React.useCallback(
       async (id: string) => {
@@ -223,11 +313,13 @@ export function AppProvider({
             (r) => r.id === id,
           )
 
-        if (!current) return
+        if (!current) {
+          return
+        }
 
         const nextStatus =
           NEXT_STATUS[
-            current.status
+          current.status
           ]
 
         if (
@@ -257,13 +349,11 @@ export function AppProvider({
                     "application/json",
                   Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify(
-                  {
-                    id,
-                    status:
-                      nextStatus,
-                  },
-                ),
+                body: JSON.stringify({
+                  id,
+                  status:
+                    nextStatus,
+                }),
               },
             )
 
@@ -279,21 +369,21 @@ export function AppProvider({
           ) {
             throw new Error(
               result?.message ??
-                "Gagal memperbarui revisi.",
+              "Gagal memperbarui revisi.",
             )
           }
 
           setRevisi(
             (prev) =>
               prev.map(
-                (r) =>
-                  r.id === id
+                (item) =>
+                  item.id === id
                     ? {
-                        ...r,
-                        status:
-                          nextStatus,
-                      }
-                    : r,
+                      ...item,
+                      status:
+                        nextStatus,
+                    }
+                    : item,
               ),
           )
         } catch (error) {
@@ -308,9 +398,15 @@ export function AppProvider({
       [revisi, user],
     )
 
+  // ============================================================
+  // CREATE REVISI
+  // ============================================================
+
   const createRevisi =
     React.useCallback(
-      async (payload: CreateRevisiPayload) => {
+      async (
+        payload: CreateRevisiPayload,
+      ) => {
         if (!user) {
           throw new Error(
             "Anda harus login terlebih dahulu.",
@@ -351,7 +447,7 @@ export function AppProvider({
           ) {
             throw new Error(
               result?.message ??
-                "Pengajuan revisi gagal.",
+              "Pengajuan revisi gagal.",
             )
           }
 
@@ -369,6 +465,10 @@ export function AppProvider({
       },
       [user, refreshRevisi],
     )
+
+  // ============================================================
+  // ADVANCE ALL REVISI
+  // ============================================================
 
   const advanceAllRevisi =
     React.useCallback(
@@ -398,9 +498,10 @@ export function AppProvider({
                     "application/json",
                   Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify(
-                  { to, storeId },
-                ),
+                body: JSON.stringify({
+                  to,
+                  storeId,
+                }),
               },
             )
 
@@ -417,13 +518,15 @@ export function AppProvider({
           ) {
             throw new Error(
               result?.message ??
-                "Aksi massal gagal.",
+              "Aksi massal gagal.",
             )
           }
 
           await refreshRevisi()
 
-          return result?.processed ?? 0
+          return (
+            result?.processed ?? 0
+          )
         } catch (error) {
           console.error(
             "Gagal memproses revisi massal:",
@@ -438,16 +541,24 @@ export function AppProvider({
       [user, refreshRevisi],
     )
 
+  // ============================================================
+  // PENDING REVISI
+  // ============================================================
+
   const pendingRevisiCount =
     React.useMemo(
       () =>
         revisi.filter(
-          (r) =>
-            r.status !==
+          (item) =>
+            item.status !==
             "SELESAI",
         ).length,
       [revisi],
     )
+
+  // ============================================================
+  // CONTEXT VALUE
+  // ============================================================
 
   const value: AppContextValue = {
     page,
