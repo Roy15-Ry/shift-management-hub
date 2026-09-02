@@ -698,7 +698,8 @@ function CentralStoreList({
           const pending = items.filter(
             (r) => r.status !== "SELESAI",
           ).length
-          const hasAny = pending > 0
+          const hasItems = items.length > 0
+          const hasPending = hasItems && pending > 0
 
           return (
             <button
@@ -709,7 +710,7 @@ function CentralStoreList({
               }
               className={cn(
                 "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm transition-all hover:shadow-md",
-                hasAny
+                hasPending
                   ? "border-status-pagi/30"
                   : "border-border",
               )}
@@ -717,12 +718,12 @@ function CentralStoreList({
               <div
                 className={cn(
                   "flex size-12 shrink-0 items-center justify-center rounded-lg",
-                  hasAny
+                  hasPending
                     ? "bg-status-pagi-bg text-status-pagi"
                     : "bg-muted text-muted-foreground",
                 )}
               >
-                {hasAny ? (
+                {hasPending ? (
                   <ClipboardCheck className="size-5" />
                 ) : (
                   <CheckCircle2 className="size-5" />
@@ -732,13 +733,24 @@ function CentralStoreList({
                 <p className="truncate text-sm font-semibold">
                   {s.nama}
                 </p>
-                {hasAny ? (
-                  <p className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">
-                      {pending} pengajuan
-                    </span>
-                    <RevisiStatusBadge status="PROSES" />
-                  </p>
+                {hasItems ? (
+                  hasPending ? (
+                    <p className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {items.length} pengajuan
+                      </span>
+                      <RevisiStatusBadge status="PROSES" />
+                    </p>
+                  ) : (
+                    <p className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {items.length} pengajuan
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Semua selesai
+                      </span>
+                    </p>
+                  )
                 ) : (
                   <p className="mt-1 text-sm text-muted-foreground">
                     Tidak ada pengajuan
