@@ -1183,6 +1183,52 @@ export async function PUT(
         newEmail
     }
 
+    // =================================================
+    // TARGET ROLE STORE: SINKRONKAN NAMA STORE
+    //
+    // Nama store disimpan pada dua dokumen:
+    //   - users/{uid}.namaStore
+    //   - stores/{storeId}.namaStore
+    //
+    // Saat nama akun Store diubah, namaStore juga harus
+    // diperbarui agar seluruh fitur yang membaca
+    // stores.namaStore ikut menampilkan nama terbaru.
+    //
+    // Hanya dilakukan untuk role "store". storeId diambil
+    // dari targetUser (server-side), BUKAN dari request
+    // body. Tidak membuat dokumen stores baru jika storeId
+    // kosong/null.
+    // =================================================
+
+    if (
+      targetUser.role === "store"
+    ) {
+      if (
+        newNama !==
+        String(
+          targetUser.namaStore ?? "",
+        )
+      ) {
+        docUpdate.namaStore =
+          newNama
+      }
+
+      const targetStoreId =
+        String(
+          targetUser.storeId ??
+          "",
+        ).trim()
+
+      if (targetStoreId) {
+        await adminDb
+          .collection("stores")
+          .doc(targetStoreId)
+          .update({
+            namaStore: newNama,
+          })
+      }
+    }
+
     if (
       Object.keys(docUpdate).length >
       0
