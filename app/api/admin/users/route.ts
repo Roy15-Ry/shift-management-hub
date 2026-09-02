@@ -731,16 +731,122 @@ export async function DELETE(
       .delete()
 
     // =================================================
-    // CATATAN
+    // TARGET STORE: HAPUS SELURUH DATA MILIK STORE
     //
-    // Dokumen stores TIDAK DIHAPUS.
-    // Data operasional Store tetap aman.
+    // Hanya untuk target ber-role "store". storeId
+    // diambil dari targetUser.storeId (server-side),
+    // BUKAN dari request body. Tidak menggunakan
+    // cabangId untuk memilih data.
+    // =================================================
+
+    if (
+      targetUser.role ===
+      "store"
+    ) {
+      const storeId =
+        String(
+          targetUser.storeId ??
+          "",
+        ).trim()
+
+      // Jika storeId kosong/null, hentikan penghapusan
+      // data STORE. Jangan melakukan broad delete.
+      if (!storeId) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Data store tidak ditemukan untuk akun ini. Akun dihapus, tetapi data store tidak dapat diidentifikasi.",
+          },
+          {
+            status: 500,
+          },
+        )
+      }
+
+      // ===============================================
+      // HAPUS stores/{storeId}
+      // ===============================================
+
+      const storeRef =
+        adminDb
+          .collection("stores")
+          .doc(storeId)
+
+      const storeSnap =
+        await storeRef.get()
+
+      if (storeSnap.exists) {
+        await storeRef.delete()
+      }
+
+      // ===============================================
+      // HAPUS COLLECTIONS BERDASARKAN storeId
+      // ===============================================
+
+      const deleteTargets = [
+        "employees",
+        "schedules",
+        "schedule_drafts",
+        "revisi",
+        "history",
+      ]
+
+      for (
+        const collection of deleteTargets
+      ) {
+        const snap =
+          await adminDb
+            .collection(collection)
+            .where(
+              "storeId",
+              "==",
+              storeId,
+            )
+            .get()
+
+        if (snap.empty) {
+          continue
+        }
+
+        let batch =
+          adminDb.batch()
+        let opsInBatch = 0
+
+        for (
+          const doc of snap.docs
+        ) {
+          batch.delete(doc.ref)
+          opsInBatch++
+
+          // Batas aman batch Firestore (max 500).
+          if (
+            opsInBatch >= 450
+          ) {
+            await batch.commit()
+            batch =
+              adminDb.batch()
+            opsInBatch = 0
+          }
+        }
+
+        if (opsInBatch > 0) {
+          await batch.commit()
+        }
+      }
+    }
+
+    // =================================================
+    // TARGET CENTRAL CABANG:
+    // hanya akun + users/{uid}. Data toko tidak dihapus.
     // =================================================
 
     return NextResponse.json({
       success: true,
       message:
-        "Akun berhasil dihapus.",
+        targetUser.role === "store"
+          ? "Akun Store beserta seluruh data tokonya berhasil dihapus."
+          : "Akun berhasil dihapus.",
     })
   } catch (error: unknown) {
     console.error(

@@ -1,6 +1,10 @@
 "use client"
 
 import * as React from "react"
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+} from "firebase/auth"
 
 type ModalType =
   | "central"
@@ -72,6 +76,18 @@ export function ManajemenAkunPage() {
     React.useState("")
 
   const [password, setPassword] =
+    React.useState("")
+
+  // =====================================================
+  // PASSWORD VERIFIKASI (RE-AUTHENTICATION)
+  //
+  // Hanya untuk aksi DELETE akun. Password milik akun
+  // CENTRAL yang sedang login, diverifikasi via Firebase
+  // Authentication. Tidak pernah disimpan ke state lain,
+  // Firestore, atau dikirim ke DELETE API.
+  // =====================================================
+
+  const [verifyPassword, setVerifyPassword] =
     React.useState("")
 
   const [cabangId, setCabangId] =
@@ -569,6 +585,8 @@ export function ManajemenAkunPage() {
       return
     }
 
+    setVerifyPassword("")
+
     setConfirmDialog({
       open: true,
       action: "delete",
@@ -582,6 +600,8 @@ export function ManajemenAkunPage() {
 
   function closeConfirmDialog() {
     if (loading) return
+
+    setVerifyPassword("")
 
     setConfirmDialog({
       open: false,
@@ -691,6 +711,53 @@ export function ManajemenAkunPage() {
         confirmDialog.action ===
         "delete"
       ) {
+        // ===============================================
+        // RE-AUTHENTICATION (PASSWORD AKUN CENTRAL LOGIN)
+        //
+        // Verifikasi password akun yang sedang login via
+        // Firebase Authentication sebelum menghapus.
+        // Password tidak dikirim ke DELETE API, tidak
+        // disimpan ke Firestore/state.
+        // ===============================================
+
+        if (
+          !currentUser.email
+        ) {
+          throw new Error(
+            "Email akun Anda tidak tersedia untuk verifikasi.",
+          )
+        }
+
+        if (!verifyPassword) {
+          throw new Error(
+            "Password wajib diisi.",
+          )
+        }
+
+        const credential =
+          EmailAuthProvider.credential(
+            currentUser.email,
+            verifyPassword,
+          )
+
+        try {
+          await reauthenticateWithCredential(
+            currentUser,
+            credential,
+          )
+        } catch (reAuthError) {
+          console.error(
+            "REAUTH ERROR:",
+            reAuthError,
+          )
+          throw new Error(
+            "Password salah.",
+          )
+        }
+
+        // Password tidak disimpan setelah dipakai.
+        setVerifyPassword("")
+
         const response =
           await fetch(
             "/api/admin/users",
@@ -1759,9 +1826,16 @@ export function ManajemenAkunPage() {
                         Akun akan dihapus dari Firebase Authentication dan profil users.
                       </p>
 
-                      <p className="mt-1">
-                        Data Store dan data operasional tidak akan dihapus.
-                      </p>
+                      {confirmDialog.account.role ===
+                        "store" ? (
+                        <p className="mt-1">
+                          Data toko dan seluruh data operasional toko (karyawan, jadwal, revisi, riwayat) juga akan dihapus secara permanen.
+                        </p>
+                      ) : (
+                        <p className="mt-1">
+                          Hanya akun Central Cabang yang dihapus. Data toko dan data operasional cabang tetap ada.
+                        </p>
+                      )}
 
                     </div>
 
@@ -1770,11 +1844,36 @@ export function ManajemenAkunPage() {
                 <p className="text-sm text-muted-foreground">
                   {confirmDialog.action ===
                     "delete"
-                    ? "Apakah Anda yakin ingin melanjutkan?"
+                    ? "Apakah Anda yakin ingin menghapus akun ini?"
                     : confirmDialog.nextStatus
                       ? "Apakah Anda yakin ingin mengaktifkan akun ini?"
                       : "Apakah Anda yakin ingin menonaktifkan akun ini?"}
                 </p>
+
+                {confirmDialog.action ===
+                  "delete" && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Password Akun Anda
+                      </label>
+                      <input
+                        type="password"
+                        value={verifyPassword}
+                        onChange={(e) =>
+                          setVerifyPassword(
+                            e.target.value,
+                          )
+                        }
+                        placeholder="Masukkan password akun yang sedang login"
+                        autoComplete="current-password"
+                        disabled={loading}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Masukkan password Anda untuk mengonfirmasi penghapusan. Tidak akan disimpan.
+                      </p>
+                    </div>
+                  )}
 
               </div>
 
