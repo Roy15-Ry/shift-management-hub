@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -77,6 +78,9 @@ export function ManajemenAkunPage() {
 
   const [password, setPassword] =
     React.useState("")
+
+  const [showPassword, setShowPassword] =
+    React.useState(false)
 
   // =====================================================
   // PASSWORD VERIFIKASI (RE-AUTHENTICATION)
@@ -431,6 +435,7 @@ export function ManajemenAkunPage() {
     setStoreId("")
     setEmail("")
     setPassword("")
+    setShowPassword(false)
     setCabangId("")
     setNamaCabang("")
     setMessage("")
@@ -870,12 +875,14 @@ export function ManajemenAkunPage() {
         )
       }
 
+      await loadAccounts()
+      await loadBranches()
+
+      resetForm()
+
       setMessage(
         "Central Cabang berhasil dibuat.",
       )
-
-      await loadAccounts()
-      await loadBranches()
 
       setTimeout(() => {
         closeModal()
@@ -1026,11 +1033,13 @@ export function ManajemenAkunPage() {
         )
       }
 
+      await loadAccounts()
+
+      resetForm()
+
       setMessage(
         "Akun Store berhasil dibuat.",
       )
-
-      await loadAccounts()
 
       setTimeout(() => {
         closeModal()
@@ -1612,6 +1621,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="Nama akun"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -1637,6 +1647,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="akun@contoh.com"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -1650,22 +1661,51 @@ export function ManajemenAkunPage() {
                     Password (opsional)
                   </label>
 
-                  <input
-                    type="password"
-                    value={
-                      password
-                    }
-                    onChange={(
-                      e,
-                    ) =>
-                      setPassword(
-                        e.target.value,
-                      )
-                    }
-                    placeholder="Kosongkan jika tidak diubah (min. 6 karakter)"
-                    minLength={6}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
+                  <div className="relative">
+                    <input
+                      type={
+                        showPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={
+                        password
+                      }
+                      onChange={(
+                        e,
+                      ) =>
+                        setPassword(
+                          e.target.value,
+                        )
+                      }
+                      placeholder="Kosongkan jika tidak diubah (min. 6 karakter)"
+                      minLength={6}
+                      autoComplete="new-password"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword(
+                          (current) =>
+                            !current,
+                        )
+                      }
+                      aria-label={
+                        showPassword
+                          ? "Sembunyikan password"
+                          : "Tampilkan password"
+                      }
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
 
                 </div>
 
@@ -1996,6 +2036,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="Contoh: Ahmad"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -2021,6 +2062,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="central@contoh.com"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -2034,25 +2076,54 @@ export function ManajemenAkunPage() {
                     Password
                   </label>
 
-                  <input
-                    type="password"
-                    value={
-                      password
-                    }
-                    onChange={(
-                      e,
-                    ) =>
-                      setPassword(
-                        e.target.value,
-                      )
-                    }
-                    placeholder="Minimal 6 karakter"
-                    minLength={6}
-                    required
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
+                  <div className="relative">
+                    <input
+                      type={
+                        showPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={
+                        password
+                      }
+                      onChange={(
+                        e,
+                      ) =>
+                        setPassword(
+                          e.target.value,
+                        )
+                      }
+                      placeholder="Minimal 6 karakter"
+                      minLength={6}
+                      required
+                      autoComplete="new-password"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
 
-                </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword(
+                          (current) =>
+                            !current,
+                        )
+                      }
+                      aria-label={
+                        showPassword
+                          ? "Sembunyikan password"
+                          : "Tampilkan password"
+                      }
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+
+                  </div>
 
                 {/* ID CABANG */}
 
@@ -2226,6 +2297,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="Contoh: CJR-01-STR-01"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -2251,6 +2323,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="Contoh: STORE CIANJUR"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -2278,6 +2351,7 @@ export function ManajemenAkunPage() {
                     }
                     placeholder="store@contoh.com"
                     required
+                    autoComplete="off"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
 
@@ -2291,25 +2365,54 @@ export function ManajemenAkunPage() {
                     Password
                   </label>
 
-                  <input
-                    type="password"
-                    value={
-                      password
-                    }
-                    onChange={(
-                      e,
-                    ) =>
-                      setPassword(
-                        e.target.value,
-                      )
-                    }
-                    placeholder="Minimal 6 karakter"
-                    minLength={6}
-                    required
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                  />
+                  <div className="relative">
+                    <input
+                      type={
+                        showPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={
+                        password
+                      }
+                      onChange={(
+                        e,
+                      ) =>
+                        setPassword(
+                          e.target.value,
+                        )
+                      }
+                      placeholder="Minimal 6 karakter"
+                      minLength={6}
+                      required
+                      autoComplete="new-password"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
 
-                </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword(
+                          (current) =>
+                            !current,
+                        )
+                      }
+                      aria-label={
+                        showPassword
+                          ? "Sembunyikan password"
+                          : "Tampilkan password"
+                      }
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+
+                  </div>
 
                 {/* CABANG */}
 
