@@ -5,8 +5,9 @@ import { Eye, EyeOff } from "lucide-react"
 import { loginUser } from "@/lib/auth"
 
 export function LoginPage() {
-    const [email, setEmail] = React.useState("")
-    const [password, setPassword] = React.useState("")
+    const emailRef = React.useRef<HTMLInputElement>(null)
+    const passwordRef =
+        React.useRef<HTMLInputElement>(null)
     const [showPassword, setShowPassword] =
         React.useState(false)
     const [loading, setLoading] = React.useState(false)
@@ -20,8 +21,14 @@ export function LoginPage() {
         setError("")
         setLoading(true)
 
+        const data = new FormData(event.currentTarget)
+        const emailValue =
+            (data.get("email") as string) ?? ""
+        const passwordValue =
+            (data.get("password") as string) ?? ""
+
         try {
-            await loginUser(email, password)
+            await loginUser(emailValue, passwordValue)
         } catch (error: unknown) {
             console.error(error)
 
@@ -89,14 +96,10 @@ export function LoginPage() {
                         </label>
 
                         <input
+                            ref={emailRef}
                             id="email"
+                            name="email"
                             type="email"
-                            value={email}
-                            onChange={(event) =>
-                                setEmail(
-                                    event.target.value,
-                                )
-                            }
                             placeholder="nama@email.com"
                             autoComplete="email"
                             required
@@ -116,20 +119,16 @@ export function LoginPage() {
 
                         <div className="relative">
                             <input
+                                ref={passwordRef}
                                 id="password"
+                                name="password"
                                 type={
                                     showPassword
                                         ? "text"
                                         : "password"
                                 }
-                                value={password}
-                                onChange={(event) =>
-                                    setPassword(
-                                        event.target.value,
-                                    )
-                                }
                                 placeholder="Masukkan password"
-                                autoComplete="current-password"
+                                autoComplete="new-password"
                                 required
                                 disabled={loading}
                                 className="w-full rounded-lg border bg-background px-3 py-2.5 pr-11 outline-none transition focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
