@@ -255,6 +255,13 @@ export function HistoryPage() {
   const [error, setError] = React.useState("")
 
   // ==========================================================
+  // PEMILIHAN STORE (khusus CENTRAL PUSAT / CENTRAL CABANG)
+  // ==========================================================
+
+  const [selectedStoreId, setSelectedStoreId] =
+    React.useState<string | null>(null)
+
+  // ==========================================================
   // AMBIL DATA HISTORY MELALUI SERVER (Admin SDK)
   // ==========================================================
 
@@ -394,6 +401,25 @@ export function HistoryPage() {
     )
   }, [revisi])
 
+  // Pemilihan Store hanya diterapkan untuk CENTRAL PUSAT /
+  // CENTRAL CABANG. Role STORE tetap memakai perilaku lama
+  // (menampilkan seluruh history tanpa harus memilih Store).
+  const isCentral =
+    profile?.role === "central_pusat" ||
+    profile?.role === "central_cabang"
+
+  const filteredStatusItems = isCentral
+    ? statusItems.filter(
+        (item) => item.storeId === selectedStoreId,
+      )
+    : statusItems
+
+  const filteredRevisiItems = isCentral
+    ? revisiItems.filter(
+        (item) => item.storeId === selectedStoreId,
+      )
+    : revisiItems
+
   const anyStore = stores.length > 0
 
   return (
@@ -505,15 +531,49 @@ export function HistoryPage() {
           </div>
         </div>
 
+        {/* ==================================================
+            PEMILIHAN STORE (khusus CENTRAL PUSAT / CABANG)
+        ================================================== */}
+        {isCentral && (
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <label
+              htmlFor="history-store-select"
+              className="text-sm font-medium text-foreground"
+            >
+              Pilih Store
+            </label>
+            <select
+              id="history-store-select"
+              value={selectedStoreId ?? ""}
+              onChange={(event) =>
+                setSelectedStoreId(event.target.value || null)
+              }
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <option value="">-- Pilih Store --</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.nama}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {loading ? (
           <LoadingState label="Memuat data status..." />
-        ) : statusItems.length === 0 ? (
+        ) : isCentral && !selectedStoreId ? (
+          <EmptyState
+            title="Pilih Store"
+            description="Pilih Store terlebih dahulu untuk melihat history libur, cuti, izin, atau sakit."
+          />
+        ) : filteredStatusItems.length === 0 ? (
           <EmptyState
             title="Tidak ada data libur, cuti, izin, atau sakit pada bulan ini."
           />
         ) : (
           <HistoryTable headers={["Tanggal", "Karyawan", "Status", "Keterangan"]}>
-            {statusItems.map((item) => (
+            {filteredStatusItems.map((item) => (
               <tr
                 key={item.key}
                 className="border-b border-border/60 last:border-0 hover:bg-muted/30"
@@ -550,13 +610,18 @@ export function HistoryPage() {
 
         {loading ? (
           <LoadingState label="Memuat data revisi..." />
-        ) : revisiItems.length === 0 ? (
+        ) : isCentral && !selectedStoreId ? (
+          <EmptyState
+            title="Pilih Store"
+            description="Pilih Store terlebih dahulu untuk melihat history revisi absensi."
+          />
+        ) : filteredRevisiItems.length === 0 ? (
           <EmptyState
             title="Tidak ada revisi absensi pada bulan ini."
           />
         ) : (
           <HistoryTable headers={["Tanggal", "Karyawan", "Jenis Revisi", "Keterangan", "Status"]}>
-            {revisiItems.map((item) => {
+            {filteredRevisiItems.map((item) => {
               const jenis = getRevisiJenisItem(item.jenisRevisi)
               return (
                 <tr
