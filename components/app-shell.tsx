@@ -89,7 +89,7 @@ function Shell() {
   const { sidebarCollapsed } = useApp()
 
   return (
-    <div className="flex min-h-svh">
+    <div className="flex min-h-svh bg-background">
       {!sidebarCollapsed && <DesktopSidebar />}
 
       <MobileSidebar

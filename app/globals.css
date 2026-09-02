@@ -191,29 +191,21 @@
   }
 
   /*
-   * Background foto Tania Perfume (VISUAL SEMATA).
+   * Background foto Login (VISUAL SEMATA).
    *
-   * Lapisan fixed di belakang seluruh UI, di-blur, dan diberi
-   * overlay tipis agar foto tetap terlihat sebagai identitas
-   * visual namun tidak mengganggu keterbacaan aplikasi.
+   * Hanya diterapkan pada halaman LOGIN (`main.login-page`).
+   * Gambar ditampilkan tajam (tanpa blur) dan menggunakan
+   * mekanisme `--app-bg-image` yang sudah ada.
    *
-   * HANYA lapisan background yang di-blur. Komponen UI (sidebar,
-   * header, card, tabel, teks, tombol, kalender, modal) tetap
-   * tajam karena berada di atas lapisan ini.
+   * Halaman setelah login (authenticated) memakai background
+   * solid `--background` dan tidak memakai gambar ini.
    */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
+  main.login-page {
     background-image:
       linear-gradient(rgba(248, 250, 252, 0.4), rgba(248, 250, 252, 0.4)),
       var(--app-bg-image);
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    filter: blur(14px);
-    transform: scale(1.12);
-    pointer-events: none;
   }
 }
