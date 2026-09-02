@@ -1,7 +1,9 @@
 import {
-    getAuth,
+    initializeAuth,
+    browserSessionPersistence,
     signInWithEmailAndPassword,
     signOut,
+    type Auth,
 } from "firebase/auth"
 
 import {
@@ -12,10 +14,22 @@ import {
 import { firebaseApp, db } from "@/lib/firebase"
 
 // ============================================================
-// FIREBASE AUTH
+// FIREBASE AUTH — PER-TAB SESSION ISOLATION
+// ============================================================
+//
+// Menggunakan browserSessionPersistence (sessionStorage) agar
+// setiap tab memiliki auth state independen.
+//
+// Tab 1 login CENTRAL + Tab 2 login STORE → keduanya tetap
+// menggunakan akun masing-masing, termasuk setelah refresh.
+//
+// Trade-off: menutup tab menghapus session (perlu login ulang).
 // ============================================================
 
-export const auth = getAuth(firebaseApp)
+export const auth: Auth = initializeAuth(
+    firebaseApp,
+    { persistence: browserSessionPersistence },
+)
 
 // ============================================================
 // USER PROFILE
