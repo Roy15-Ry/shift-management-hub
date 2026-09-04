@@ -366,13 +366,31 @@ export async function GET(
       ? `${year}-${String(month + 1).padStart(2, "0")}`
       : null
 
-    const keteranganSnapshot =
-      await adminDb
-        .collection("jadwal-libur-keterangan")
-        .get()
-
     const userCabangId =
       normalize(user.cabangId)
+
+    // STORE / CENTRAL CABANG: persempit query ke cabang user
+    // agar hanya membaca keterangan cabangnya (bukan seluruh cabang).
+    // CENTRAL PUSAT: baca seluruh keterangan (kewenangan pusat).
+    let keteranganRef:
+      FirebaseFirestore.Query =
+      adminDb
+        .collection("jadwal-libur-keterangan")
+
+    if (
+      !isCentralPusat &&
+      userCabangId
+    ) {
+      keteranganRef =
+        keteranganRef.where(
+          "cabangId",
+          "==",
+          userCabangId,
+        )
+    }
+
+    const keteranganSnapshot =
+      await keteranganRef.get()
 
     // Scope keterangan:
     // - CENTRAL PUSAT "Semua Cabang" -> semua keterangan tiap cabang
