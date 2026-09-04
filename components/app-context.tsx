@@ -40,6 +40,9 @@ type AppContextValue = {
   page: PageKey
   setPage: (p: PageKey) => void
 
+  logoutModalOpen: boolean
+  closeLogoutModal: () => void
+
   revisi: Revisi[]
   loadingRevisi: boolean
 
@@ -79,6 +82,38 @@ const NEXT_STATUS: Record<
 const PAGE_STORAGE_KEY =
   "shift-management-hub-page"
 
+/*
+ * ============================================================
+ * BROWSER HISTORY — MODAL-ENTRY DESIGN
+ * ============================================================
+ *
+ * Aplikasi ini SPA berbasis state (React useState), bukan route.
+ * Browser Back / Device Back ditangani dengan:
+ *
+ *   1. BOUNDARY — entry penanda "batas aplikasi".
+ *      Diletakkan tepat di bawah Dashboard Sentinel.
+ *      Back ke boundary → BUKAN langsung keluar, melainkan
+ *      membuat MODAL ENTRY di atasnya.
+ *
+ *   2. DASHBOARD SENTINEL — entry yang menjamin selalu ada
+ *      lapisan dashboard antara boundary dan halaman lain.
+ *      Tidak pernah dihapus.
+ *
+ *   3. MODAL ENTRY — history entry nyata { modalVersion }.
+ *      Back dari modal → konsumsi entry → kembali ke
+ *      dashboard/sentinel. Batal → SATU go(-1) (tanpa pushState
+ *      di tick yang sama) → MODAL → DASH.
+ *
+ *   4. PAGE entries — setiap setPage() = 1 pushState({page}).
+ *
+ * Stack siempreks:
+ *   [EXTERNAL, BOUNDARY, DASH_SENTINEL, ...pages, MODAL?]
+ *
+ * pushState selalu menghapus forward entries (spesifikasi §6.10.21).
+ * Ini digunakan untuk menjaga stack bersih.
+ * ============================================================
+ */
+
 const VALID_PAGE_KEYS: PageKey[] = [
   "dashboard",
   "pengaturan",
@@ -90,6 +125,21 @@ const VALID_PAGE_KEYS: PageKey[] = [
   "buat-jadwal",
   "jadwal-libur",
 ]
+
+type HistoryState =
+  | null
+  | { boundary: true; modalVersion: 0 }
+  | { page: PageKey }
+  | { modalVersion: number; page: PageKey }
+
+function isValidPageKey(
+  v: unknown,
+): v is PageKey {
+  return (
+    typeof v === "string" &&
+    VALID_PAGE_KEYS.includes(v as PageKey)
+  )
+}
 
 function getSavedPage(): PageKey {
   if (
@@ -103,12 +153,7 @@ function getSavedPage(): PageKey {
       PAGE_STORAGE_KEY,
     )
 
-  if (
-    savedPage &&
-    VALID_PAGE_KEYS.includes(
-      savedPage as PageKey,
-    )
-  ) {
+  if (isValidPageKey(savedPage)) {
     return savedPage as PageKey
   }
 
@@ -141,7 +186,20 @@ export function AppProvider({
       getSavedPage,
     )
 
-  const setPage =
+  const [logoutModalOpen, setLogoutModalOpen] =
+    React.useState(false)
+
+  const modalOpenRef =
+    React.useRef(false)
+  const modalVersionRef =
+    React.useRef(0)
+  const mountedRef =
+    React.useRef(false)
+
+  // ============================================================
+  // COMMIT PAGE — memperbarui state + localStorage TANPA history
+  // ============================================================
+  const commitPage =
     React.useCallback(
       (nextPage: PageKey) => {
         setPageState(nextPage)
@@ -156,6 +214,231 @@ export function AppProvider({
         }
       },
       [],
+    )
+
+  // ============================================================
+  // SETUP BOUNDARY — satu kali, saat AppProvider mount
+  // ============================================================
+  //
+  // Mount stack:
+  //   [external..., BOUNDARY, DASH_SENTINEL]
+  //   atau
+  //   [external..., BOUNDARY, DASH_SENTINEL, SAVED_PAGE]
+  //
+  // DASH_SENTINEL selalu tepat di atas BOUNDARY.
+  // Jika saved != dashboard, saved di atas sentinel.
+  // ============================================================
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (mountedRef.current) {
+      return
+    }
+    mountedRef.current = true
+
+    const saved = getSavedPage()
+
+    window.history.replaceState(
+      { boundary: true, modalVersion: 0 },
+      "",
+      "/",
+    )
+    window.history.pushState(
+      { page: "dashboard" },
+      "",
+      "/",
+    )
+
+    if (saved !== "dashboard") {
+      window.history.pushState(
+        { page: saved },
+        "",
+        "/",
+      )
+    }
+  }, [])
+
+  // ============================================================
+  // POPSTATE — SATU listener untuk Back / Forward
+  // ============================================================
+  //
+  // Empat branch:
+  //   A. boundary → buat modal entry + buka modal
+  //   B. modal entry (modalVersion) → tutup modal
+  //   C. page valid → navigate internal, tutup modal
+  //   D. fallback (external/null) → pushState dashboard
+  // ============================================================
+  React.useEffect(() => {
+    function onPopState(
+      event: PopStateEvent,
+    ) {
+      const state =
+        event.state as HistoryState
+
+      // ──────────────────────────────────────
+      // Branch A: boundary + fresh → buka modal
+      // (check SEBELUM modal/page, karena boundary
+      //  state juga memiliki "modalVersion")
+      // ──────────────────────────────────────
+      if (
+        state &&
+        typeof state === "object" &&
+        "boundary" in state &&
+        state.boundary === true
+      ) {
+        if (modalOpenRef.current) {
+          return
+        }
+
+        modalOpenRef.current = true
+        setLogoutModalOpen(true)
+
+        // BOUNDARY → DASH → MODAL (urutan wajib).
+        // pushState pertama menaruh DASH tepat di atas BOUNDARY,
+        // pushState kedua menaruh MODAL tepat di atas DASH.
+        // Dengan begitu MODAL selalu memiliki Dashboard di bawahnya
+        // sehingga Back dari MODAL tidak pernah menembus EXTERNAL.
+        window.history.pushState(
+          { page: "dashboard" },
+          "",
+          "/",
+        )
+        window.history.pushState(
+          {
+            modalVersion:
+              modalVersionRef.current,
+            page: page,
+          },
+          "",
+          "/",
+        )
+        return
+      }
+
+      // ──────────────────────────────────────
+      // Branch B: modal entry → tutup modal
+      // ──────────────────────────────────────
+      if (
+        state &&
+        typeof state === "object" &&
+        "modalVersion" in state &&
+        typeof state.modalVersion === "number"
+      ) {
+        const entryVersion =
+          state.modalVersion
+
+        if (
+          entryVersion !==
+          modalVersionRef.current
+        ) {
+          return
+        }
+
+        if (modalOpenRef.current) {
+          modalOpenRef.current = false
+          setLogoutModalOpen(false)
+        }
+
+        if (
+          "page" in state &&
+          isValidPageKey(state.page)
+        ) {
+          commitPage(state.page)
+        }
+        return
+      }
+
+      // ──────────────────────────────────────
+      // Branch C: page valid → internal nav
+      // ──────────────────────────────────────
+      if (
+        state &&
+        typeof state === "object" &&
+        "page" in state &&
+        isValidPageKey(state.page)
+      ) {
+        if (modalOpenRef.current) {
+          modalOpenRef.current = false
+          setLogoutModalOpen(false)
+        }
+        commitPage(state.page)
+        return
+      }
+
+      // ──────────────────────────────────────
+      // Branch D: fallback → push dashboard
+      // ──────────────────────────────────────
+      modalOpenRef.current = false
+      setLogoutModalOpen(false)
+      window.history.pushState(
+        { page: "dashboard" },
+        "",
+        "/",
+      )
+      commitPage("dashboard")
+    }
+
+    window.addEventListener(
+      "popstate",
+      onPopState,
+    )
+
+    return () => {
+      window.removeEventListener(
+        "popstate",
+        onPopState,
+      )
+    }
+  }, [commitPage, page])
+
+  // ============================================================
+  // CLOSE MODAL — aksi Batal
+  // ============================================================
+  //
+  // Desain final (deterministik): gunakan SATU history.go(-1)
+  // saja, TANPA pushState di tick yang sama.
+  //
+  // Stack saat modal terbuka: [BOUNDARY, DASH, MODAL], current=MODAL.
+  // go(-1) → MODAL → DASH. popstate memicu Branch C → tutup modal.
+  // Hasil: current = DASH, dengan BOUNDARY tepat di bawahnya.
+  // Back berikutnya dari DASH → BOUNDARY → Branch A → modal lagi.
+  //
+  // modalVersionRef++ meng-invalidate entry modal bekas di forward,
+  // sehingga Forward (Branch B/Branch K) tidak menghidupkan modal.
+  // ============================================================
+  const closeLogoutModal =
+    React.useCallback(() => {
+      modalVersionRef.current += 1
+      modalOpenRef.current = false
+      setLogoutModalOpen(false)
+
+      commitPage("dashboard")
+
+      window.history.go(-1)
+    }, [commitPage])
+
+  // ============================================================
+  // SET PAGE — navigasi normal oleh user (1 pushState)
+  // ============================================================
+  const setPage =
+    React.useCallback(
+      (nextPage: PageKey) => {
+        if (modalOpenRef.current) {
+          modalOpenRef.current = false
+          setLogoutModalOpen(false)
+        }
+
+        commitPage(nextPage)
+
+        window.history.pushState(
+          { page: nextPage },
+          "",
+          "/",
+        )
+      },
+      [commitPage],
     )
 
   // ============================================================
@@ -563,6 +846,9 @@ export function AppProvider({
   const value: AppContextValue = {
     page,
     setPage,
+
+    logoutModalOpen,
+    closeLogoutModal,
 
     revisi,
     loadingRevisi,

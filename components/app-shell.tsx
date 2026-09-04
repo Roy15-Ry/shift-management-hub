@@ -7,8 +7,11 @@ import {
   type PageKey,
 } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
+import { logoutUser } from "@/lib/auth"
 import { DesktopSidebar, MobileSidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
+import { Modal } from "@/components/ui/modal"
+import { Button } from "@/components/ui/button"
 import { DashboardPage } from "@/components/pages/dashboard"
 import { BuatJadwalPage } from "@/components/pages/buat-jadwal"
 import { PengaturanPage } from "@/components/pages/pengaturan"
@@ -86,7 +89,30 @@ function PageContent() {
 function Shell() {
   const [mobileOpen, setMobileOpen] =
     React.useState(false)
-  const { sidebarCollapsed } = useApp()
+  const {
+    sidebarCollapsed,
+    logoutModalOpen,
+    closeLogoutModal,
+  } = useApp()
+
+  const [loggingOut, setLoggingOut] =
+    React.useState(false)
+
+  async function handleLogout() {
+    if (loggingOut) {
+      return
+    }
+
+    setLoggingOut(true)
+
+    try {
+      await logoutUser()
+      closeLogoutModal()
+    } catch (error) {
+      console.error("Gagal logout:", error)
+      setLoggingOut(false)
+    }
+  }
 
   return (
     <div className="flex min-h-svh bg-background">
@@ -108,6 +134,30 @@ function Shell() {
           </div>
         </main>
       </div>
+
+      <Modal
+        open={logoutModalOpen}
+        onClose={closeLogoutModal}
+        title="Logout"
+        description="Anda akan keluar dari aplikasi. Apakah Anda yakin?"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={closeLogoutModal}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? "Logout..." : "Logout"}
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }
