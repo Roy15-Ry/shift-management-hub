@@ -288,20 +288,50 @@ export async function GET(
       )
     }
 
-    const monthPrefix =
+    // Periode bulan yang diminta: [start, end)
+    // start = YYYY-MM-01, end = tanggal 1 bulan berikutnya
+    // (rollover tahun bila Desember).
+    const nextMonth =
+      month === 11
+        ? month + 1 - 12
+        : month + 1
+
+    const nextYear =
+      month === 11
+        ? year + 1
+        : year
+
+    const start =
       `${year}-${String(
         month + 1,
-      ).padStart(2, "0")}-`
+      ).padStart(2, "0")}-01`
 
-    const snapshot =
-      await adminDb
+    const end =
+      `${nextYear}-${String(
+        nextMonth + 1,
+      ).padStart(2, "0")}-01`
+
+    let query =
+      adminDb
         .collection("schedule_drafts")
         .where(
           "storeId",
           "==",
           storeId,
         )
-        .get()
+        .where(
+          "tanggal",
+          ">=",
+          start,
+        )
+        .where(
+          "tanggal",
+          "<",
+          end,
+        )
+
+    const snapshot =
+      await query.get()
 
     const drafts =
       snapshot.docs
@@ -328,10 +358,7 @@ export async function GET(
         .filter(
           (draft) =>
             draft.cabangId ===
-              cabangId &&
-            draft.tanggal?.startsWith(
-              monthPrefix,
-            ),
+              cabangId,
         )
 
     return NextResponse.json({

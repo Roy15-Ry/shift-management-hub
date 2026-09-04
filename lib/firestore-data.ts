@@ -348,6 +348,26 @@ export async function getFirestoreMonthlySchedules(
       "schedules",
     )
 
+  // Periode bulan yang diminta: [start, end)
+  // start = YYYY-MM-01, end = tanggal 1 bulan berikutnya
+  // (rollover tahun bila Desember). Field "tanggal" adalah
+  // string YYYY-MM-DD sehingga perbandingan lexicographic aman.
+  const start =
+    `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const endNextMonth =
+    month === 11
+      ? month + 1 - 12
+      : month + 1
+
+  const endYear =
+    month === 11
+      ? year + 1
+      : year
+
+  const end =
+    `${endYear}-${String(endNextMonth + 1).padStart(2, "0")}-01`
+
   const snapshot =
     await getDocs(
       query(
@@ -357,26 +377,26 @@ export async function getFirestoreMonthlySchedules(
           "==",
           storeId,
         ),
+        where(
+          "tanggal",
+          ">=",
+          start,
+        ),
+        where(
+          "tanggal",
+          "<",
+          end,
+        ),
       ),
     )
 
-  const monthPrefix =
-    `${year}-${String(month + 1).padStart(2, "0")}-`
-
-  return snapshot.docs
-    .map(
-      (doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<
-          FirestoreSchedule,
-          "id"
-        >),
-      }),
-    )
-    .filter(
-      (schedule) =>
-        schedule.tanggal?.startsWith(
-          monthPrefix,
-        ),
-    )
+  return snapshot.docs.map(
+    (doc) => ({
+      id: doc.id,
+      ...(doc.data() as Omit<
+        FirestoreSchedule,
+        "id"
+      >),
+    }),
+  )
 }

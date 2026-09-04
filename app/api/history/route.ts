@@ -172,6 +172,22 @@ export async function GET(request: Request) {
       ? `${year}-${String(month + 1).padStart(2, "0")}-`
       : null
 
+    // Periode bulan yang diminta: [start, end)
+    // start = YYYY-MM-01, end = tanggal 1 bulan berikutnya
+    // (rollover tahun bila Desember). Dipakai untuk membatasi
+    // query schedules; monthPrefix di atas tetap dipakai untuk
+    // filter revisi.
+    const monthRange =
+      hasValidMonth
+        ? (() => {
+            const start = `${year}-${String(month + 1).padStart(2, "0")}-01`
+            const nextMonth = month === 11 ? month + 1 - 12 : month + 1
+            const nextYear = month === 11 ? year + 1 : year
+            const end = `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}-01`
+            return { start, end }
+          })()
+        : null
+
     // =====================================================
     // AMBIL TOKO SESUAI SCOPE
     // =====================================================
@@ -266,11 +282,20 @@ export async function GET(request: Request) {
     > = {}
 
     for (const store of stores) {
-      const schedulesSnapshot =
-        await adminDb
+      let schedulesQuery =
+        adminDb
           .collection("schedules")
           .where("storeId", "==", store.id)
-          .get()
+
+      if (monthRange) {
+        schedulesQuery =
+          schedulesQuery
+            .where("tanggal", ">=", monthRange.start)
+            .where("tanggal", "<", monthRange.end)
+      }
+
+      const schedulesSnapshot =
+        await schedulesQuery.get()
 
       const schedules = schedulesSnapshot.docs
         .map((doc) => {
@@ -292,11 +317,6 @@ export async function GET(request: Request) {
               data.cutiJenis ?? undefined,
           }
         })
-        .filter(
-          (schedule) =>
-            !monthPrefix ||
-            String(schedule.tanggal).startsWith(monthPrefix),
-        )
 
       schedulesByStore[store.id] = schedules
     }
