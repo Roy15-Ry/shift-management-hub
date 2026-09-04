@@ -192,10 +192,34 @@ export async function GET(request: Request) {
     // AMBIL TOKO SESUAI SCOPE
     // =====================================================
 
-    const storesSnapshot =
-      await adminDb
+    // STORE: persempit ke storeId akun.
+    // CENTRAL CABANG: persempit ke cabangId akun.
+    // CENTRAL PUSAT: baca seluruh store (kewenangan pusat).
+    let storesRef:
+      FirebaseFirestore.Query =
+      adminDb
         .collection("stores")
-        .get()
+
+    if (
+      scope.type === "store"
+    ) {
+      storesRef = storesRef.where(
+        "storeId",
+        "==",
+        scope.storeId,
+      )
+    } else if (
+      scope.type === "cabang"
+    ) {
+      storesRef = storesRef.where(
+        "cabangId",
+        "==",
+        scope.cabangId,
+      )
+    }
+
+    const storesSnapshot =
+      await storesRef.get()
 
     let stores = storesSnapshot.docs.map((doc) => {
       const data = doc.data()

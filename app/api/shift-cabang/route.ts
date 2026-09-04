@@ -185,10 +185,24 @@ export async function GET(
     // AMBIL TOKO SESUAI SCOPE ROLE
     // =====================================================
 
-    const storesSnapshot =
-      await adminDb
+    // STORE / CENTRAL CABANG: persempit query ke cabang user.
+    // CENTRAL PUSAT: baca seluruh store (kewenangan pusat).
+    let storesRef:
+      FirebaseFirestore.Query =
+      adminDb
         .collection("stores")
-        .get()
+
+    if (allowedCabang !== null) {
+      storesRef =
+        storesRef.where(
+          "cabangId",
+          "==",
+          allowedCabang,
+        )
+    }
+
+    const storesSnapshot =
+      await storesRef.get()
 
     let stores = storesSnapshot.docs.map((doc) => {
       const data = doc.data()
