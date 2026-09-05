@@ -88,3 +88,89 @@ export const SHIFT_STATUS_ORDER: ShiftStatus[] = [
 export function getShiftStatusItem(status?: string | null): ShiftStatusItem | undefined {
   return SHIFT_STATUS_ITEMS.find((item) => item.status === status)
 }
+
+// ============================================================
+// STATUS KHUSUS ("-")
+//
+// BUKAN status utama baru. Nilai field "status" tetap
+// "status_khusus", sedangkan jenisnya disimpan pada field
+// "statusKhusus" (backup_toko_lain, kegiatan_lain, dll).
+// Data lama (6 status) maupun konsep satu nilai status khusus
+// dengan banyak sub-jenis tetap didukung.
+// ============================================================
+
+// Nilai field "status" untuk status khusus.
+export const STATUS_KHUSUS = "status_khusus"
+
+// Jenis status khusus (nilai field "statusKhusus").
+export type StatusKhusus =
+  | "backup_toko_lain"
+  | "kegiatan_lain"
+  | "tugas_admin"
+  | "training"
+  | "inventaris_stock_opname"
+  | "rapat_meeting"
+  | "event_kegiatan_perusahaan"
+  | "dinas_tugas_luar"
+  | "lainnya"
+
+export type StatusKhususItem = {
+  // Nilai field "statusKhusus".
+  value: StatusKhusus
+  // Label user-facing lengkap.
+  label: string
+  // Deskripsi untuk tooltip/keterangan.
+  description: string
+}
+
+export const STATUS_KHUSUS_ITEMS: StatusKhususItem[] = [
+  {
+    value: "backup_toko_lain",
+    label: "BACK UP TOKO LAIN",
+    description: "Ditugaskan membantu operasional di toko lain",
+  },
+  {
+    value: "kegiatan_lain",
+    label: "KEGIATAN LAIN",
+    description: "Kegiatan perusahaan, pelatihan, meeting, dll.",
+  },
+  {
+    value: "tugas_admin",
+    label: "TUGAS ADMIN",
+    description: "Tugas administratif / non-operasional",
+  },
+  {
+    value: "training",
+    label: "TRAINING",
+    description: "Kegiatan training atau pelatihan",
+  },
+  {
+    value: "inventaris_stock_opname",
+    label: "INVENTARIS / STOCK OPNAME",
+    description: "Kegiatan inventaris atau pengecekan stok",
+  },
+  {
+    value: "rapat_meeting",
+    label: "RAPAT / MEETING",
+    description: "Meeting internal/cabang/perusahaan",
+  },
+  {
+    value: "event_kegiatan_perusahaan",
+    label: "EVENT / KEGIATAN PERUSAHAAN",
+    description: "Event atau kegiatan perusahaan",
+  },
+  {
+    value: "dinas_tugas_luar",
+    label: "DINAS / TUGAS LUAR",
+    description: "Ditugaskan ke lokasi di luar toko",
+  },
+  {
+    value: "lainnya",
+    label: "LAINNYA",
+    description: "Keterangan diisi manual",
+  },
+]
+
+export function getStatusKhususItem(value?: string | null): StatusKhususItem | undefined {
+  return STATUS_KHUSUS_ITEMS.find((item) => item.value === value)
+}

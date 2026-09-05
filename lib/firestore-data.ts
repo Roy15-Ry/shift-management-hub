@@ -43,7 +43,30 @@ export type FirestoreSchedule = {
   | "izin"
   | "sakit"
   cutiJenis?: string
+  statusKhusus?: string
+  keterangan?: string
+  tokoTujuan?: string
 }
+
+// ============================================================
+// STATUS KHUSUS ("-")
+//
+// Nilai field "status" untuk status khusus. Disimpan DI SINI
+// (bukan pada union FirestoreSchedule.status) agar penambahan
+// status khusus TIDAK melebarkan tipe field "status" yang
+// dipakai konsumen existing (mis. dashboard yang mengindex
+// Record<ShiftStatus, ...>). Nilai ini mewakili dokumen Firestore
+// yang menyimpan status: "status_khusus", dengan sub-jenis pada
+// field "statusKhusus".
+//
+// NOTE: Memperluas FirestoreSchedule.status menjadi
+// "| \"status_khusus\"" memerlukan penyesuaian pada
+// components/pages/dashboard.tsx (STATUS_PRIORITY,
+// STATUS_BADGE_CLASS, statusDisplayLabel) dan konsumen lain
+// yang mengindex berdasarkan nilai status.
+// ============================================================
+
+export const FIRESTORE_STATUS_KHUSUS = "status_khusus"
 
 // ============================================================
 // STORES
