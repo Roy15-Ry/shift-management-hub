@@ -8,18 +8,34 @@ import {
   adminDb,
 } from "@/lib/firebase-admin"
 
+import {
+  STATUS_KHUSUS,
+  STATUS_KHUSUS_ITEMS,
+} from "@/lib/shift-status"
+
 // ============================================================
 // STATUS SHIFT YANG SAH
 // ============================================================
 
-const VALID_STATUS = new Set([
+const VALID_STATUS = new Set<string>([
   "shift_pagi",
   "shift_siang",
   "libur",
   "cuti",
   "izin",
   "sakit",
+  STATUS_KHUSUS,
 ])
+
+// ============================================================
+// SUB-JENIS STATUS KHUSUS YANG SAH
+// ============================================================
+
+const VALID_STATUS_KHUSUS = new Set<string>(
+  STATUS_KHUSUS_ITEMS.map(
+    (item) => item.value,
+  ),
+)
 
 // ============================================================
 // IDENTITAS UNIK DOKUMEN JADWAL
@@ -45,6 +61,9 @@ function scheduleId(
 type ParsedCell = {
   status: string
   cutiJenis?: string
+  statusKhusus?: string
+  keterangan?: string
+  tokoTujuan?: string
 }
 
 function parseCellValue(
@@ -87,6 +106,56 @@ function parseCellValue(
         ? obj.cutiJenis.trim()
         : undefined
 
+    // ==================================================
+    // STATUS KHUSUS
+    //
+    // statusKhusus WAJIB valid ketika status adalah
+    // status_khusus; nilai di luar daftar ditolak.
+    // ==================================================
+
+    if (
+      status === STATUS_KHUSUS
+    ) {
+      const statusKhusus =
+        typeof obj.statusKhusus ===
+          "string" &&
+          obj.statusKhusus.trim() !==
+            ""
+          ? obj.statusKhusus.trim()
+          : ""
+
+      if (
+        !VALID_STATUS_KHUSUS.has(
+          statusKhusus,
+        )
+      ) {
+        return null
+      }
+
+      const keterangan =
+        typeof obj.keterangan ===
+          "string" &&
+          obj.keterangan.trim() !==
+            ""
+          ? obj.keterangan.trim()
+          : undefined
+
+      const tokoTujuan =
+        typeof obj.tokoTujuan ===
+          "string" &&
+          obj.tokoTujuan.trim() !==
+            ""
+          ? obj.tokoTujuan.trim()
+          : undefined
+
+      return {
+        status,
+        statusKhusus,
+        keterangan,
+        tokoTujuan,
+      }
+    }
+
     return {
       status,
       cutiJenis,
@@ -94,6 +163,104 @@ function parseCellValue(
   }
 
   return null
+}
+
+// ============================================================
+// BUILDER DATA DOKUMEN JADWAL
+//
+// Menyusun data yang akan dipersist (draft maupun final) dengan
+// cleanup field stale, agar field lama (mis. cutiJenis, field
+// status khusus) tidak tertinggal aktif saat status berubah.
+//
+// Dengan merge:true, field yang tidak dikirim TIDAK terhapus.
+// Maka setiap field detail ditulis eksplisit — diisi nilai baru
+// atau FieldValue.delete() bila sudah tidak relevan.
+// ============================================================
+
+function buildScheduleDocData(
+  storeId: string,
+  cabangId: string,
+  employeeId: string,
+  tanggal: string,
+  parsed: ParsedCell,
+): Record<string, unknown> {
+  const docData: Record<
+    string,
+    unknown
+  > = {
+    storeId,
+    cabangId,
+    employeeId,
+    tanggal,
+    status: parsed.status,
+    updatedAt:
+      FieldValue.serverTimestamp(),
+  }
+
+  // ====================================================
+  // CUTI
+  // cutiJenis hanya aktif untuk status "cuti".
+  // ====================================================
+
+  if (
+    parsed.status === "cuti" &&
+    parsed.cutiJenis
+  ) {
+    docData.cutiJenis =
+      parsed.cutiJenis
+  } else {
+    docData.cutiJenis =
+      FieldValue.delete()
+  }
+
+  // ====================================================
+  // STATUS KHUSUS
+  // statusKhusus/keterangan/tokoTujuan hanya aktif
+  // untuk status "status_khusus".
+  // ====================================================
+
+  if (
+    parsed.status === STATUS_KHUSUS
+  ) {
+    if (parsed.statusKhusus) {
+      docData.statusKhusus =
+        parsed.statusKhusus
+    } else {
+      docData.statusKhusus =
+        FieldValue.delete()
+    }
+
+    if (parsed.keterangan) {
+      docData.keterangan =
+        parsed.keterangan
+    } else {
+      docData.keterangan =
+        FieldValue.delete()
+    }
+
+    // tokoTujuan hanya relevan untuk sub-jenis
+    // backup_toko_lain.
+    if (
+      parsed.statusKhusus ===
+        "backup_toko_lain" &&
+      parsed.tokoTujuan
+    ) {
+      docData.tokoTujuan =
+        parsed.tokoTujuan
+    } else {
+      docData.tokoTujuan =
+        FieldValue.delete()
+    }
+  } else {
+    docData.statusKhusus =
+      FieldValue.delete()
+    docData.keterangan =
+      FieldValue.delete()
+    docData.tokoTujuan =
+      FieldValue.delete()
+  }
+
+  return docData
 }
 
 // ============================================================
@@ -353,6 +520,12 @@ export async function GET(
               data?.status ?? "",
             cutiJenis:
               data?.cutiJenis ?? "",
+            statusKhusus:
+              data?.statusKhusus ?? "",
+            keterangan:
+              data?.keterangan ?? "",
+            tokoTujuan:
+              data?.tokoTujuan ?? "",
           }
         })
         .filter(
@@ -519,29 +692,14 @@ export async function POST(
             continue
           }
 
-          const status =
-            parsed.status
-
-          const docData: Record<
-            string,
-            unknown
-          > = {
-            storeId,
-            cabangId,
-            employeeId,
-            tanggal,
-            status,
-            updatedAt:
-              FieldValue.serverTimestamp(),
-          }
-
-          if (
-            status === "cuti" &&
-            parsed.cutiJenis
-          ) {
-            docData.cutiJenis =
-              parsed.cutiJenis
-          }
+          const docData =
+            buildScheduleDocData(
+              storeId,
+              cabangId,
+              employeeId,
+              tanggal,
+              parsed,
+            )
 
           const docId =
             scheduleId(
@@ -691,29 +849,14 @@ export async function POST(
           continue
         }
 
-        const status =
-          parsed.status
-
-        const docData: Record<
-          string,
-          unknown
-        > = {
-          storeId,
-          cabangId,
-          employeeId,
-          tanggal,
-          status,
-          updatedAt:
-            FieldValue.serverTimestamp(),
-        }
-
-        if (
-          status === "cuti" &&
-          parsed.cutiJenis
-        ) {
-          docData.cutiJenis =
-            parsed.cutiJenis
-        }
+        const docData =
+          buildScheduleDocData(
+            storeId,
+            cabangId,
+            employeeId,
+            tanggal,
+            parsed,
+          )
 
         // UPSERT berdasarkan identitas unik
         // storeId + employeeId + tanggal.
