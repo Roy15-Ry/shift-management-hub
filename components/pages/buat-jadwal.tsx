@@ -17,7 +17,10 @@ import {
 import { cn } from "@/lib/utils"
 import {
   SHIFT_STATUS_ITEMS as SHIFT_OPTIONS,
+  STATUS_KHUSUS,
+  getStatusKhususItem,
   type ShiftStatusItem,
+  type StatusKhusus,
 } from "@/lib/shift-status"
 import type { UserOptions as AutoTableUserOptions } from "jspdf-autotable"
 import { computeRekapRows, type RekapRow } from "@/lib/rekap-jumlah-masuk"
@@ -26,9 +29,14 @@ import { RekapJumlahMasukTable } from "@/components/rekap-jumlah-masuk"
 type ScheduleStatus = (typeof SHIFT_OPTIONS)[number]["status"]
 type SchedulePhase = "Belum dibuat" | "Draft" | "Selesai"
 
+type CellStatus = ScheduleStatus | typeof STATUS_KHUSUS
+
 type CellValue = {
-  status: ScheduleStatus
+  status: CellStatus
   cutiJenis?: string
+  statusKhusus?: StatusKhusus
+  keterangan?: string
+  tokoTujuan?: string
 }
 
 const CUTI_TYPES = [
@@ -62,6 +70,41 @@ function getDaysInMonth(year: number, month: number) {
 function getShiftOption(status?: string | null): ShiftStatusItem | undefined {
   return SHIFT_OPTIONS.find((option) => option.status === status)
 }
+
+// ============================================================
+// STATUS KHUSUS ("-")
+//
+// Nilai field "status" untuk status khusus. Dipakai bersama
+// foundation di lib/shift-status.ts. display selalu "-" dan
+// warna VIOLET. Sub-jenis TIDAK ditampilkan di dalam cell.
+//
+// PENTING: "BATAL PILIH" HANYALAH LABEL UI untuk aksi
+// mengosongkan cell — ia BUKAN status. Aksi tersebut dijalankan
+// dengan MENGHAPUS key cell dari state, sehingga cell menjadi
+// EMPTY (display "-", warna netral). Tidak ada status/schema
+// baru, tidak ada sentinel, tidak ada empty string.
+// ============================================================
+
+const STATUS_KHUSUS_CLASS =
+  "bg-violet-500 text-white ring-violet-500/30"
+
+const BATAL_PILIH_LABEL = "BATAL PILIH"
+const BATAL_PILIH_DESC = "Kosongkan cell (warna netral)"
+
+// ============================================================
+// MENU STATUS KHUSUS — FINAL (3 item)
+//
+// Menu baru hanya menampilkan 3 status khusus. Item dibatasi di
+// file ini; foundation (STATUS_KHUSUS_ITEMS) dan data lama tetap
+// utuh untuk backward compatibility. Tidak ada form tambahan
+// (keterangan/tokoTujuan) — status langsung diterapkan.
+// ============================================================
+
+const STATUS_KHUSUS_MENU: { value: StatusKhusus; label: string }[] = [
+  { value: "backup_toko_lain", label: "BACK UP TOKO LAIN" },
+  { value: "training", label: "TRAINING" },
+  { value: "event_kegiatan_perusahaan", label: "EVENT" },
+]
 
 // ============================================================
 // PENYIMPANAN DRAFT LOKAL (localStorage)
@@ -109,9 +152,10 @@ function ShiftPopover(props: {
   y: number
   currentStatus?: string
   onSelect: (status: ScheduleStatus) => void
+  onOpenStatusKhusus: () => void
   onClose: () => void
 }) {
-  const { x, y, currentStatus, onSelect, onClose } = props
+  const { x, y, currentStatus, onSelect, onOpenStatusKhusus, onClose } = props
   const ref = React.useRef<HTMLDivElement>(null)
   const [pos, setPos] = React.useState({ top: y, left: x })
 
@@ -163,6 +207,15 @@ function ShiftPopover(props: {
             {option.code}
           </button>
         ))}
+        <button
+          type="button"
+          title="Status / Keterangan"
+          aria-label="Status / Keterangan"
+          onClick={onOpenStatusKhusus}
+          className="flex size-9 items-center justify-center rounded-md bg-violet-500 text-sm font-bold text-white ring-1 ring-violet-500/30 transition-colors hover:brightness-95 focus-visible:outline-none"
+        >
+          -
+        </button>
       </div>
     </div>
   )
@@ -233,6 +286,82 @@ function CutiPopover(props: {
 }
 
 // ============================================================
+// POPOVER STATUS KHUSUS / "-"
+//
+// Menu final: 1) BATAL PILIH (AKSI mengosongkan cell — BUKAN
+// status), 2-4) status khusus dari STATUS_KHUSUS_MENU. Status
+// langsung diterapkan tanpa form tambahan (tidak ada keterangan
+// maupun tokoTujuan).
+// ============================================================
+
+function StatusKhususPopover(props: {
+  x: number
+  y: number
+  onBatalPilih: () => void
+  onSelectKhusus: (statusKhusus: StatusKhusus) => void
+  onClose: () => void
+}) {
+  const { x, y, onBatalPilih, onSelectKhusus, onClose } = props
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ top: y, left: x })
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const margin = 8
+    const rect = node.getBoundingClientRect()
+    const maxLeft = window.innerWidth - rect.width - margin
+    const maxTop = window.innerHeight - rect.height - margin
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    })
+  }, [x, y])
+
+  React.useEffect(() => {
+    function handlePointer(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener("pointerdown", handlePointer)
+    return () => document.removeEventListener("pointerdown", handlePointer)
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Status khusus"
+      className="fixed z-50 w-64 rounded-lg border border-border bg-card p-1.5 shadow-lg"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={onBatalPilih}
+          className="flex w-full items-center justify-between rounded-md bg-background px-2 py-1.5 text-xs font-semibold text-muted-foreground ring-1 ring-border transition-colors hover:brightness-95"
+          title={BATAL_PILIH_DESC}
+        >
+          <span>{BATAL_PILIH_LABEL}</span>
+        </button>
+        <div className="my-1 border-t border-border" />
+        {STATUS_KHUSUS_MENU.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onSelectKhusus(item.value)}
+            className="flex w-full items-center rounded-md bg-background px-2 py-1.5 text-left text-xs font-semibold text-foreground ring-1 ring-border transition-colors hover:brightness-95"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // HALAMAN BUAT JADWAL SHIFT
 // ============================================================
 
@@ -249,6 +378,7 @@ export function BuatJadwalPage() {
   const [draftChanges, setDraftChanges] = React.useState<Record<string, CellValue>>({})
   const [activeCell, setActiveCell] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
   const [cutiTarget, setCutiTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
+  const [statusKhususTarget, setStatusKhususTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
   const [phase, setPhase] = React.useState<SchedulePhase>("Belum dibuat")
   const [editing, setEditing] = React.useState(false)
   const [message, setMessage] = React.useState("")
@@ -305,6 +435,7 @@ export function BuatJadwalPage() {
         setSavedDrafts(drafts)
         setActiveCell(null)
         setCutiTarget(null)
+        setStatusKhususTarget(null)
 
         // Pulihkan draft lokal dari browser untuk bulan ini.
         const localCells = loadLocalCells(cellDraftKey(storeId, period.year, period.month))
@@ -400,6 +531,7 @@ export function BuatJadwalPage() {
     if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
     setActiveCell(null)
     setCutiTarget(null)
+    setStatusKhususTarget(null)
     setEditing(false)
     setMessage("Perubahan edit dibatalkan. Jadwal final tidak berubah dan tetap terkunci.")
   }
@@ -434,8 +566,113 @@ export function BuatJadwalPage() {
     setCutiTarget(null)
   }
 
+  // ============================================================
+  // STATUS KHUSUS & BATAL PILIH
+  //
+  // "BATAL PILIH" BUKAN status. Ia menghapus key cell dari
+  // state (bukan status baru), sehingga getCellValue(...)
+  // kembali ke nilai saluran berikutnya (draft Firestore, lalu
+  // final). Jika cell pernah disimpan sebagai draft di
+  // schedule_drafts, BATAL PILIH menghapus document draft
+  // tersebut. Schedules (data final) TIDAK disentuh.
+  // ============================================================
+
+  function removeCell(key: string) {
+    setDraftChanges((current) => {
+      if (!(key in current)) return current
+      const next = { ...current }
+      delete next[key]
+      if (storeId) persistLocalCells(cellDraftKey(storeId, period.year, period.month), next)
+      return next
+    })
+  }
+
+  function openStatusKhususMenu() {
+    if (!activeCell) return
+    setStatusKhususTarget({
+      employeeId: activeCell.employeeId,
+      tanggal: activeCell.tanggal,
+      x: activeCell.x,
+      y: activeCell.y,
+    })
+    setActiveCell(null)
+  }
+
+  async function batalPilih() {
+    if (!statusKhususTarget || !canEditCells) return
+    const { employeeId, tanggal } = statusKhususTarget
+    const key = getCellKey(employeeId, tanggal)
+    const hasSavedDraft =
+      savedDraftByCell.has(key)
+
+    // Hanya lakukan Firestore DELETE jika draft cell sudah
+    // tersimpan di schedule_drafts. Jika belum, cukup update
+    // state lokal (tanpa Firestore write).
+    if (hasSavedDraft) {
+      if (!user || !storeId) return
+      setSaving(true)
+      setActionError("")
+      try {
+        const idToken = await user.getIdToken()
+        const response = await fetch(
+          "/api/store/schedule?mode=draft-delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ employeeId, tanggal }),
+          },
+        )
+        const data = await response.json()
+        if (!response.ok || !data.success) {
+          throw new Error(data?.message ?? "Gagal membatalkan pilihan.")
+        }
+        // Hanya setelah DELETE berhasil, buang draft dari state
+        // tersimpan agar savedDraftByCell ikut berubah.
+        setSavedDrafts((current) =>
+          current.filter(
+            (draft) =>
+              !(draft.employeeId === employeeId && draft.tanggal === tanggal),
+          ),
+        )
+      } catch (deleteError) {
+        console.error("Failed to delete draft:", deleteError)
+        setActionError(
+          deleteError instanceof Error ? deleteError.message : "Gagal membatalkan pilihan.",
+        )
+        return
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    removeCell(key)
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage(hasSavedDraft ? "Draft dibatalkan." : "Cell dikosongkan.")
+    setStatusKhususTarget(null)
+  }
+
+  function chooseStatusKhusus(statusKhusus: StatusKhusus) {
+    if (!statusKhususTarget || !canEditCells) return
+    const key = getCellKey(statusKhususTarget.employeeId, statusKhususTarget.tanggal)
+    applyCell(key, { status: STATUS_KHUSUS, statusKhusus })
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage("Status khusus disimpan sebagai draft pada browser ini.")
+    setStatusKhususTarget(null)
+  }
+
   function buildVisibleCells() {
-    const cells: { employeeId: string; tanggal: string; status: ScheduleStatus; cutiJenis?: string }[] = []
+    const cells: {
+      employeeId: string
+      tanggal: string
+      status: CellStatus
+      cutiJenis?: string
+      statusKhusus?: StatusKhusus
+      keterangan?: string
+      tokoTujuan?: string
+    }[] = []
     for (const employee of employees) {
       for (const day of days) {
         const value = getCellValue(employee.id, getDateKey(period.year, period.month, day))
@@ -445,6 +682,9 @@ export function BuatJadwalPage() {
           tanggal: getDateKey(period.year, period.month, day),
           status: value.status,
           cutiJenis: value.cutiJenis,
+          statusKhusus: value.statusKhusus,
+          keterangan: value.keterangan,
+          tokoTujuan: value.tokoTujuan,
         })
       }
     }
@@ -467,6 +707,12 @@ export function BuatJadwalPage() {
         }
         const payload: Record<string, unknown> = { status: cell.status }
         if (cell.status === "cuti" && cell.cutiJenis) payload.cutiJenis = cell.cutiJenis
+        if (cell.status === STATUS_KHUSUS) {
+          if (cell.statusKhusus) payload.statusKhusus = cell.statusKhusus
+          if (cell.keterangan) payload.keterangan = cell.keterangan
+          if (cell.statusKhusus === "backup_toko_lain" && cell.tokoTujuan)
+            payload.tokoTujuan = cell.tokoTujuan
+        }
         byTanggal.get(cell.tanggal)![cell.employeeId] = payload
       }
       byTanggal.forEach((entry) => daysPayload.push(entry))
@@ -651,7 +897,13 @@ export function BuatJadwalPage() {
           if (data.section === "body" && data.column.index >= 1) {
             const shiftStatus = statusesByCell[data.row.index]?.[data.column.index]
             const item = shiftStatus ? getShiftOption(shiftStatus) : undefined
-            if (item) {
+            if (shiftStatus === STATUS_KHUSUS) {
+              data.cell.styles.fillColor = hexToRgb("#8B5CF6")
+              data.cell.styles.textColor = 255
+              data.cell.styles.halign = "center"
+              data.cell.styles.lineColor = [255, 255, 255]
+              data.cell.styles.lineWidth = 0.4
+            } else if (item) {
               data.cell.styles.fillColor = hexToRgb(item.hex)
               data.cell.styles.textColor = 255
               data.cell.styles.halign = "center"
@@ -799,10 +1051,6 @@ export function BuatJadwalPage() {
                 </Button>
               </>
             )}
-            <Button variant="outline" onClick={handleDownloadPdf} disabled={!store}>
-              <FileDown className="mr-2 size-4" />
-              Simpan sebagai PDF
-            </Button>
           </div>
         </div>
 
@@ -855,12 +1103,33 @@ export function BuatJadwalPage() {
                     const value = getCellValue(employee.id, tanggal)
                     const status = value?.status
                     const option = getShiftOption(status)
+                    const isStatusKhusus = status === STATUS_KHUSUS
+                    const statusKhususItem = isStatusKhusus
+                      ? getStatusKhususItem(value?.statusKhusus)
+                      : undefined
                     const isActive = activeCell?.employeeId === employee.id && activeCell.tanggal === tanggal
-                    const title = option
-                      ? option.status === "cuti" && value?.cutiJenis
-                        ? `${option.title} — ${value.cutiJenis}`
-                        : option.title
-                      : "Belum dijadwalkan"
+
+                    const titleParts: string[] = []
+                    if (isStatusKhusus) {
+                      titleParts.push(`${employee.name} — ${statusKhususItem?.label ?? "Status Khusus"}`)
+                      if (value?.tokoTujuan) titleParts.push(`Toko Tujuan: ${value.tokoTujuan}`)
+                      if (value?.keterangan) titleParts.push(value.keterangan)
+                    } else if (option) {
+                      titleParts.push(
+                        option.status === "cuti" && value?.cutiJenis
+                          ? `${option.title} — ${value.cutiJenis}`
+                          : option.title,
+                      )
+                    } else {
+                      titleParts.push("Belum dijadwalkan")
+                    }
+                    const title = titleParts.join("\n")
+
+                    const displayClass = isStatusKhusus
+                      ? STATUS_KHUSUS_CLASS
+                      : option
+                        ? option.className
+                        : "bg-background text-muted-foreground ring-border"
 
                     if (isLocked) {
                       return (
@@ -869,7 +1138,7 @@ export function BuatJadwalPage() {
                             title={title}
                             className={cn(
                               "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
-                              option ? option.className : "bg-background text-muted-foreground ring-border",
+                              displayClass,
                             )}
                           >
                             {option?.label ?? "-"}
@@ -890,7 +1159,7 @@ export function BuatJadwalPage() {
                           }}
                           className={cn(
                             "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
-                            option ? option.className : "bg-background text-muted-foreground ring-border",
+                            displayClass,
                             isActive && "ring-2 ring-ring",
                           )}
                         >
@@ -928,6 +1197,17 @@ export function BuatJadwalPage() {
                 <span className="text-muted-foreground">{option.title}</span>
               </span>
             ))}
+            <span className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "flex h-7 min-w-9 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-1.5 text-[0.68rem] font-bold ring-1",
+                  STATUS_KHUSUS_CLASS,
+                )}
+              >
+                -
+              </span>
+              <span className="text-muted-foreground">Status Khusus</span>
+            </span>
           </div>
         </div>
       </section>
@@ -940,6 +1220,7 @@ export function BuatJadwalPage() {
           y={activeCell.y}
           currentStatus={getCellValue(activeCell.employeeId, activeCell.tanggal)?.status}
           onSelect={chooseShift}
+          onOpenStatusKhusus={openStatusKhususMenu}
           onClose={() => setActiveCell(null)}
         />
       )}
@@ -950,6 +1231,16 @@ export function BuatJadwalPage() {
           y={cutiTarget.y}
           onSelect={chooseCuti}
           onClose={() => setCutiTarget(null)}
+        />
+      )}
+
+      {statusKhususTarget && canEditCells && (
+        <StatusKhususPopover
+          x={statusKhususTarget.x}
+          y={statusKhususTarget.y}
+          onBatalPilih={batalPilih}
+          onSelectKhusus={chooseStatusKhusus}
+          onClose={() => setStatusKhususTarget(null)}
         />
       )}
     </div>
