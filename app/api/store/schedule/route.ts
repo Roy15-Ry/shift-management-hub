@@ -946,6 +946,82 @@ export async function POST(
     }
 
     // ========================================================
+    // MODE: DRAFT-DELETE
+    //
+    // Menghapus SATU document schedule_drafts untuk satu cell
+    // (storeId + tanggal + employeeId). HANYA menyentuh
+    // schedule_drafts — TIDAK pernah menyentuh collection
+    // "schedules" (data final). storeId/cabangId diambil dari
+    // akun (bukan body), sehingga user hanya bisa menghapus
+    // draft milik tokonya sendiri.
+    // ========================================================
+
+    if (
+      mode === "draft-delete"
+    ) {
+      const employeeId =
+        String(
+          body?.employeeId ?? "",
+        ).trim()
+
+      const tanggal =
+        String(
+          body?.tanggal ?? "",
+        ).trim()
+
+      if (
+        !employeeId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "employeeId wajib diisi.",
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+      if (
+        !isValidDateISO(tanggal)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Tanggal tidak valid.",
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+      // Identitas dokumen draft deterministik: satu dokumen
+      // per sel (store + tanggal + employee). Tidak membaca
+      // collection terlebih dahulu.
+      const docId =
+        scheduleId(
+          storeId,
+          tanggal,
+          employeeId,
+        )
+
+      await adminDb
+        .collection("schedule_drafts")
+        .doc(docId)
+        .delete()
+
+      return NextResponse.json({
+        success: true,
+        message:
+          "Draft sel berhasil dihapus.",
+      })
+    }
+
+    // ========================================================
     // MODE TIDAK DIKENAL
     // ========================================================
 
