@@ -55,7 +55,7 @@ function SidebarContent({
 
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold leading-tight text-white">
-            SHIFT MANAGEMENT HUB
+            SHIFT MANAGEMENT
           </p>
 
           <p className="truncate text-xs text-sidebar-foreground/70">

@@ -66,7 +66,7 @@ export function LoginPage() {
                 <div className="mb-5 flex justify-center">
                     <img
                         src="/logo.webp"
-                        alt="SHIFT MANAGEMENT HUB"
+                        alt="SHIFT MANAGEMENT"
                         className="h-24 w-auto object-contain"
                     />
                 </div>
@@ -74,7 +74,7 @@ export function LoginPage() {
                 {/* JUDUL */}
                 <div className="mb-6 text-center">
                     <h1 className="text-2xl font-bold tracking-tight">
-                        SHIFT MANAGEMENT HUB
+                        SHIFT MANAGEMENT
                     </h1>
 
                     <p className="mt-2 text-sm text-muted-foreground">
