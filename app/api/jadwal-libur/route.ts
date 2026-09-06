@@ -321,7 +321,21 @@ export async function GET(
           })()
         : null
 
+    // HANYA status LIBUR dan CUTI yang menjadi data JADWAL LIBUR.
+    const LIBUR_CUTI = new Set(["libur", "cuti"])
+
     for (const store of stores) {
+      // Identitas unik satu record: store + tanggal + employee.
+      // Dokumen schedules dan schedule_drafts memakai docId
+      // deterministik yang sama (storeId_tanggal_employeeId),
+      // sehingga deduplikasi dipakai gabungan employeeId + tanggal
+      // (draft = keadaan terbaru, menang atas final bila keduanya ada).
+      const recordByKey = new Map<
+        string,
+        Record<string, unknown>
+      >()
+
+      // 1) Jadwal FINAL (schedules) sesuai scope + bulan.
       let schedulesQuery =
         adminDb
           .collection("schedules")
@@ -337,25 +351,76 @@ export async function GET(
       const schedulesSnapshot =
         await schedulesQuery.get()
 
-      const schedules = schedulesSnapshot.docs
-        .map((doc) => {
-          const data = doc.data()
+      for (const doc of schedulesSnapshot.docs) {
+        const data = doc.data()
+        const status = data.status ?? ""
+        if (!LIBUR_CUTI.has(status)) continue
 
-          return {
-            id: doc.id,
-            storeId:
-              data.storeId ?? store.id,
-            cabangId:
-              normalize(data.cabangId),
-            employeeId: data.employeeId ?? "",
-            tanggal: data.tanggal ?? "",
-            status: data.status ?? "",
-            cutiJenis:
-              data.cutiJenis ?? undefined,
-          }
+        const key = `${data.employeeId ?? ""}|${data.tanggal ?? ""}`
+        recordByKey.set(key, {
+          id: doc.id,
+          storeId:
+            data.storeId ?? store.id,
+          cabangId:
+            normalize(data.cabangId),
+          employeeId: data.employeeId ?? "",
+          tanggal: data.tanggal ?? "",
+          status,
+          cutiJenis:
+            data.cutiJenis ?? undefined,
         })
+      }
 
-      schedulesByStore[store.id] = schedules
+      // 2) Jadwal DRAFT (schedule_drafts) sesuai scope + bulan.
+      //    Draft harus terlihat meskipun belum FINAL. Bila status
+      //    draft LIBUR/CUTI, menimpa record final yang sama (draft =
+      //    keadaan terbaru). Bila status draft SELAIN LIBUR/CUTI
+      //    (mis. diubah jadi pagi), menghapus record final yang sama
+      //    agar jadwal libur tidak menampilkan data basi.
+      let draftsQuery =
+        adminDb
+          .collection("schedule_drafts")
+          .where("storeId", "==", store.id)
+
+      if (monthRange) {
+        draftsQuery =
+          draftsQuery
+            .where("tanggal", ">=", monthRange.start)
+            .where("tanggal", "<", monthRange.end)
+      }
+
+      const draftsSnapshot =
+        await draftsQuery.get()
+
+      for (const doc of draftsSnapshot.docs) {
+        const data = doc.data()
+        const status = data.status ?? ""
+
+        const key = `${data.employeeId ?? ""}|${data.tanggal ?? ""}`
+
+        if (!LIBUR_CUTI.has(status)) {
+          // Draft mengubah sel keluar dari LIBUR/CUTI -> jangan
+          // tampilkan record final yang sama.
+          recordByKey.delete(key)
+          continue
+        }
+
+        recordByKey.set(key, {
+          id: doc.id,
+          storeId:
+            data.storeId ?? store.id,
+          cabangId:
+            normalize(data.cabangId),
+          employeeId: data.employeeId ?? "",
+          tanggal: data.tanggal ?? "",
+          status,
+          cutiJenis:
+            data.cutiJenis ?? undefined,
+        })
+      }
+
+      schedulesByStore[store.id] =
+        Array.from(recordByKey.values())
     }
 
     // =====================================================
