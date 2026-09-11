@@ -788,6 +788,8 @@ export async function DELETE(
         "employees",
         "schedules",
         "schedule_drafts",
+        "schedule_activity_drafts",
+        "schedule_activities",
         "revisi",
         "history",
       ]

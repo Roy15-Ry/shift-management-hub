@@ -1132,12 +1132,69 @@ export async function POST(
 
       await Promise.all(draftDeletes)
 
+      // ====================================================
+      // ADDITIF: HAPUS DRAFT KEGIATAN BULAN INI
+      // schedule_activity_drafts — scope sama (storeId +
+      // cabangId + range tanggal). Tidak menyentuh
+      // schedule_activities (final).
+      // ====================================================
+
+      const activityDraftSnap =
+        await adminDb
+          .collection(
+            "schedule_activity_drafts",
+          )
+          .where(
+            "storeId",
+            "==",
+            storeId,
+          )
+          .where(
+            "tanggal",
+            ">=",
+            start,
+          )
+          .where(
+            "tanggal",
+            "<",
+            end,
+          )
+          .get()
+
+      const activityDraftDeletes: Promise<unknown>[] =
+        []
+
+      for (
+        const frame of activityDraftSnap.docs
+      ) {
+        const data =
+          frame.data()
+
+        if (
+          data?.cabangId !==
+            cabangId
+        ) {
+          continue
+        }
+
+        activityDraftDeletes.push(
+          frame.ref.delete(),
+        )
+      }
+
+      if (activityDraftDeletes.length > 0) {
+        await Promise.all(
+          activityDraftDeletes,
+        )
+      }
+
       return NextResponse.json({
         success: true,
         message:
           "Draft jadwal berhasil dikosongkan.",
         deleted:
-          draftDeletes.length,
+          draftDeletes.length +
+          activityDraftDeletes.length,
       })
     }
 

@@ -370,6 +370,187 @@ function StatusKhususPopover(props: {
 }
 
 // ============================================================
+// JADWAL KEGIATAN — KONSTANTA & HELPERS
+// ============================================================
+
+const ACTIVITY_ROWS = [1, 2] as const
+const ACTIVITY_MAX_LENGTH = 200
+
+type FirestoreActivity = {
+  id: string
+  storeId: string
+  cabangId: string
+  row: 1 | 2
+  tanggal: string
+  teks: string
+}
+
+function activityDraftKey(
+  storeId: string,
+  year: number,
+  month: number,
+) {
+  return `buat-jadwal-activity:${storeId}:${year}-${String(month + 1).padStart(2, "0")}`
+}
+
+function getActivityKey(
+  row: number,
+  tanggal: string,
+) {
+  return `${row}:${tanggal}`
+}
+
+function loadLocalActivities(
+  key: string,
+): Record<string, string> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistLocalActivities(
+  key: string,
+  data: Record<string, string>,
+) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(data))
+  } catch {
+    // abaikan
+  }
+}
+
+function clearLocalActivities(key: string) {
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // abaikan
+  }
+}
+
+// ============================================================
+// POPOVER INPUT TEKS KEGIATAN
+// ============================================================
+
+function ActivityPopover(props: {
+  x: number
+  y: number
+  currentText: string
+  onSave: (teks: string) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const { x, y, currentText, onSave, onDelete, onClose } = props
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [teks, setTeks] = React.useState(currentText)
+  const inputRef = React.useRef<HTMLTextAreaElement>(null)
+  const [pos, setPos] = React.useState({ top: y, left: x })
+
+  const CELL_HEIGHT = 28
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const margin = 8
+    const rect = node.getBoundingClientRect()
+    let top = y
+    if (top + rect.height + margin > window.innerHeight - margin) {
+      top = y - CELL_HEIGHT - rect.height
+    }
+    let left = x
+    if (left + rect.width + margin > window.innerWidth - margin) {
+      left = window.innerWidth - rect.width - margin
+    }
+    setPos({
+      top: Math.max(margin, top),
+      left: Math.max(margin, left),
+    })
+  }, [x, y])
+
+  React.useEffect(() => {
+    function handlePointer(event: PointerEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener("pointerdown", handlePointer)
+    return () => document.removeEventListener("pointerdown", handlePointer)
+  }, [onClose])
+
+  React.useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  function handleSave() {
+    const trimmed = teks.trim()
+    if (trimmed.length === 0) return
+    onSave(trimmed)
+    onClose()
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault()
+      onClose()
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      handleSave()
+    }
+  }
+
+  const trimmed = teks.trim()
+  const hasChanged = trimmed !== currentText
+  const canSave = trimmed.length > 0 && hasChanged
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Input Jadwal Kegiatan"
+      className="fixed z-50 w-72 rounded-lg border border-border bg-card p-2 shadow-md"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <p className="mb-1 px-1 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground">
+        Jadwal Kegiatan
+      </p>
+      <textarea
+        ref={inputRef}
+        rows={2}
+        value={teks}
+        maxLength={ACTIVITY_MAX_LENGTH}
+        onChange={(event) => setTeks(event.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Tulis kegiatan..."
+        className="block w-full resize-none rounded-md border border-border bg-background px-2 py-1 text-sm leading-snug text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!canSave}
+          className="flex-1 rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Simpan
+        </button>
+        {currentText.length > 0 && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-md bg-status-sakit px-2 py-1.5 text-xs font-semibold text-white transition-colors hover:brightness-95"
+          >
+            Hapus
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // HALAMAN BUAT JADWAL SHIFT
 // ============================================================
 
@@ -394,6 +575,15 @@ export function BuatJadwalPage() {
   const [saving, setSaving] = React.useState(false)
   const [actionError, setActionError] = React.useState("")
   const [error, setError] = React.useState("")
+
+  // ============================================================
+  // JADWAL KEGIATAN — STATE
+  // ============================================================
+
+  const [savedActivityDrafts, setSavedActivityDrafts] = React.useState<FirestoreActivity[]>([])
+  const [savedActivityFinals, setSavedActivityFinals] = React.useState<FirestoreActivity[]>([])
+  const [activityChanges, setActivityChanges] = React.useState<Record<string, string>>({})
+  const [activityTarget, setActivityTarget] = React.useState<{ row: 1 | 2; tanggal: string; x: number; y: number } | null>(null)
 
   // Preferensi rotasi tanggal 1 dari hari terakhir bulan SEBELUMNYA
   // (jadwal final, collection "schedules"). Dibaca SEKALI saat bulan/
@@ -454,25 +644,54 @@ export function BuatJadwalPage() {
       return Array.isArray(data.drafts) ? data.drafts : []
     }
 
+    async function loadActivities() {
+      try {
+        const idToken = await authedUser.getIdToken()
+        const response = await fetch(
+          `/api/store/activity?year=${period.year}&month=${period.month}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: "no-store",
+          },
+        )
+        if (!response.ok) throw new Error("Activity tidak dapat dimuat.")
+        const data = await response.json()
+        return {
+          drafts: Array.isArray(data.drafts) ? data.drafts : [],
+          finals: Array.isArray(data.finals) ? data.finals : [],
+        }
+      } catch {
+        return { drafts: [], finals: [] }
+      }
+    }
+
     Promise.all([
       getFirestoreStores("store", storeId, cabangId),
       getFirestoreEmployees(storeId),
       getFirestoreMonthlySchedules(storeId, period.year, period.month),
       loadDrafts(),
+      loadActivities(),
     ])
-      .then(([stores, storeEmployees, monthlySchedules, drafts]) => {
+      .then(([stores, storeEmployees, monthlySchedules, drafts, activityData]) => {
         if (cancelled) return
         setStore(stores[0] ?? null)
         setEmployees(storeEmployees.filter((employee) => employee.aktif !== false))
         setSchedules(monthlySchedules)
         setSavedDrafts(drafts)
+        setSavedActivityDrafts(activityData.drafts)
+        setSavedActivityFinals(activityData.finals)
         setActiveCell(null)
         setCutiTarget(null)
         setStatusKhususTarget(null)
+        setActivityTarget(null)
 
         // Pulihkan draft lokal dari browser untuk bulan ini.
         const localCells = loadLocalCells(cellDraftKey(storeId, period.year, period.month))
         setDraftChanges(localCells)
+
+        const localActivities = loadLocalActivities(activityDraftKey(storeId, period.year, period.month))
+        setActivityChanges(localActivities)
 
         const hasLocalDraft = Object.keys(localCells).length > 0
         const hasDraft = drafts.length > 0 || hasLocalDraft
@@ -519,6 +738,41 @@ export function BuatJadwalPage() {
     [draftChanges, savedDraftByCell, savedScheduleByCell],
   )
 
+  // ============================================================
+  // JADWAL KEGIATAN — LOOKUP
+  // ============================================================
+
+  const savedActivityDraftByRow = React.useMemo(() => {
+    return new Map(
+      savedActivityDrafts.map((activity) => [
+        getActivityKey(activity.row, activity.tanggal),
+        activity.teks,
+      ]),
+    )
+  }, [savedActivityDrafts])
+
+  const savedActivityFinalByRow = React.useMemo(() => {
+    return new Map(
+      savedActivityFinals.map((activity) => [
+        getActivityKey(activity.row, activity.tanggal),
+        activity.teks,
+      ]),
+    )
+  }, [savedActivityFinals])
+
+  const getActivityCellValue = React.useCallback(
+    (row: number, tanggal: string): string => {
+      const key = getActivityKey(row, tanggal)
+      return (
+        activityChanges[key] ??
+        savedActivityDraftByRow.get(key) ??
+        savedActivityFinalByRow.get(key) ??
+        ""
+      )
+    },
+    [activityChanges, savedActivityDraftByRow, savedActivityFinalByRow],
+  )
+
   // REKAP JUMLAH MASUK BULANAN — dihitung lokal dari data draft/editor.
   const rekapRows = React.useMemo<RekapRow[]>(() => {
     return computeRekapRows(
@@ -562,9 +816,12 @@ export function BuatJadwalPage() {
     // Firestore) tidak ikut diubah.
     setDraftChanges({})
     if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+    setActivityChanges({})
+    if (storeId) clearLocalActivities(activityDraftKey(storeId, period.year, period.month))
     setActiveCell(null)
     setCutiTarget(null)
     setStatusKhususTarget(null)
+    setActivityTarget(null)
     setEditing(false)
     setMessage("Perubahan edit dibatalkan. Jadwal final tidak berubah dan tetap terkunci.")
   }
@@ -806,6 +1063,89 @@ export function BuatJadwalPage() {
   }
 
   // ============================================================
+  // JADWAL KEGIATAN — FUNCTIONS
+  // ============================================================
+
+  function buildActivityCells() {
+    const cells: { row: 1 | 2; tanggal: string; teks: string }[] = []
+    for (const row of ACTIVITY_ROWS) {
+      for (const day of days) {
+        const tanggal = getDateKey(period.year, period.month, day)
+        const teks = getActivityCellValue(row, tanggal)
+        if (teks.length === 0) continue
+        cells.push({ row, tanggal, teks })
+      }
+    }
+    return cells
+  }
+
+  function applyActivity(key: string, teks: string) {
+    setActivityChanges((current) => {
+      const next = { ...current, [key]: teks }
+      if (storeId) persistLocalActivities(activityDraftKey(storeId, period.year, period.month), next)
+      return next
+    })
+  }
+
+  function handleActivityDelete() {
+    if (!activityTarget || !canEditCells) return
+    const { row, tanggal } = activityTarget
+    const key = getActivityKey(row, tanggal)
+    setActivityTarget(null)
+    setMessage("")
+    setActionError("")
+
+    const hasSavedDraft = savedActivityDraftByRow.has(key)
+
+    const applyLocalDelete = () => {
+      setActivityChanges((current) => {
+        const next = { ...current }
+        delete next[key]
+        if (storeId) persistLocalActivities(activityDraftKey(storeId, period.year, period.month), next)
+        return next
+      })
+      setMessage("Isi kegiatan dikosongkan.")
+    }
+
+    if (!hasSavedDraft) {
+      applyLocalDelete()
+      return
+    }
+
+    if (!user) return
+    setSaving(true)
+    user
+      .getIdToken()
+      .then((idToken) =>
+        fetch("/api/store/activity?mode=delete", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tanggal, row }),
+        }),
+      )
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok || !data.success) {
+          throw new Error(data?.message ?? "Gagal menghapus draft kegiatan.")
+        }
+        setSavedActivityDrafts((current) =>
+          current.filter((activity) => !(activity.tanggal === tanggal && activity.row === row)),
+        )
+        applyLocalDelete()
+      })
+      .catch((deleteError) => {
+        console.error("Failed to delete activity draft:", deleteError)
+        setActionError(deleteError instanceof Error ? deleteError.message : "Gagal menghapus draft kegiatan.")
+      })
+      .finally(() => {
+        setSaving(false)
+      })
+  }
+
+  // ============================================================
   // KOSONGKAN JADWAL (draft bulan aktif)
   //
   // Menghapus SEMUA pilihan draft bulan aktif. CALLS API
@@ -848,6 +1188,9 @@ export function BuatJadwalPage() {
       setSavedDrafts([])
       setDraftChanges({})
       if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+      setSavedActivityDrafts([])
+      setActivityChanges({})
+      if (storeId) clearLocalActivities(activityDraftKey(storeId, period.year, period.month))
       setPhase(schedules.length > 0 ? "Selesai" : "Belum dibuat")
       setMessage("Draft jadwal berhasil dikosongkan.")
     } catch (clearError) {
@@ -887,31 +1230,88 @@ export function BuatJadwalPage() {
       }
       byTanggal.forEach((entry) => daysPayload.push(entry))
 
-      if (daysPayload.length === 0) {
+      // ====================================================
+      // JADWAL KEGIATAN — payload terpisah dari draft shift.
+      // Kegiatan bisa disimpan walau draft shift kosong.
+      // ====================================================
+
+      const activityCells = buildActivityCells()
+
+      const hasShiftDraft = daysPayload.length > 0
+      const hasActivityDraft = activityCells.length > 0
+
+      if (!hasShiftDraft && !hasActivityDraft) {
         setMessage("Tidak ada jadwal yang dapat disimpan sebagai draft.")
         return
       }
 
-      const response = await fetch(
-        "/api/store/schedule?mode=draft",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "Content-Type": "application/json",
+      // ACTIVITY draft terlebih dahulu (idempoten).
+      if (hasActivityDraft) {
+        const activityResponse = await fetch(
+          "/api/store/activity?mode=draft",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ activities: activityCells }),
           },
-          body: JSON.stringify({ days: daysPayload }),
-        },
-      )
-      const data = await response.json()
-      if (!response.ok || !data.success) {
-        throw new Error(data?.message ?? "Draft gagal disimpan.")
+        )
+        const activityData = await activityResponse.json()
+        if (!activityResponse.ok || !activityData.success) {
+          throw new Error(activityData?.message ?? "Draft kegiatan gagal disimpan.")
+        }
       }
-      setSavedDrafts(visibleCells.map((cell) => ({ ...cell } as FirestoreSchedule)))
-      setDraftChanges({})
-      if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+
+      // SHIFT draft (mekanisme existing tidak diubah).
+      if (hasShiftDraft) {
+        const response = await fetch(
+          "/api/store/schedule?mode=draft",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ days: daysPayload }),
+          },
+        )
+        const data = await response.json()
+        if (!response.ok || !data.success) {
+          throw new Error(data?.message ?? "Draft gagal disimpan.")
+        }
+      }
+
+      if (hasShiftDraft) {
+        setSavedDrafts(visibleCells.map((cell) => ({ ...cell } as FirestoreSchedule)))
+        setDraftChanges({})
+        if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+      }
+
+      if (hasActivityDraft) {
+        setSavedActivityDrafts(
+          activityCells.map((cell) => ({
+            id: `${storeId}_${cell.tanggal}_a${cell.row}`,
+            storeId: storeId ?? "",
+            cabangId: cabangId ?? "",
+            row: cell.row,
+            tanggal: cell.tanggal,
+            teks: cell.teks,
+          })),
+        )
+        setActivityChanges({})
+        if (storeId) clearLocalActivities(activityDraftKey(storeId, period.year, period.month))
+      }
+
       setPhase("Draft")
-      setMessage("Draft berhasil disimpan dan dapat dilanjutkan.")
+      if (hasShiftDraft && hasActivityDraft) {
+        setMessage("Draft jadwal dan kegiatan berhasil disimpan dan dapat dilanjutkan.")
+      } else if (hasActivityDraft) {
+        setMessage("Draft kegiatan berhasil disimpan dan dapat dilanjutkan.")
+      } else {
+        setMessage("Draft berhasil disimpan dan dapat dilanjutkan.")
+      }
     } catch (saveError) {
       console.error("Failed to save draft:", saveError)
       setActionError(saveError instanceof Error ? saveError.message : "Draft gagal disimpan.")
@@ -938,6 +1338,57 @@ export function BuatJadwalPage() {
     try {
       const idToken = await user.getIdToken()
       const cells = buildVisibleCells()
+
+      // ====================================================
+      // JADWAL KEGIATAN — FINAL TERLEBIH DAHULU, lalu shift.
+      // 1) Pastikan activity lokal tersimpan sebagai draft
+      //    (mode=draft — idempoten; menyalin apa yang terlihat
+      //    termasuk draft & final existing), sehingga data yang
+      //    belum pernah disimpan tidak hilang saat final.
+      // 2) Final activity: server menyalin draft -> schedule_activities.
+      //    Jika draft kosong, server mengembalikan finals existing.
+      // 3) Baru final shift. Jika activity gagal -> shift TIDAK
+      //    difinalkan.
+      // ====================================================
+
+      const activityCells = buildActivityCells()
+      if (activityCells.length > 0) {
+        const activityDraftResponse = await fetch(
+          "/api/store/activity?mode=draft",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ activities: activityCells }),
+          },
+        )
+        const activityDraftData = await activityDraftResponse.json()
+        if (!activityDraftResponse.ok || !activityDraftData.success) {
+          throw new Error(activityDraftData?.message ?? "Draft kegiatan gagal disimpan.")
+        }
+
+        const activityResponse = await fetch(
+          "/api/store/activity?mode=final",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ year: period.year, month: period.month }),
+          },
+        )
+        const activityData = await activityResponse.json()
+        if (!activityResponse.ok || !activityData.success) {
+          throw new Error(activityData?.message ?? "Kegiatan gagal difinalkan.")
+        }
+        setSavedActivityFinals(activityData.finals)
+        setSavedActivityDrafts([])
+        if (storeId) clearLocalActivities(activityDraftKey(storeId, period.year, period.month))
+      }
+
       const response = await fetch(
         "/api/store/schedule?mode=final",
         {
@@ -957,6 +1408,7 @@ export function BuatJadwalPage() {
       setSavedDrafts([])
       setDraftChanges({})
       if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+      setActivityChanges({})
       setPhase("Selesai")
       setEditing(false)
       setMessage("Jadwal berhasil disimpan sebagai jadwal final dan terkunci.")
@@ -1353,6 +1805,72 @@ export function BuatJadwalPage() {
                   })}
                 </tr>
               ))}
+
+              {/* JADWAL KEGIATAN — baris tambahan di dalam tabel shift yang sama */}
+              {ACTIVITY_ROWS.map((row, rowIndex) => (
+                <tr key={`activity-${row}`} className="bg-card">
+                  {rowIndex === 0 && (
+                    <td
+                      rowSpan={ACTIVITY_ROWS.length}
+                      className="sticky left-0 z-10 min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]"
+                    >
+                      <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs">
+                        Jadwal Kegiatan
+                      </p>
+                    </td>
+                  )}
+                  {days.map((day) => {
+                    const tanggal = getDateKey(period.year, period.month, day)
+                    const teks = getActivityCellValue(row, tanggal)
+                    const isTarget = activityTarget?.row === row && activityTarget.tanggal === tanggal
+
+                    if (isLocked) {
+                      return (
+                        <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                          <span
+                            title={teks}
+                            className={cn(
+                              "mx-auto flex min-h-6 items-center justify-center rounded px-1 py-0.5 text-center text-[0.6rem] font-medium ring-1 md:min-h-7 md:min-w-12 md:px-1.5",
+                              teks.length === 0
+                                ? "bg-background text-muted-foreground/60 ring-border"
+                                : "bg-amber-100 text-amber-900 ring-amber-400",
+                            )}
+                          >
+                            {teks.length === 0
+                              ? "-"
+                              : <span className="line-clamp-2 break-words leading-tight">{teks}</span>}
+                          </span>
+                        </td>
+                      )
+                    }
+
+                    return (
+                      <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                        <button
+                          type="button"
+                          title={teks.length === 0 ? "Tambah kegiatan" : teks}
+                          aria-label={`Jadwal Kegiatan, ${tanggal}${teks.length === 0 ? "" : `: ${teks}`}`}
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            setActivityTarget({ row, tanggal, x: rect.left, y: rect.bottom })
+                          }}
+                          className={cn(
+                            "mx-auto flex min-h-6 items-center justify-center rounded px-1 py-0.5 text-center text-[0.6rem] font-medium ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-7 md:min-w-12 md:px-1.5",
+                            teks.length === 0
+                              ? "bg-background text-muted-foreground/60 ring-border"
+                              : "bg-amber-100 text-amber-900 ring-amber-400",
+                            isTarget && "ring-2 ring-ring",
+                          )}
+                        >
+                          {teks.length === 0
+                            ? "+"
+                            : <span className="line-clamp-2 break-words leading-tight">{teks}</span>}
+                        </button>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
             </tbody>
           </table>
           </div>
@@ -1424,6 +1942,17 @@ export function BuatJadwalPage() {
           onBatalPilih={batalPilih}
           onSelectKhusus={chooseStatusKhusus}
           onClose={() => setStatusKhususTarget(null)}
+        />
+      )}
+
+      {activityTarget && canEditCells && (
+        <ActivityPopover
+          x={activityTarget.x}
+          y={activityTarget.y}
+          currentText={getActivityCellValue(activityTarget.row, activityTarget.tanggal)}
+          onSave={(teks) => applyActivity(getActivityKey(activityTarget.row, activityTarget.tanggal), teks)}
+          onDelete={handleActivityDelete}
+          onClose={() => setActivityTarget(null)}
         />
       )}
 

@@ -34,6 +34,15 @@ import { RekapJumlahMasukTable } from "@/components/rekap-jumlah-masuk"
 const monthFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
 const weekdayFormatter = new Intl.DateTimeFormat("id-ID", { weekday: "short" })
 
+type FirestoreActivity = {
+  id: string
+  storeId: string
+  cabangId: string
+  row: 1 | 2
+  tanggal: string
+  teks: string
+}
+
 function getDateKey(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
@@ -75,8 +84,29 @@ function slugifyStoreName(name: string) {
 
 const monthNameFormatter = new Intl.DateTimeFormat("id-ID", { month: "long" })
 
+async function loadActivityFinals(
+  user: { getIdToken(): Promise<string> } | null,
+  year: number,
+  month: number,
+): Promise<FirestoreActivity[] | null> {
+  if (!user) return null
+  try {
+    const idToken = await user.getIdToken()
+    const response = await fetch(
+      `/api/store/activity?year=${year}&month=${month}`,
+      { headers: { Authorization: `Bearer ${idToken}` } },
+    )
+    if (!response.ok) return null
+    const data = await response.json()
+    if (!data.success || !Array.isArray(data.finals)) return null
+    return data.finals as FirestoreActivity[]
+  } catch {
+    return null
+  }
+}
+
 function StoreJadwalShift() {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const [period, setPeriod] = React.useState(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
@@ -84,6 +114,7 @@ function StoreJadwalShift() {
   const [store, setStore] = React.useState<FirestoreStore | null>(null)
   const [employees, setEmployees] = React.useState<FirestoreEmployee[]>([])
   const [schedules, setSchedules] = React.useState<FirestoreSchedule[]>([])
+  const [activityFinals, setActivityFinals] = React.useState<FirestoreActivity[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
 
@@ -105,12 +136,14 @@ function StoreJadwalShift() {
       getFirestoreStores("store", storeId, cabangId),
       getFirestoreEmployees(storeId),
       getFirestoreMonthlySchedules(storeId, period.year, period.month),
+      loadActivityFinals(user, period.year, period.month),
     ])
-      .then(([stores, storeEmployees, monthlySchedules]) => {
+      .then(([stores, storeEmployees, monthlySchedules, activityData]) => {
         if (cancelled) return
         setStore(stores[0] ?? null)
         setEmployees(storeEmployees.filter((employee) => employee.aktif !== false))
         setSchedules(monthlySchedules)
+        if (activityData) setActivityFinals(activityData)
       })
       .catch((loadError) => {
         if (cancelled) return
@@ -124,11 +157,15 @@ function StoreJadwalShift() {
     return () => {
       cancelled = true
     }
-  }, [cabangId, period.month, period.year, storeId])
+  }, [cabangId, period.month, period.year, storeId, user])
 
   const scheduleByCell = React.useMemo(() => {
     return new Map(schedules.map((schedule) => [`${schedule.employeeId}:${schedule.tanggal}`, schedule.status]))
   }, [schedules])
+
+  const activityByCell = React.useMemo(() => {
+    return new Map(activityFinals.map((activity) => [`${activity.row}:${activity.tanggal}`, activity.teks]))
+  }, [activityFinals])
 
   const rekapRows = React.useMemo<RekapRow[]>(() => {
     return computeRekapRows(
@@ -441,6 +478,43 @@ function StoreJadwalShift() {
                             )}
                           >
                             {option?.label ?? "-"}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+
+                {/* JADWAL KEGIATAN — baris tambahan di dalam tabel shift yang sama */}
+                {([1, 2] as const).map((row, rowIndex) => (
+                  <tr key={`activity-${row}`}>
+                    {rowIndex === 0 && (
+                      <td
+                        rowSpan={2}
+                        className="sticky left-0 z-10 min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]"
+                      >
+                        <p className="truncate text-[0.7rem] font-semibold text-foreground md:text-xs">
+                          Jadwal Kegiatan
+                        </p>
+                      </td>
+                    )}
+                    {days.map((day) => {
+                      const tanggal = getDateKey(period.year, period.month, day)
+                      const teks = activityByCell.get(`${row}:${tanggal}`) ?? ""
+                      return (
+                        <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                          <span
+                            title={teks}
+                            className={cn(
+                              "mx-auto flex min-h-6 items-center justify-center rounded px-1 py-0.5 text-center text-[0.6rem] font-medium ring-1 md:min-h-7 md:min-w-12 md:px-1.5",
+                              teks.length === 0
+                                ? "bg-background text-muted-foreground/60 ring-border"
+                                : "bg-amber-100 text-amber-900 ring-amber-400",
+                            )}
+                          >
+                            {teks.length === 0
+                              ? "-"
+                              : <span className="line-clamp-2 break-words leading-tight">{teks}</span>}
                           </span>
                         </td>
                       )
