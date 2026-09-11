@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, FileDown, LockKeyhole } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
 import { EmptyState, LoadingState } from "@/components/controls"
 import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/ui/modal"
 import {
   getFirestoreEmployees,
   getFirestoreMonthlySchedules,
@@ -400,6 +401,8 @@ export function BuatJadwalPage() {
   const [previousMonthLastDay, setPreviousMonthLastDay] = React.useState<
     PreviousMonthLastDayMap | undefined
   >(undefined)
+
+  const [showGenerateConfirm, setShowGenerateConfirm] = React.useState(false)
 
   const isStore = profile?.role?.trim().toLowerCase() === "store"
   const storeId = profile?.storeId
@@ -1148,7 +1151,7 @@ export function BuatJadwalPage() {
               </Button>
             ) : (
               <>
-                <Button variant="outline" onClick={runAutoGenerate} disabled={saving}>
+                <Button variant="outline" onClick={() => setShowGenerateConfirm(true)} disabled={saving}>
                   ✨ Buat Jadwal Otomatis
                 </Button>
                 {editing && (
@@ -1356,6 +1359,29 @@ export function BuatJadwalPage() {
           onClose={() => setStatusKhususTarget(null)}
         />
       )}
+
+      {/* DIALOG KONFIRMASI BUAT JADWAL OTOMATIS */}
+      <Modal
+        open={showGenerateConfirm}
+        onClose={() => setShowGenerateConfirm(false)}
+        title="JADWAL AKAN DIBUAT OTOMATIS"
+        description="Sistem akan mengisi jadwal yang masih kosong secara otomatis. Jadwal yang sudah dipilih tidak akan diubah."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowGenerateConfirm(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                setShowGenerateConfirm(false)
+                runAutoGenerate()
+              }}
+            >
+              Ya, Lanjut Buat
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }
