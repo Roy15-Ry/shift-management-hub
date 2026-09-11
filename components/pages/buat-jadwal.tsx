@@ -403,6 +403,7 @@ export function BuatJadwalPage() {
   >(undefined)
 
   const [showGenerateConfirm, setShowGenerateConfirm] = React.useState(false)
+  const [showKosongkanConfirm, setShowKosongkanConfirm] = React.useState(false)
 
   const isStore = profile?.role?.trim().toLowerCase() === "store"
   const storeId = profile?.storeId
@@ -804,6 +805,62 @@ export function BuatJadwalPage() {
     return cells
   }
 
+  // ============================================================
+  // KOSONGKAN JADWAL (draft bulan aktif)
+  //
+  // Menghapus SEMUA pilihan draft bulan aktif. CALLS API
+  // "draft-clear" (SATU request, server-side batch delete pada
+  // collection schedule_drafts — scope store/cabang dari akun,
+  // dibatasi tanggal bulan aktif). HANYA setelah API sukses,
+  // state lokal & localStorage bulan ini dikosongkan agar sel
+  // yang memang kosong tidak "muncul kembali" saat refresh.
+  // Data FINAL (collection schedules) TIDAK pernah disentuh;
+  // jika ada final, ia otomatis menjadi fallback display.
+  //
+  // Kosong = key TIDAK ADA (mengikuti konvensi existing —
+  // TIDAK ada sentinel, tidak ada status kosong baru).
+  // ============================================================
+
+  async function handleKosongkanJadwal() {
+    if (!canEditCells) return
+    if (!user || !storeId) return
+    setShowKosongkanConfirm(false)
+    setSaving(true)
+    setMessage("")
+    setActionError("")
+    try {
+      const idToken = await user.getIdToken()
+      const response = await fetch(
+        "/api/store/schedule?mode=draft-clear",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ year: period.year, month: period.month }),
+        },
+      )
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data?.message ?? "Gagal mengosongkan draft jadwal.")
+      }
+      setSavedDrafts([])
+      setDraftChanges({})
+      if (storeId) clearLocalCells(cellDraftKey(storeId, period.year, period.month))
+      setPhase(schedules.length > 0 ? "Selesai" : "Belum dibuat")
+      setMessage("Draft jadwal berhasil dikosongkan.")
+    } catch (clearError) {
+      console.error("Failed to clear draft schedule:", clearError)
+      setActionError(
+        clearError instanceof Error ? clearError.message : "Gagal mengosongkan draft jadwal.",
+      )
+      setMessage("")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function saveDraft() {
     if (!user) return
     setSaving(true)
@@ -829,6 +886,11 @@ export function BuatJadwalPage() {
         byTanggal.get(cell.tanggal)![cell.employeeId] = payload
       }
       byTanggal.forEach((entry) => daysPayload.push(entry))
+
+      if (daysPayload.length === 0) {
+        setMessage("Tidak ada jadwal yang dapat disimpan sebagai draft.")
+        return
+      }
 
       const response = await fetch(
         "/api/store/schedule?mode=draft",
@@ -1144,6 +1206,11 @@ export function BuatJadwalPage() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
+          {!isLocked && (
+            <Button variant="outline" onClick={() => setShowKosongkanConfirm(true)} disabled={saving}>
+              KOSONGKAN JADWAL
+            </Button>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {isLocked ? (
               <Button onClick={startEditing}>
@@ -1378,6 +1445,24 @@ export function BuatJadwalPage() {
               }}
             >
               Ya, Lanjut Buat
+            </Button>
+          </>
+        }
+      />
+
+      {/* DIALOG KONFIRMASI KOSONGKAN JADWAL */}
+      <Modal
+        open={showKosongkanConfirm}
+        onClose={() => setShowKosongkanConfirm(false)}
+        title="KOSONGKAN JADWAL?"
+        description="Seluruh pilihan jadwal pada draft bulan ini akan dikosongkan. Jadwal yang sudah selesai/final tidak akan diubah."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowKosongkanConfirm(false)}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleKosongkanJadwal}>
+              Ya, Kosongkan Jadwal
             </Button>
           </>
         }

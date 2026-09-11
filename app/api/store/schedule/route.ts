@@ -1022,6 +1022,126 @@ export async function POST(
     }
 
     // ========================================================
+    // MODE: DRAFT-CLEAR
+    //
+    // Menghapus SELURUH document schedule_drafts milik store
+    // yang terautentikasi pada bulan/tahun yang diminta.
+    // HANYA menyentuh collection schedule_drafts — TIDAK pernah
+    // menyentuh collection "schedules" (data final). storeId/
+    // cabangId diambil dari akun (bukan body), sehingga user
+    // hanya bisa menghapus draft milik tokonya sendiri.
+    // Query dibatasi tanggal bulan aktif (bukan full-scan),
+    // sama dengan scope GET.
+    // ========================================================
+
+    if (
+      mode === "draft-clear"
+    ) {
+      const year =
+        Number(
+          body?.year,
+        )
+
+      const month =
+        Number(
+          body?.month,
+        )
+
+      // bulan dalam POST: 0-11
+
+      if (
+        !Number.isInteger(year) ||
+        !Number.isInteger(month) ||
+        month < 0 ||
+        month > 11
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Parameter year dan month wajib diisi.",
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+      // Periode bulan target: [start, end)
+      const nextMonth =
+        month === 11
+          ? month + 1 - 12
+          : month + 1
+
+      const nextYear =
+        month === 11
+          ? year + 1
+          : year
+
+      const start =
+        `${year}-${String(
+          month + 1,
+        ).padStart(2, "0")}-01`
+
+      const end =
+        `${nextYear}-${String(
+          nextMonth + 1,
+        ).padStart(2, "0")}-01`
+
+      const snapshot =
+        await adminDb
+          .collection("schedule_drafts")
+          .where(
+            "storeId",
+            "==",
+            storeId,
+          )
+          .where(
+            "tanggal",
+            ">=",
+            start,
+          )
+          .where(
+            "tanggal",
+            "<",
+            end,
+          )
+          .get()
+
+      const draftDeletes: Promise<unknown>[] = []
+
+      for (
+        const frame of snapshot.docs
+      ) {
+        const data =
+          frame.data()
+
+        // Hanya hapus draft milik cabang akun ini.
+        // Draft cabang lain toko yang sama tidak disentuh.
+        if (
+          data?.cabangId !==
+            cabangId
+        ) {
+          continue
+        }
+
+        draftDeletes.push(
+          frame.ref.delete(),
+        )
+      }
+
+      await Promise.all(draftDeletes)
+
+      return NextResponse.json({
+        success: true,
+        message:
+          "Draft jadwal berhasil dikosongkan.",
+        deleted:
+          draftDeletes.length,
+      })
+    }
+
+    // ========================================================
     // MODE TIDAK DIKENAL
     // ========================================================
 
