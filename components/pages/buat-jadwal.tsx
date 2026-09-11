@@ -9,11 +9,18 @@ import { Button } from "@/components/ui/button"
 import {
   getFirestoreEmployees,
   getFirestoreMonthlySchedules,
+  getFirestorePreviousMonthLastDay,
   getFirestoreStores,
   type FirestoreEmployee,
   type FirestoreSchedule,
   type FirestoreStore,
 } from "@/lib/firestore-data"
+import {
+  generateSchedule,
+  type GenerateScheduleCell,
+  type GenerateScheduleInput,
+} from "@/lib/generate-schedule"
+import type { PreviousMonthLastDayMap } from "@/lib/previous-month-last-day"
 import { cn } from "@/lib/utils"
 import {
   SHIFT_STATUS_ITEMS as SHIFT_OPTIONS,
@@ -387,6 +394,13 @@ export function BuatJadwalPage() {
   const [actionError, setActionError] = React.useState("")
   const [error, setError] = React.useState("")
 
+  // Preferensi rotasi tanggal 1 dari hari terakhir bulan SEBELUMNYA
+  // (jadwal final, collection "schedules"). Dibaca SEKALI saat bulan/
+  // store dimuat; dipakai hanya sebagai input generator.
+  const [previousMonthLastDay, setPreviousMonthLastDay] = React.useState<
+    PreviousMonthLastDayMap | undefined
+  >(undefined)
+
   const isStore = profile?.role?.trim().toLowerCase() === "store"
   const storeId = profile?.storeId
   const cabangId = profile?.cabangId
@@ -403,6 +417,21 @@ export function BuatJadwalPage() {
     setError("")
     setMessage("")
     setEditing(false)
+    // Jangan memakai preferensi bulan lama setelah ganti bulan.
+    setPreviousMonthLastDay(undefined)
+
+    // Data rotasi hari terakhir bulan sebelumnya untuk generator
+    // "Buat Jadwal Otomatis". Murni READ; kegagalan tidak menggagalkan
+    // halaman — generator tetap berjalan tanpa preferensi ini.
+    getFirestorePreviousMonthLastDay(storeId, period.year, period.month)
+      .then((map) => {
+        if (cancelled) return
+        setPreviousMonthLastDay(map)
+      })
+      .catch((previousMonthError) => {
+        console.error("Failed to load previous month last day:", previousMonthError)
+        if (!cancelled) setPreviousMonthLastDay(undefined)
+      })
 
     const authedUser = user
 
@@ -661,6 +690,87 @@ export function BuatJadwalPage() {
     setPhase((p) => (p === "Selesai" ? p : "Draft"))
     setMessage("Status khusus disimpan sebagai draft pada browser ini.")
     setStatusKhususTarget(null)
+  }
+
+  // ============================================================
+  // BUAT JADWAL OTOMATIS (client state only)
+  //
+  // Memanggil generator murni dan menyatukan hasilnya ke draftChanges
+  // lokal. TIDAK melakukan Firestore write. Hanya slot yang benar-benar
+  // kosong yang diisi; semua keputusan user (existing) tetap LOCKED.
+  // ============================================================
+
+  function runAutoGenerate() {
+    if (!canEditCells) return
+    if (!storeId) return
+    setActionError("")
+    setMessage("")
+
+    try {
+      // Kondisi TERKINI dengan prioritas sama seperti UI:
+      // draftChanges > savedDraftByCell > savedScheduleByCell.
+      const existingCells: GenerateScheduleCell[] = []
+      for (const employee of employees) {
+        for (const day of days) {
+          const tanggal = getDateKey(period.year, period.month, day)
+          const value = getCellValue(employee.id, tanggal)
+          if (!value) continue
+          existingCells.push({
+            employeeId: employee.id,
+            tanggal,
+            status: value.status,
+            statusKhusus: value.statusKhusus,
+          })
+        }
+      }
+
+      const input: GenerateScheduleInput = {
+        year: period.year,
+        month: period.month,
+        employees: employees.map((employee) => ({
+          id: employee.id,
+          posisi: employee.posisi,
+        })),
+        existing: existingCells,
+        previousMonthLastDay: previousMonthLastDay ?? undefined,
+      }
+
+      const result = generateSchedule(input)
+
+      // Merge hasil secara sinkron dari state terkini, lalu persist
+      // SEKALI DI LUAR setState agar updater state tetap pure.
+      // Cell yang sudah ada di draftChanges TIDAK pernah ditimpa.
+      // (generateSchedule murni synchronous, tanpa await sebelum blok
+      // ini, sehingga draftChanges di closure adalah state terkini.)
+      const nextCells = { ...draftChanges }
+      for (const assignment of result.assignments) {
+        const key = getCellKey(assignment.employeeId, assignment.tanggal)
+        if (key in nextCells) continue
+        nextCells[key] = { status: assignment.status }
+      }
+      setDraftChanges(nextCells)
+      if (storeId) {
+        persistLocalCells(cellDraftKey(storeId, period.year, period.month), nextCells)
+      }
+
+      setPhase((phaseValue) => (phaseValue === "Selesai" ? phaseValue : "Draft"))
+
+      if (result.assignments.length > 0) {
+        setMessage(
+          `Jadwal otomatis selesai: ${result.assignments.length} slot kosong terisi. Pilihan yang sudah ada tidak diubah.`,
+        )
+      } else {
+        setMessage("Jadwal otomatis selesai: tidak ada slot kosong yang perlu diisi. Pilihan yang sudah ada tidak diubah.")
+      }
+      if (result.warnings.length > 0) {
+        console.warn("Buat Jadwal Otomatis — warning:", result.warnings)
+      }
+    } catch (generateError) {
+      console.error("Failed to generate schedule:", generateError)
+      setActionError(
+        generateError instanceof Error ? generateError.message : "Jadwal otomatis gagal dibuat.",
+      )
+    }
   }
 
   function buildVisibleCells() {
@@ -1038,6 +1148,9 @@ export function BuatJadwalPage() {
               </Button>
             ) : (
               <>
+                <Button variant="outline" onClick={runAutoGenerate} disabled={saving}>
+                  ✨ Buat Jadwal Otomatis
+                </Button>
                 {editing && (
                   <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
                     Batal

@@ -6,6 +6,11 @@ import {
 } from "firebase/firestore"
 
 import { db } from "@/lib/firebase"
+import {
+  previousMonthLastDayDate,
+  toPreviousMonthLastDayMap,
+  type PreviousMonthLastDayMap,
+} from "@/lib/previous-month-last-day"
 
 // ============================================================
 // TYPES
@@ -354,6 +359,34 @@ export async function getFirestoreSchedules(
       >),
     }),
   )
+}
+
+// ============================================================
+// PREVIOUS MONTH LAST DAY — INPUT ROTASI GENERATOR
+//
+// Membaca JADWAL FINAL pada hari TERAKHIR bulan sebelumnya dari
+// collection "schedules" (BUKAN schedule_drafts) untuk menyediakan
+// input "previousMonthLastDay" bagi generator "Buat Jadwal Otomatis".
+//
+// Query scoped storeId + tanggal, memakai pola query harian existing
+// getFirestoreSchedules (equality storeId+tanggal) sehingga tidak
+// membutuhkan composite index baru. Draft bulan sebelumnya TIDAK
+// pernah dibaca — draft bukan sumber kebenaran kontinuitas.
+//
+// month = bulan berjalan (0-based). Hasil:
+//   employeeId -> "shift_pagi" | "shift_siang"
+// hanya untuk assignment shift; non-shift diabaikan; employee tanpa
+// jadwal final pada hari tersebut tidak ikut serta.
+// ============================================================
+
+export async function getFirestorePreviousMonthLastDay(
+  storeId: string,
+  year: number,
+  month: number,
+): Promise<PreviousMonthLastDayMap> {
+  const tanggal = previousMonthLastDayDate(year, month)
+  const finalSchedules = await getFirestoreSchedules(storeId, tanggal)
+  return toPreviousMonthLastDayMap(finalSchedules)
 }
 
 // ============================================================
