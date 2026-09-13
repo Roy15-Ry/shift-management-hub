@@ -3,8 +3,8 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight, FileDown, RotateCcw } from "lucide-react"
 import { Segmented, DateField, Field, SelectField } from "@/components/controls"
-import type { UserOptions as AutoTableUserOptions } from "jspdf-autotable"
 import { formatTanggal } from "@/lib/data"
+import { generateShiftSchedulePdf, slugifyStoreName } from "@/lib/pdf-shift"
 import {
   SHIFT_STATUS_ITEMS,
   getShiftStatusItem,
@@ -70,16 +70,6 @@ function getDaysInMonth(year: number, month: number) {
 
 function getStoreShiftOption(status?: string | null) {
   return getShiftStatusItem(status)
-}
-
-function slugifyStoreName(name: string) {
-  const normalized = name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-  return normalized || "toko"
 }
 
 const monthNameFormatter = new Intl.DateTimeFormat("id-ID", { month: "long" })
@@ -199,195 +189,20 @@ function StoreJadwalShift() {
   const storeDisplayName = store?.nama ?? "-"
 
   async function handleDownloadPdf() {
-    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-      import("jspdf"),
-      import("jspdf-autotable"),
-    ])
-
     const filename = `JADWAL_SHIFT_${slugifyStoreName(storeDisplayName)}_${monthNameIndo.toUpperCase()}_${period.year}.pdf`
 
-    // Ubah HEX status (sama dengan WEB, dari lib/shift-status) ke RGB.
-    function hexToRgb(hex: string): [number, number, number] {
-      const value = hex.replace("#", "")
-      const int = parseInt(value, 16)
-      return [(int >> 16) & 255, (int >> 8) & 255, int & 255]
-    }
-
-    const doc = new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: "a4",
+    await generateShiftSchedulePdf({
+      storeName: storeDisplayName,
+      monthLabel,
+      year: period.year,
+      month: period.month,
+      employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
+      getStatus: (employeeId, tanggal) => scheduleByCell.get(`${employeeId}:${tanggal}`),
+      getActivity: (row, tanggal) => activityByCell.get(`${row}:${tanggal}`) ?? "",
+      rekapTitle,
+      rekapRows,
+      filename,
     })
-
-    // Header PDF — tanpa "SHIFT MANAGEMENT HUB".
-    doc.setFontSize(16)
-    doc.setFont("helvetica", "bold")
-    doc.text("JADWAL SHIFT", 8, 14)
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(10)
-    doc.text(`Toko: ${storeDisplayName}`, 8, 21)
-    doc.text(`Periode: ${monthLabel}`, 8, 26)
-    doc.text(`Jumlah Karyawan: ${employees.length}`, 8, 31)
-
-    // Singkatan hari (dinamis, berdasar kalender bulan terpilih).
-    const DAY_ABBR = ["MIN", "SEN", "SEL", "RAB", "KAM", "JUM", "SAB"]
-    const dayAbbr = (day: number) => DAY_ABBR[new Date(period.year, period.month, day).getDay()] ?? ""
-
-    // Render SEGMEN tanggal (kolom Karyawan + kolom-kolom tanggal tsb)
-    // sebagai satu tabel ber-badge berwarna. Mengembalikan Y terakhir tabel.
-    function drawShiftBlock(startY: number, blockDays: number[]): number {
-      // Baris header 1: angka tanggal. Baris header 2: singkatan hari.
-      const head = [
-        ["Karyawan", ...blockDays.map(String)],
-        ["", ...blockDays.map(dayAbbr)],
-      ]
-
-      // Kolom pertama berisi NAMA karyawan saja; tanggal memakai nama status lengkap.
-      const body: string[][] = employees.map((employee) => {
-        const row: string[] = [employee.name]
-        blockDays.forEach((day) => {
-          const tanggal = getDateKey(period.year, period.month, day)
-          const option = getStoreShiftOption(scheduleByCell.get(`${employee.id}:${tanggal}`))
-          row.push(option?.label ?? "-")
-        })
-        return row
-      })
-
-      // Status per sel (untuk pewarnaan badge) — indeks kolom: 0 = Karyawan, 1..n = tanggal.
-      const statusesByCell: (string | undefined)[][] = employees.map((employee) => {
-        const cells: (string | undefined)[] = [undefined]
-        blockDays.forEach((day) => {
-          const tanggal = getDateKey(period.year, period.month, day)
-          const option = getStoreShiftOption(scheduleByCell.get(`${employee.id}:${tanggal}`))
-          cells.push(option?.status)
-        })
-        return cells
-      })
-
-      const options: AutoTableUserOptions = {
-        startY,
-        head,
-        body,
-        theme: "grid",
-        margin: { left: 6, right: 6, top: 30, bottom: 6 },
-        styles: {
-          fontSize: 7,
-          cellPadding: { left: 1.4, right: 1.4, top: 1.1, bottom: 1.1 },
-          valign: "middle",
-          lineColor: [150, 150, 150],
-          lineWidth: 0.25,
-        },
-        tableLineColor: [110, 110, 110],
-        tableLineWidth: 0.5,
-        headStyles: {
-          fillColor: [37, 99, 235],
-          textColor: 255,
-          fontStyle: "bold",
-          fontSize: 8,
-          halign: "center",
-          valign: "middle",
-          lineColor: [37, 99, 235],
-          lineWidth: 0.3,
-        },
-        bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
-        columnStyles: {
-          0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
-        },
-        didParseCell: (data) => {
-          // Kolom tanggal: render status sebagai badge berwarna.
-          if (data.section === "body" && data.column.index >= 1) {
-            const shiftStatus = statusesByCell[data.row.index]?.[data.column.index]
-            const item = shiftStatus ? getShiftStatusItem(shiftStatus) : undefined
-            if (item) {
-              data.cell.styles.fillColor = hexToRgb(item.hex)
-              data.cell.styles.textColor = 255
-              data.cell.styles.halign = "center"
-              // Garis putih tipis agar tiap badge terpisah jelas (kolom & baris).
-              data.cell.styles.lineColor = [255, 255, 255]
-              data.cell.styles.lineWidth = 0.4
-            } else {
-              data.cell.styles.fillColor = [245, 247, 250]
-              data.cell.styles.textColor = [30, 30, 30]
-              data.cell.styles.halign = "center"
-              data.cell.styles.lineColor = [150, 150, 150]
-              data.cell.styles.lineWidth = 0.25
-            }
-          } else if (data.section === "body" && data.column.index === 0) {
-            data.cell.styles.fillColor = [245, 247, 250]
-            data.cell.styles.lineWidth = 0.25
-          }
-        },
-      }
-
-      autoTable(doc, options)
-      return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
-    }
-
-    // BAGIAN BAWAH PDF — REKAP JUMLAH MASUK BULANAN
-    function drawRekapPdf(startY: number) {
-      // Judul rekap (menggunakan label bulan lokal, sama seperti web).
-      doc.setFontSize(12)
-      doc.setFont("helvetica", "bold")
-      doc.text(rekapTitle, 8, startY + 3)
-
-      const heads = ["NAMA", "PAGI", "SIANG", "LIBUR", "CUTI", "SAKIT / IZIN", "TOTAL"]
-      const body = rekapRows.map((row) => [
-        row.name,
-        String(row.pagi),
-        String(row.siang),
-        String(row.libur),
-        String(row.cuti),
-        String(row.sakitIzin),
-        String(row.total),
-      ])
-
-      autoTable(doc, {
-        startY: startY + 6,
-        head: [heads],
-        body,
-        theme: "grid",
-        margin: { left: 6, right: 6, top: 30, bottom: 6 },
-        styles: {
-          fontSize: 8,
-          cellPadding: { left: 1.6, right: 1.6, top: 1.4, bottom: 1.4 },
-          valign: "middle",
-          lineColor: [150, 150, 150],
-          lineWidth: 0.25,
-        },
-        tableLineColor: [110, 110, 110],
-        tableLineWidth: 0.4,
-        headStyles: {
-          fillColor: [37, 99, 235],
-          textColor: 255,
-          fontStyle: "bold",
-          fontSize: 8,
-          halign: "center",
-          valign: "middle",
-          lineColor: [37, 99, 235],
-          lineWidth: 0.3,
-        },
-        bodyStyles: { textColor: [30, 30, 30], halign: "center", valign: "middle" },
-        columnStyles: {
-          0: { cellWidth: 50, fontStyle: "bold", halign: "left" },
-        },
-        didParseCell: (data) => {
-          // Hanya beri warna halus pada kolom angka rekap.
-          if (data.section === "body" && data.column.index >= 1) {
-            data.cell.styles.fillColor = [247, 248, 250]
-          } else if (data.section === "body" && data.column.index === 0) {
-            data.cell.styles.fillColor = [245, 247, 250]
-          }
-        },
-      } as AutoTableUserOptions)
-    }
-
-    // Render BLOK jadwal, lalu rekap di bagian bawah PDF.
-    const block1EndY = drawShiftBlock(34, days.slice(0, 15))
-    const block2EndY = drawShiftBlock(block1EndY + 8, days.slice(15))
-
-    drawRekapPdf(block2EndY + 10)
-
-    doc.save(filename)
   }
 
   if (loading) {
