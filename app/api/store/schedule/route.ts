@@ -832,9 +832,18 @@ export async function POST(
         }
 
         const parsed =
-          parseCellValue(
-            cell?.status,
-          )
+          parseCellValue({
+            status:
+              cell?.status,
+            cutiJenis:
+              cell?.cutiJenis,
+            statusKhusus:
+              cell?.statusKhusus,
+            keterangan:
+              cell?.keterangan,
+            tokoTujuan:
+              cell?.tokoTujuan,
+          })
 
         if (!parsed) {
           continue

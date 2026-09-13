@@ -18,6 +18,7 @@ import {
   CalendarGrid,
   KeteranganSection,
   StoreLegend,
+  buildOperasionalItems,
   type JadwalLiburData,
   type JadwalLiburEmployee,
   type JadwalLiburKeterangan,
@@ -260,9 +261,8 @@ export function DashboardJadwalLibur() {
   const kegiatan = keterangan.filter(
     (k) => k.jenis === "kegiatan",
   )
-  const operasional = keterangan.filter(
-    (k) => k.jenis === "operasional",
-  )
+  const operasional =
+    buildOperasionalItems(data)
 
   const noopSave = async () => {}
   const noopDelete = () => {}

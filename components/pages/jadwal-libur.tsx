@@ -129,6 +129,12 @@ export type JadwalLiburKeterangan = {
   bulan: string
   tanggal: string
   cabangId: string
+  /*
+   * Penanda item OTOMATIS yang dibentuk saat rendering dari jadwal
+   * libur (schedulesByStore + employeesByStoreId), bukan dokumen
+   * Firestore. true -> read-only, tidak bisa diedit/dihapus.
+   */
+  auto?: boolean
 }
 
 export type JadwalLiburData = {
@@ -173,6 +179,149 @@ function getBulanKey(
   month: number,
 ) {
   return `${year}-${String(month + 1).padStart(2, "0")}`
+}
+
+// ============================================================
+// OPERASIONAL — ITEM OTOMATIS DARI JADWAL LIBUR
+// ============================================================
+//
+// Data otomatis dibentuk SAAT RENDERING dari schedulesByStore +
+// employeesByStoreId (data GET /api/jadwal-libur). Tidak pernah
+// disimpan ke collection jadwal-libur-keterangan, sehingga ketika
+// jadwal libur berubah, Operasional otomatis ikut terbarui tanpa
+// sinkronisasi tambahan.
+//
+// Format baris:
+//   [Tanggal] [Bulan] [Tahun] : [Nama Karyawan] [Keterangan]
+//
+// HANYA schedule berstatus "cuti" yang menjadi item otomatis.
+// Status "libur" TIDAK masuk ke Operasional.
+//
+// Contoh:
+//   "1 September 2026 : Yana Supriatna Cuti"
+//   "2 September 2026 : Yana Supriatna Cuti Tahunan"
+//   "3 September 2026 : Ahmad Azhari Cuti Melahirkan"
+
+const operasionalDateFormatter = new Intl.DateTimeFormat(
+  "id-ID",
+  {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  },
+)
+
+function formatOperasionalDate(tanggal: string): string {
+  const [rawYear, rawMonth, rawDay] =
+    tanggal.split("-")
+  const year = Number(rawYear)
+  const month = Number(rawMonth)
+  const day = Number(rawDay)
+
+  if (!year || !month || !day) {
+    return tanggal
+  }
+
+  return operasionalDateFormatter.format(
+    new Date(
+      year,
+      month - 1,
+      day,
+    ),
+  )
+}
+
+// Membangun item OPERASIONAL gabungan: keterangan manual (dari
+// collection jadwal-libur-keterangan) + item otomatis (dari jadwal
+// libur). Hanya schedule berstatus "cuti" yang menjadi item
+// otomatis (status "libur" tidak termasuk). Item otomatis ditandai
+// auto: true dan diurutkan berdasarkan tanggal ISO YYYY-MM-DD
+// (ASCENDING).
+export function buildOperasionalItems(
+  data: Pick<
+    JadwalLiburData,
+    "keterangan" | "employeesByStoreId" | "schedulesByStore"
+  >,
+): JadwalLiburKeterangan[] {
+  const manual = (
+    data.keterangan ?? []
+  ).filter(
+    (item) =>
+      item.jenis === "operasional",
+  )
+
+  // Peta id employee -> name untuk lookup cepat.
+  const employeeById = new Map<string, string>()
+
+  for (const employees of Object.values(
+    data.employeesByStoreId ?? {},
+  )) {
+    for (const employee of employees) {
+      if (!employeeById.has(employee.id)) {
+        employeeById.set(
+          employee.id,
+          employee.name,
+        )
+      }
+    }
+  }
+
+  const auto: JadwalLiburKeterangan[] = []
+
+  for (const schedules of Object.values(
+    data.schedulesByStore ?? {},
+  )) {
+    for (const schedule of schedules) {
+      const status = (
+        schedule.status ?? ""
+      )
+        .trim()
+        .toLowerCase()
+
+      if (
+        status !== "cuti"
+      ) {
+        continue
+      }
+
+      const nama =
+        employeeById.get(
+          schedule.employeeId,
+        ) ?? "-"
+
+      let keterangan: string
+      keterangan = (
+        schedule.cutiJenis ?? ""
+      ).trim()
+      if (!keterangan) {
+        keterangan = "Cuti"
+      }
+
+      const tanggal =
+        schedule.tanggal ?? ""
+
+      auto.push({
+        id: `auto:${schedule.storeId ?? ""}:${schedule.employeeId ?? ""}:${tanggal}`,
+        jenis: "operasional",
+        teks: `${formatOperasionalDate(tanggal)} : ${nama} ${keterangan}`,
+        bulan: tanggal.slice(0, 7),
+        tanggal,
+        cabangId:
+          schedule.cabangId ?? "",
+        auto: true,
+      })
+    }
+  }
+
+  auto.sort((a, b) =>
+    a.tanggal < b.tanggal
+      ? -1
+      : a.tanggal > b.tanggal
+        ? 1
+        : 0,
+  )
+
+  return [...manual, ...auto]
 }
 
 // ============================================================
@@ -529,9 +678,7 @@ export function JadwalLiburPage() {
   const kegiatan = keterangan.filter(
     (k) => k.jenis === "kegiatan",
   )
-  const operasional = keterangan.filter(
-    (k) => k.jenis === "operasional",
-  )
+  const operasional = buildOperasionalItems(data)
 
   // ==========================================================
   // PENYIMPANAN / PENGHAPUSAN KETERANGAN
@@ -1536,6 +1683,19 @@ export function KeteranganSection({
   const [text, setText] =
     React.useState("")
 
+  // Tombol Ubah/Hapus hanya boleh menyasar keterangan MANUAL yang
+  // berasal dari collection. Item otomatis (auto: true) bersifat
+  // read-only, sehingga target = item non-auto TERAKHIR.
+  const lastManual =
+    items.reduce<
+      | JadwalLiburKeterangan
+      | undefined
+    >(
+      (acc, item) =>
+        item.auto ? acc : item,
+      undefined,
+    )
+
   function startAdd() {
     setMode({ type: "add" })
     setText("")
@@ -1574,16 +1734,12 @@ export function KeteranganSection({
             <ActionButton title="Tambah" onClick={startAdd}>
               <Plus className="size-4" />
             </ActionButton>
-            {items.length > 0 && (
+            {lastManual && (
               <>
                 <ActionButton
                   title="Ubah"
                   onClick={() =>
-                    startEdit(
-                      items[
-                        items.length - 1
-                      ],
-                    )
+                    startEdit(lastManual)
                   }
                 >
                   <PenLine className="size-4" />
@@ -1592,11 +1748,7 @@ export function KeteranganSection({
                   danger
                   title="Hapus"
                   onClick={() =>
-                    onDelete(
-                      items[
-                        items.length - 1
-                      ],
-                    )
+                    onDelete(lastManual)
                   }
                 >
                   <Trash2 className="size-4" />
