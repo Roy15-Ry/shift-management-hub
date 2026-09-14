@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   ChevronLeft,
   ChevronRight,
+  FileDown,
   Palmtree,
   PenLine,
   Plus,
@@ -19,6 +20,8 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
+import { generateJadwalLiburPdf } from "@/lib/pdf-jadwal-libur"
+import { slugifyStoreName } from "@/lib/pdf-shift"
 
 // ============================================================
 // JADWAL LIBUR
@@ -89,6 +92,30 @@ const DAY_HEADERS = [
 
 // Status yang ditampilkan di kalender JADWAL LIBUR.
 const LIBUR_CUTI = new Set(["libur", "cuti"])
+
+// ============================================================
+// LABEL TAMPILAN CABANG UNTUK PDF
+//
+// cabangId tetap dipakai untuk filtering dan scope data.
+// Mapping ini HANYA untuk tampilan PDF / nama file — TIDAK
+// mengubah data sumber.
+// ============================================================
+
+const CABANG_DISPLAY_LABEL: Record<string, string> = {
+  "BGR-1": "CABANG BOGOR - BANTEN",
+  "CJR-1": "CABANG CIANJUR - CIPANAS",
+}
+
+function displayCabangLabel(cabangId: string): string {
+  const normalized = String(cabangId ?? "")
+    .trim()
+    .toUpperCase()
+  if (!normalized) return "CABANG"
+  return (
+    CABANG_DISPLAY_LABEL[normalized] ??
+    `CABANG ${normalized}`
+  )
+}
 
 // ============================================================
 // TYPES
@@ -404,6 +431,10 @@ export function JadwalLiburPage() {
   const [pendingDelete, setPendingDelete] =
     React.useState<JadwalLiburKeterangan | null>(null)
 
+  // Sedang menyiapkan PDF (cegah double click saat generate).
+  const [pdfLoading, setPdfLoading] =
+    React.useState(false)
+
   const isCentral =
     profile?.role === "central_cabang" ||
     profile?.role === "central_pusat"
@@ -679,6 +710,55 @@ export function JadwalLiburPage() {
     (k) => k.jenis === "kegiatan",
   )
   const operasional = buildOperasionalItems(data)
+
+  // ==========================================================
+  // SIMPAN SEBAGAI PDF (HANYA CENTRAL)
+  //
+  // Memakai data yang SUDAH dimuat halaman (tidak ada fetch,
+  // query, maupun write Firestore tambahan). Operasional
+  // memakai buildOperasionalItems(data) yang sudah ada.
+  // ==========================================================
+
+  async function handleDownloadPdf() {
+    if (pdfLoading || !data) return
+
+    const scopeLabel = isCentralPusat
+      ? cabangFilter
+        ? displayCabangLabel(cabangFilter)
+        : "SEMUA CABANG"
+      : displayCabangLabel(profile?.cabangId ?? "")
+    if (!scopeLabel) return
+
+    setPdfLoading(true)
+    try {
+      const monthToken =
+        monthLabel.split(" ")[0] ?? monthLabel
+      const filename = `JADWAL_LIBUR_${slugifyStoreName(scopeLabel).toUpperCase()}_${monthToken}_${period.year}.pdf`
+
+      await generateJadwalLiburPdf({
+        scopeLabel,
+        year: period.year,
+        month: period.month,
+        monthLabel,
+        stores,
+        employeesByStoreId:
+          data.employeesByStoreId,
+        schedulesByStore:
+          data.schedulesByStore,
+        kegiatan: kegiatan.map((item) => ({
+          id: item.id,
+          teks: item.teks,
+        })),
+        operasional: operasional.map((item) => ({
+          id: item.id,
+          teks: item.teks,
+        })),
+        filename,
+      })
+    } finally {
+      setPdfLoading(false)
+    }
+  }
 
   // ==========================================================
   // PENYIMPANAN / PENGHAPUSAN KETERANGAN
@@ -968,6 +1048,8 @@ export function JadwalLiburPage() {
       <PageHeader
         monthLabel={monthLabel}
         changeMonth={changeMonth}
+        onDownload={handleDownloadPdf}
+        pdfLoading={pdfLoading}
       />
 
       {/* FILTER CABANG — HANYA CENTRAL PUSAT */}
@@ -1070,9 +1152,13 @@ export function JadwalLiburPage() {
 function PageHeader({
   monthLabel,
   changeMonth,
+  onDownload,
+  pdfLoading,
 }: {
   monthLabel: string
   changeMonth: (offset: number) => void
+  onDownload?: () => void
+  pdfLoading?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1109,6 +1195,18 @@ function PageHeader({
         >
           <ChevronRight className="size-4" />
         </Button>
+        {onDownload && (
+          <Button
+            variant="outline"
+            onClick={onDownload}
+            disabled={pdfLoading}
+          >
+            <FileDown className="mr-2 size-4" />
+            {pdfLoading
+              ? "Menyiapkan..."
+              : "Simpan sebagai PDF"}
+          </Button>
+        )}
       </div>
     </div>
   )
