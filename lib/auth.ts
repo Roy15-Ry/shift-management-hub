@@ -171,4 +171,25 @@ export async function loginUser(
 
 export async function logoutUser() {
     await signOut(auth)
+
+    // =====================================================
+    // RESET HALAMAN TERSIMPAN
+    // =====================================================
+    //
+    // Halaman terakhir disimpan di localStorage oleh
+    // commitPage() (app-context). Jika tidak direset,
+    // login akun berikutnya akan membuka halaman terakhir
+    // (contoh: /buat-jadwal) padahal role bisa berbeda.
+    //
+    // Semua role harus selalu mulai dari Dashboard.
+    // =====================================================
+
+    if (
+        typeof window !== "undefined"
+    ) {
+        window.localStorage.setItem(
+            "shift-management-hub-page",
+            "dashboard",
+        )
+    }
 }
