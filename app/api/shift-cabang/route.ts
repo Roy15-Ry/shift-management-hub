@@ -181,6 +181,9 @@ export async function GET(
         url.searchParams.get("storeId"),
       )
 
+    const storesOnly =
+      url.searchParams.get("storesOnly")
+
     // =====================================================
     // AMBIL TOKO SESUAI SCOPE ROLE
     // =====================================================
@@ -252,6 +255,32 @@ export async function GET(
         (store) =>
           store.id === requestedStoreId,
       )
+    }
+
+    // =====================================================
+    // MODE storesOnly — DAFTAR TOKO SAJA (TANPA JADWAL)
+    //
+    // Mode tambahan (opsional) untuk SHIFT CABANG lazy loading.
+    // Auth, role, cabangId/scope, dan filter stores sudah
+    // diproses di atas TANPA BYPASS keamanan; response hanya
+    // berisi daftar toko hasil scope, dan TIDAK membaca
+    // employees/schedules sehingga halaman tidak melakukan
+    // bulk read jadwal seluruh toko. Caller lama yang tidak
+    // mengirim param ini tetap berperilaku seperti sebelumnya.
+    // =====================================================
+
+    if (storesOnly === "1") {
+      return NextResponse.json({
+        success: true,
+        user: {
+          role: role,
+          cabangId:
+            normalize(user.cabangId),
+          storeId:
+            normalize(user.storeId),
+        },
+        stores,
+      })
     }
 
     // =====================================================

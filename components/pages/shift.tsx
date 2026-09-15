@@ -64,6 +64,14 @@ function normalizeDateKey(value: unknown): string {
   return `${source.slice(0, 4)}-${source.slice(5, 7)}-${source.slice(8, 10)}`
 }
 
+function shiftCabangCacheKey(
+  storeId: string,
+  year: number,
+  month: number,
+) {
+  return `${storeId}|${year}|${month}`
+}
+
 function getDaysInMonth(year: number, month: number) {
   return Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1)
 }
@@ -593,6 +601,104 @@ function StoreDailyTable({
   )
 }
 
+function StoreShiftCard({
+  store,
+  index,
+  employees,
+  schedules,
+  period,
+  mode,
+  date,
+  expanded,
+  loading,
+  hasData,
+  error,
+  onToggle,
+  onRetry,
+}: {
+  store: FirestoreStore
+  index: number
+  employees: FirestoreEmployee[]
+  schedules: FirestoreSchedule[]
+  period: { year: number; month: number }
+  mode: "bulanan" | "harian"
+  date: string
+  expanded: boolean
+  loading: boolean
+  hasData: boolean
+  error: string
+  onToggle: () => void
+  onRetry: () => void
+}) {
+  const header = (
+    <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-3">
+      <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+        {index}
+      </div>
+      <p className="truncate text-sm font-semibold">{store.nama}</p>
+      {hasData && (
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {employees.length} karyawan
+        </span>
+      )}
+    </div>
+  )
+
+  if (!expanded) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        {header}
+        <div className="flex items-center justify-center px-4 py-6">
+          <Button variant="outline" onClick={onToggle}>
+            KLIK UNTUK MELIHAT JADWAL SHIFT
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        {header}
+        <LoadingState label="Memuat jadwal shift..." />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        {header}
+        <div className="flex flex-col items-center gap-3 px-4 py-6">
+          <p className="text-center text-sm text-destructive">{error}</p>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Coba lagi
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return mode === "bulanan" ? (
+    <StoreMonthlyTable
+      store={store}
+      index={index}
+      employees={employees}
+      schedules={schedules}
+      period={period}
+    />
+  ) : (
+    <StoreDailyTable
+      store={store}
+      index={index}
+      employees={employees}
+      schedules={schedules}
+      tanggal={date}
+    />
+  )
+}
+
 export function ShiftCabangPage() {
   const { profile, user } = useAuth()
   const role = profile?.role?.trim().toLowerCase()
@@ -610,34 +716,56 @@ export function ShiftCabangPage() {
   const [cabangFilter, setCabangFilter] = React.useState("all")
 
   const [stores, setStores] = React.useState<FirestoreStore[]>([])
-  const [employeesByStoreId, setEmployeesByStoreId] = React.useState<Record<string, FirestoreEmployee[]>>({})
-  const [schedulesByStore, setSchedulesByStore] = React.useState<Record<string, FirestoreSchedule[]>>({})
+  const [cache, setCache] = React.useState<
+    Record<
+      string,
+      {
+        employees: FirestoreEmployee[]
+        schedules: FirestoreSchedule[]
+      }
+    >
+  >({})
+  const [expanded, setExpanded] = React.useState<
+    Record<string, boolean>
+  >({})
+  const [openLoading, setOpenLoading] = React.useState<
+    Record<string, boolean>
+  >({})
+  const [openError, setOpenError] = React.useState<
+    Record<string, string>
+  >({})
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
 
-  React.useEffect(() => {
-    // Butuh user (untuk ID token) + profile agar mengirim token yang sah.
-    if (!profile || !user) {
-      setLoading(false)
-      return
-    }
+  const fetchGuardRef = React.useRef<
+    Record<string, boolean>
+  >({})
 
-    const authedUser = user
-    let cancelled = false
-    setLoading(true)
-    setError("")
+  const loadStore = React.useCallback(
+    async (
+      storeId: string,
+      year: number,
+      month: number,
+    ) => {
+      if (!user) return
 
-    async function loadData() {
+      const cacheId = shiftCabangCacheKey(storeId, year, month)
+
+      // Anti-fetch ganda untuk storeId + periode yang sama
+      // (mis. klik berulang sebelum state sempat diterapkan).
+      if (fetchGuardRef.current[cacheId]) return
+      fetchGuardRef.current[cacheId] = true
+
+      setOpenLoading((prev) => ({ ...prev, [cacheId]: true }))
+      setOpenError((prev) => ({ ...prev, [cacheId]: "" }))
+
       try {
-        const idToken = await authedUser.getIdToken()
+        const idToken = await user.getIdToken()
 
-        // Data dimuat melalui server (Admin SDK) sehingga scope role
-        // (STORE/CENTRAL CABANG -> cabang akun; CENTRAL PUSAT -> semua)
-        // dipaksakan di sisi server, bukan bergantung pada Firestore
-        // Rules klien. Hanya GET/read.
         const params = new URLSearchParams({
-          year: String(period.year),
-          month: String(period.month),
+          year: String(year),
+          month: String(month),
+          storeId,
         })
 
         const response = await fetch(
@@ -657,19 +785,70 @@ export function ShiftCabangPage() {
 
         const data = await response.json()
 
+        const employees = Array.isArray(data.employeesByStoreId?.[storeId])
+          ? (data.employeesByStoreId[storeId] as FirestoreEmployee[])
+          : []
+
+        const schedules = Array.isArray(data.schedulesByStore?.[storeId])
+          ? (data.schedulesByStore[storeId] as FirestoreSchedule[])
+          : []
+
+        setCache((prev) => ({
+          ...prev,
+          [cacheId]: { employees, schedules },
+        }))
+      } catch (loadError) {
+        console.error("Gagal memuat data Shift Cabang:", loadError)
+        setOpenError((prev) => ({
+          ...prev,
+          [cacheId]: "Data jadwal belum dapat dimuat. Silakan coba lagi.",
+        }))
+      } finally {
+        fetchGuardRef.current[cacheId] = false
+        setOpenLoading((prev) => ({ ...prev, [cacheId]: false }))
+      }
+    },
+    [user],
+  )
+
+  React.useEffect(() => {
+    // Butuh user (untuk ID token) + profile agar mengirim token yang sah.
+    // Hanya memuat DAFTAR TOKO (storesOnly=1) — tanpa employees/schedules,
+    // sehingga halaman tidak melakukan bulk read jadwal seluruh toko.
+    if (!profile || !user) {
+      setLoading(false)
+      return
+    }
+
+    const authedUser = user
+    let cancelled = false
+    setLoading(true)
+    setError("")
+
+    async function loadStores() {
+      try {
+        const idToken = await authedUser.getIdToken()
+
+        const response = await fetch(
+          `/api/shift-cabang?storesOnly=1`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+            cache: "no-store",
+          },
+        )
+
+        if (!response.ok) {
+          throw new Error("Data shift cabang tidak dapat dimuat.")
+        }
+
+        const data = await response.json()
+
         if (cancelled) return
 
         setStores(Array.isArray(data.stores) ? data.stores : [])
-        setEmployeesByStoreId(
-          data.employeesByStoreId && typeof data.employeesByStoreId === "object"
-            ? data.employeesByStoreId
-            : {},
-        )
-        setSchedulesByStore(
-          data.schedulesByStore && typeof data.schedulesByStore === "object"
-            ? data.schedulesByStore
-            : {},
-        )
       } catch (loadError) {
         console.error("Gagal memuat data Shift Cabang:", loadError)
         if (!cancelled) setError("Data jadwal belum dapat dimuat. Silakan coba lagi.")
@@ -678,12 +857,41 @@ export function ShiftCabangPage() {
       }
     }
 
-    loadData()
+    loadStores()
 
     return () => {
       cancelled = true
     }
-  }, [profile, user, period.year, period.month])
+  }, [profile, user])
+
+  // Ketika periode berubah, hanya toko yang sedang dibuka yang mengambil
+  // bulan baru (bila belum ada di cache). Toko lain tetap collapsed dan
+  // jangan di-fetch otomatis.
+  React.useEffect(() => {
+    const expandedIds = Object.keys(expanded).filter(
+      (storeId) => expanded[storeId],
+    )
+
+    for (const storeId of expandedIds) {
+      const cacheId = shiftCabangCacheKey(storeId, period.year, period.month)
+      if (cache[cacheId]) continue
+      loadStore(storeId, period.year, period.month)
+    }
+  }, [cache, expanded, loadStore, period.month, period.year])
+
+  function handleToggleStore(storeId: string) {
+    if (expanded[storeId]) {
+      setExpanded((prev) => ({ ...prev, [storeId]: false }))
+      return
+    }
+
+    setExpanded((prev) => ({ ...prev, [storeId]: true }))
+
+    const cacheId = shiftCabangCacheKey(storeId, period.year, period.month)
+    if (!cache[cacheId]) {
+      loadStore(storeId, period.year, period.month)
+    }
+  }
 
   const branchOptions = React.useMemo(() => {
     return Array.from(new Set(stores.map((s) => s.cabangId).filter(Boolean)))
@@ -829,32 +1037,62 @@ export function ShiftCabangPage() {
             </span>
           </div>
 
-          {visibleStores.map((store, index) => (
-            <StoreMonthlyTable
-              key={store.id}
-              store={store}
-              index={index + 1}
-              employees={employeesByStoreId[store.id] ?? []}
-              schedules={schedulesByStore[store.id] ?? []}
-              period={period}
-            />
-          ))}
+          {visibleStores.map((store, index) => {
+            const cacheId = shiftCabangCacheKey(store.id, period.year, period.month)
+            const cached = cache[cacheId]
+            return (
+              <StoreShiftCard
+                key={store.id}
+                store={store}
+                index={index + 1}
+                employees={cached?.employees ?? []}
+                schedules={cached?.schedules ?? []}
+                period={period}
+                mode={mode}
+                date={date}
+                expanded={expanded[store.id] === true}
+                loading={openLoading[cacheId] === true}
+                hasData={Boolean(cached)}
+                error={openError[cacheId] ?? ""}
+                onToggle={() => handleToggleStore(store.id)}
+                onRetry={() => {
+                  setOpenError((prev) => ({ ...prev, [cacheId]: "" }))
+                  loadStore(store.id, period.year, period.month)
+                }}
+              />
+            )
+          })}
         </div>
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-muted-foreground">
             Jadwal tanggal <span className="font-medium text-foreground">{formatTanggal(date)}</span> · {visibleStores.length} toko
           </p>
-          {visibleStores.map((store, index) => (
-            <StoreDailyTable
-              key={store.id}
-              store={store}
-              index={index + 1}
-              employees={employeesByStoreId[store.id] ?? []}
-              schedules={schedulesByStore[store.id] ?? []}
-              tanggal={date}
-            />
-          ))}
+          {visibleStores.map((store, index) => {
+            const cacheId = shiftCabangCacheKey(store.id, period.year, period.month)
+            const cached = cache[cacheId]
+            return (
+              <StoreShiftCard
+                key={store.id}
+                store={store}
+                index={index + 1}
+                employees={cached?.employees ?? []}
+                schedules={cached?.schedules ?? []}
+                period={period}
+                mode={mode}
+                date={date}
+                expanded={expanded[store.id] === true}
+                loading={openLoading[cacheId] === true}
+                hasData={Boolean(cached)}
+                error={openError[cacheId] ?? ""}
+                onToggle={() => handleToggleStore(store.id)}
+                onRetry={() => {
+                  setOpenError((prev) => ({ ...prev, [cacheId]: "" }))
+                  loadStore(store.id, period.year, period.month)
+                }}
+              />
+            )
+          })}
         </div>
       )}
     </div>
