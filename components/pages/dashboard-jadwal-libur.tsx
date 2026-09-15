@@ -97,8 +97,33 @@ export function DashboardJadwalLibur() {
   const [error, setError] =
     React.useState("")
 
+  const [expanded, setExpanded] =
+    React.useState(false)
+
+  const loadedPeriodRef =
+    React.useRef<{
+      year: number
+      month: number
+    } | null>(null)
+
   React.useEffect(() => {
     if (!profile || !user) {
+      setLoading(false)
+      return
+    }
+
+    if (!expanded) {
+      setLoading(false)
+      return
+    }
+
+    if (
+      loadedPeriodRef.current &&
+      loadedPeriodRef.current.year ===
+        period.year &&
+      loadedPeriodRef.current.month ===
+        period.month
+    ) {
       setLoading(false)
       return
     }
@@ -162,6 +187,11 @@ export function DashboardJadwalLibur() {
             : [],
           isCentralPusat: false,
         })
+
+        loadedPeriodRef.current = {
+          year: period.year,
+          month: period.month,
+        }
       } catch (loadError) {
         console.error(
           "Gagal memuat JADWAL LIBUR Dashboard:",
@@ -184,7 +214,7 @@ export function DashboardJadwalLibur() {
     return () => {
       cancelled = true
     }
-  }, [profile, user, period.year, period.month])
+  }, [profile, user, expanded, period.year, period.month])
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -210,6 +240,27 @@ export function DashboardJadwalLibur() {
         ),
       )
       .toUpperCase()
+
+  if (!expanded) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+              Jadwal Libur
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Libur &amp; cuti karyawan cabang
+            </p>
+          </div>
+          <Button onClick={() => setExpanded(true)}>
+            <Palmtree className="mr-2 size-4" />
+            KLIK UNTUK MELIHAT JADWAL LIBUR
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -298,6 +349,13 @@ export function DashboardJadwalLibur() {
             onClick={() => changeMonth(1)}
           >
             <ChevronRight className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded(false)}
+          >
+            Tutup
           </Button>
         </div>
       </div>
