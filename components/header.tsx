@@ -9,6 +9,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  Store,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
@@ -521,6 +522,25 @@ export function Header({ onMenu }: { onMenu: () => void }) {
                 </div>
 
               </div>
+
+              {/* Pengaturan Toko — Store only */}
+              {accountRole === "store" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPage("pengaturan")
+                      setAccountOpen(false)
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    <Store className="size-4" />
+                    PENGATURAN TOKO
+                  </button>
+
+                  <div className="h-px bg-border" />
+                </>
+              )}
 
               {/* Logout */}
               <button

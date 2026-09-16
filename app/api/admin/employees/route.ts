@@ -560,19 +560,20 @@ export async function POST(
             )
 
         // =================================================
-        // STORE DILARANG MENAMBAH
+        // HANYA CENTRAL + STORE YANG BOLEH
         // =================================================
 
         if (
-            !canManageEmployees(
-                user,
-            )
+            !isCentralRole(
+                user.role,
+            ) &&
+            user.role !== "store"
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin menambah karyawan.",
+                        "Anda tidak memiliki izin menambah karyawan.",
                 },
                 { status: 403 },
             )
@@ -615,6 +616,33 @@ export async function POST(
                 },
                 { status: 400 },
             )
+        }
+
+        // =================================================
+        // STORE HANYA BOLEH UNTUK STORE MILIKNYA SENDIRI
+        // =================================================
+
+        if (
+            user.role === "store"
+        ) {
+            const userStoreId =
+                normalizeText(
+                    user.storeId,
+                ).toUpperCase()
+
+            if (
+                storeId !==
+                userStoreId
+            ) {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        message:
+                            "Anda tidak memiliki izin menambah karyawan di Store tersebut.",
+                    },
+                    { status: 403 },
+                )
+            }
         }
 
         // =================================================
@@ -781,7 +809,7 @@ export async function POST(
 // =====================================================
 // PATCH
 //
-// HANYA CENTRAL
+// CENTRAL + STORE (own store only)
 // =====================================================
 
 export async function PATCH(
@@ -793,20 +821,17 @@ export async function PATCH(
                 request,
             )
 
-        // =================================================
-        // STORE DILARANG EDIT
-        // =================================================
-
         if (
-            !canManageEmployees(
-                user,
-            )
+            !isCentralRole(
+                user.role,
+            ) &&
+            user.role !== "store"
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin mengubah data karyawan.",
+                        "Anda tidak memiliki izin mengubah data karyawan.",
                 },
                 { status: 403 },
             )
@@ -1021,7 +1046,7 @@ export async function PATCH(
 // =====================================================
 // DELETE
 //
-// HANYA CENTRAL
+// CENTRAL + STORE (own store only)
 // =====================================================
 
 export async function DELETE(
@@ -1033,20 +1058,17 @@ export async function DELETE(
                 request,
             )
 
-        // =================================================
-        // STORE DILARANG HAPUS
-        // =================================================
-
         if (
-            !canManageEmployees(
-                user,
-            )
+            !isCentralRole(
+                user.role,
+            ) &&
+            user.role !== "store"
         ) {
             return NextResponse.json(
                 {
                     success: false,
                     message:
-                        "Akun Store hanya dapat melihat data karyawan. Anda tidak memiliki izin menghapus karyawan.",
+                        "Anda tidak memiliki izin menghapus karyawan.",
                 },
                 { status: 403 },
             )

@@ -44,6 +44,7 @@ function PageContent() {
     "shift",
     "shift-cabang",
     "history",
+    "pengaturan",
   ]
 
   if (

@@ -12,6 +12,8 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/components/auth-context"
+import { useApp } from "@/components/app-context"
 
 import { Modal } from "@/components/ui/modal"
 
@@ -1894,6 +1896,11 @@ function StoreDetail({
 // ============================================================
 
 export function PengaturanPage() {
+  const { profile, loading: authLoading } = useAuth()
+  const { setPage } = useApp()
+
+  const isStore = profile?.role === "store"
+
   const [selected, setSelected] =
     React.useState<string | null>(null)
 
@@ -1905,6 +1912,31 @@ export function PengaturanPage() {
 
   function handleBack() {
     setSelected(null)
+  }
+
+  if (isStore) {
+    if (authLoading) {
+      return (
+        <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+          Memuat profil...
+        </div>
+      )
+    }
+
+    if (!profile?.storeId) {
+      return (
+        <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-destructive">
+          Profil toko tidak ditemukan.
+        </div>
+      )
+    }
+
+    return (
+      <StoreFirebaseDetail
+        storeId={profile.storeId}
+        onBack={() => setPage("dashboard")}
+      />
+    )
   }
 
   return selected ? (
