@@ -1497,7 +1497,7 @@ export function CalendarGrid({
                   {day}
                 </div>
 
-                {/* Action group per tanggal: [ + ] [ ✏ ] [ 🗑 ] */}
+                {/* Action group per tanggal: [ + ] (Edit/Hapus ada per item) */}
                 {isCentral && (
                   <div className="mb-1 flex items-center justify-center gap-1">
                     <ActionButton
@@ -1516,45 +1516,6 @@ export function CalendarGrid({
                     >
                       <Plus className="size-3" />
                     </ActionButton>
-                    {tanggalItems.length > 0 && (
-                      <>
-                        <ActionButton
-                          small
-                          title="Ubah keterangan"
-                          onClick={() => {
-                            const last =
-                              tanggalItems[
-                                tanggalItems.length -
-                                  1
-                              ]
-                            setEditingKey(
-                              last.id,
-                            )
-                            setEditDraft(
-                              last.teks,
-                            )
-                            setAddingDate(null)
-                          }}
-                        >
-                          <PenLine className="size-3" />
-                        </ActionButton>
-                        <ActionButton
-                          small
-                          danger
-                          title="Hapus keterangan"
-                          onClick={() =>
-                            onDelete(
-                              tanggalItems[
-                                tanggalItems.length -
-                                  1
-                              ],
-                            )
-                          }
-                        >
-                          <Trash2 className="size-3" />
-                        </ActionButton>
-                      </>
-                    )}
                   </div>
                 )}
 
@@ -1661,10 +1622,43 @@ export function CalendarGrid({
                         ) : (
                           <div
                             key={k.id}
-                            title={k.teks}
-                            className="whitespace-normal overflow-wrap-anywhere rounded-sm border border-white/90 bg-black px-1 py-0.5 text-center text-[0.6rem] font-medium leading-tight text-white"
+                            className="flex items-center gap-1"
                           >
-                            {k.teks}
+                            <div
+                              title={k.teks}
+                              className="min-w-0 flex-1 whitespace-normal overflow-wrap-anywhere rounded-sm border border-white/90 bg-black px-1 py-0.5 text-left text-[0.6rem] font-medium leading-tight text-white"
+                            >
+                              {k.teks}
+                            </div>
+                            {isCentral && (
+                              <div className="flex shrink-0 items-center gap-1">
+                                <ActionButton
+                                  small
+                                  title="Ubah keterangan"
+                                  onClick={() => {
+                                    setEditingKey(
+                                      k.id,
+                                    )
+                                    setEditDraft(
+                                      k.teks,
+                                    )
+                                    setAddingDate(null)
+                                  }}
+                                >
+                                  <PenLine className="size-3" />
+                                </ActionButton>
+                                <ActionButton
+                                  small
+                                  danger
+                                  title="Hapus keterangan"
+                                  onClick={() =>
+                                    onDelete(k)
+                                  }
+                                >
+                                  <Trash2 className="size-3" />
+                                </ActionButton>
+                              </div>
+                            )}
                           </div>
                         )
                       },
@@ -1781,19 +1775,6 @@ export function KeteranganSection({
   const [text, setText] =
     React.useState("")
 
-  // Tombol Ubah/Hapus hanya boleh menyasar keterangan MANUAL yang
-  // berasal dari collection. Item otomatis (auto: true) bersifat
-  // read-only, sehingga target = item non-auto TERAKHIR.
-  const lastManual =
-    items.reduce<
-      | JadwalLiburKeterangan
-      | undefined
-    >(
-      (acc, item) =>
-        item.auto ? acc : item,
-      undefined,
-    )
-
   function startAdd() {
     setMode({ type: "add" })
     setText("")
@@ -1832,27 +1813,6 @@ export function KeteranganSection({
             <ActionButton title="Tambah" onClick={startAdd}>
               <Plus className="size-4" />
             </ActionButton>
-            {lastManual && (
-              <>
-                <ActionButton
-                  title="Ubah"
-                  onClick={() =>
-                    startEdit(lastManual)
-                  }
-                >
-                  <PenLine className="size-4" />
-                </ActionButton>
-                <ActionButton
-                  danger
-                  title="Hapus"
-                  onClick={() =>
-                    onDelete(lastManual)
-                  }
-                >
-                  <Trash2 className="size-4" />
-                </ActionButton>
-              </>
-            )}
           </div>
         )}
       </div>
@@ -1903,14 +1863,35 @@ export function KeteranganSection({
           {items.map((item) => (
             <li
               key={item.id}
-              className="rounded-lg border border-border bg-muted/30 px-3 py-2"
+              className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
             >
               <span
-                className="block min-w-0 whitespace-pre-line overflow-wrap-anywhere text-center text-sm text-foreground"
+                className="min-w-0 flex-1 whitespace-pre-line overflow-wrap-anywhere text-left text-sm text-foreground"
                 title={item.teks}
               >
                 {item.teks}
               </span>
+              {isCentral && !item.auto && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <ActionButton
+                    title="Ubah"
+                    onClick={() =>
+                      startEdit(item)
+                    }
+                  >
+                    <PenLine className="size-4" />
+                  </ActionButton>
+                  <ActionButton
+                    danger
+                    title="Hapus"
+                    onClick={() =>
+                      onDelete(item)
+                    }
+                  >
+                    <Trash2 className="size-4" />
+                  </ActionButton>
+                </div>
+              )}
             </li>
           ))}
         </ul>
