@@ -435,6 +435,10 @@ export function JadwalLiburPage() {
   const [pdfLoading, setPdfLoading] =
     React.useState(false)
 
+  // Penanda urutan request agar response lama tidak menimpa
+  // state hasil request yang lebih baru (loadData / refresh).
+  const requestSeqRef = React.useRef(0)
+
   const isCentral =
     profile?.role === "central_cabang" ||
     profile?.role === "central_pusat"
@@ -511,6 +515,7 @@ export function JadwalLiburPage() {
     setError("")
 
     async function loadData() {
+      const seq = ++requestSeqRef.current
       try {
         const idToken =
           await authedUser.getIdToken()
@@ -558,7 +563,13 @@ export function JadwalLiburPage() {
             isCentralPusat?: boolean
           }
 
-        if (cancelled) return
+        // Abaikan bila sudah ada request yang lebih baru.
+        if (
+          cancelled ||
+          seq !== requestSeqRef.current
+        ) {
+          return
+        }
 
         setData({
           stores: Array.isArray(result.stores)
@@ -764,6 +775,80 @@ export function JadwalLiburPage() {
   // PENYIMPANAN / PENGHAPUSAN KETERANGAN
   // ==========================================================
 
+  // Bangun item keterangan lokal dengan struktur yang sama seperti
+  // hasil GET, agar state UI dapat langsung diperbarui tanpa
+  // menunggu GET berat. Auto Cuti TIDAK dibuat di sini.
+  function buildLocalKeterangan(
+    payload: {
+      id?: string
+      jenis: KeteranganJenis
+      teks: string
+      tanggal?: string
+    },
+    id: string,
+  ): JadwalLiburKeterangan {
+    const tanggal =
+      payload.jenis === "tanggal"
+        ? payload.tanggal ?? ""
+        : ""
+    const bulan =
+      payload.jenis === "tanggal"
+        ? tanggal.slice(0, 7)
+        : getBulanKey(period.year, period.month)
+    const cabangId = String(
+      (isCentralPusat
+        ? cabangFilter
+        : profile?.cabangId) ?? "",
+    )
+      .trim()
+      .toUpperCase()
+
+    return {
+      id,
+      jenis: payload.jenis,
+      teks: payload.teks,
+      bulan,
+      tanggal,
+      cabangId,
+    }
+  }
+
+  // Tambah item baru atau ganti item lama (id sama) di state lokal.
+  function upsertLocalKeterangan(
+    item: JadwalLiburKeterangan,
+  ) {
+    setData((current) => {
+      if (!current) return current
+      const exists = current.keterangan.some(
+        (k) => k.id === item.id,
+      )
+      return {
+        ...current,
+        keterangan: exists
+          ? current.keterangan.map((k) =>
+              k.id === item.id
+                ? { ...k, ...item }
+                : k,
+            )
+          : [...current.keterangan, item],
+      }
+    })
+  }
+
+  // Hapus item berdasarkan id di state lokal.
+  function removeLocalKeterangan(id: string) {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            keterangan: current.keterangan.filter(
+              (k) => k.id !== id,
+            ),
+          }
+        : current,
+    )
+  }
+
   async function handleSaveKeterangan(
     payload: {
       id?: string
@@ -819,6 +904,20 @@ export function JadwalLiburPage() {
         )
       }
 
+      const savedId = result.id ?? payload.id
+
+      if (!savedId) {
+        throw new Error(
+          "Keterangan tersimpan tetapi ID tidak diterima.",
+        )
+      }
+
+      // Perbarui state lokal DULU agar UI langsung berubah,
+      // baru tampilkan toast sukses (tanpa menunggu GET berat).
+      upsertLocalKeterangan(
+        buildLocalKeterangan(payload, savedId),
+      )
+
       showToast(
         "success",
         "Keterangan tersimpan",
@@ -827,7 +926,8 @@ export function JadwalLiburPage() {
           : "Keterangan berhasil ditambahkan.",
       )
 
-      await refreshKeterangan()
+      // Rekonsiliasi latar; bukan syarat tampilnya perubahan.
+      void refreshKeterangan()
     } catch (saveError) {
       console.error(
         "Gagal menyimpan keterangan:",
@@ -890,12 +990,18 @@ export function JadwalLiburPage() {
         )
       }
 
+      // Perbarui state lokal DULU agar item langsung hilang,
+      // baru tampilkan toast sukses (tanpa menunggu GET berat).
+      removeLocalKeterangan(item.id)
+
       showToast(
         "success",
         "Keterangan dihapus",
         "Keterangan berhasil dihapus.",
       )
-      await refreshKeterangan()
+
+      // Rekonsiliasi latar; bukan syarat hilangnya item.
+      void refreshKeterangan()
     } catch (deleteError) {
       console.error(
         "Gagal menghapus keterangan:",
@@ -913,6 +1019,8 @@ export function JadwalLiburPage() {
 
   async function refreshKeterangan() {
     if (!user) return
+
+    const seq = ++requestSeqRef.current
 
     try {
       const idToken = await user.getIdToken()
@@ -937,12 +1045,20 @@ export function JadwalLiburPage() {
         },
       )
 
-      if (!response.ok) return
+      if (!response.ok) {
+        throw new Error(
+          "Gagal memuat ulang keterangan.",
+        )
+      }
 
       const result =
         (await response.json()) as {
           keterangan?: JadwalLiburKeterangan[]
         }
+
+      // Abaikan response ini bila sudah ada request yang
+      // lebih baru (mis. ganti bulan / filter cabang).
+      if (seq !== requestSeqRef.current) return
 
       setData((current) =>
         current
@@ -961,6 +1077,15 @@ export function JadwalLiburPage() {
         "Gagal memuat ulang keterangan:",
         refreshError,
       )
+      // Pertahankan state yang ada; beri feedback hanya bila
+      // ini memang request terbaru.
+      if (seq === requestSeqRef.current) {
+        showToast(
+          "error",
+          "Gagal memuat ulang",
+          "Perubahan tersimpan, tetapi data terbaru gagal dimuat.",
+        )
+      }
     }
   }
 
@@ -1626,7 +1751,7 @@ export function CalendarGrid({
                           >
                             <div
                               title={k.teks}
-                              className="min-w-0 flex-1 whitespace-normal overflow-wrap-anywhere rounded-sm border border-white/90 bg-black px-1 py-0.5 text-left text-[0.6rem] font-medium leading-tight text-white"
+                              className="flex min-h-4 min-w-0 flex-1 items-center justify-center whitespace-normal overflow-wrap-anywhere rounded-sm border border-white/90 bg-black px-1 py-0 text-center text-[0.6rem] font-medium leading-none text-white"
                             >
                               {k.teks}
                             </div>
