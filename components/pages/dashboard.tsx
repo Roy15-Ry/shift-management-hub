@@ -34,6 +34,26 @@ import { cn } from "@/lib/utils"
 import { DashboardJadwalLibur } from "@/components/pages/dashboard-jadwal-libur"
 
 // ============================================================
+// KETERSEDIAAN EMPLOYEE PER TANGGAL MONITORING
+//
+// Employee "tersedia" pada suatu tanggal monitoring bila masih
+// AKTIF, atau bila NONAKTIF tetapi tanggalNonaktif-nya belum lewat
+// dari tanggal monitoring tersebut (tanggalNonaktif = hari terakhir
+// employee masih tersedia secara operasional).
+// ============================================================
+
+function isEmployeeAvailableOn(
+  employee: FirestoreEmployee,
+  tanggal: string,
+): boolean {
+  return (
+    employee.aktif !== false ||
+    (typeof employee.tanggalNonaktif === "string" &&
+      employee.tanggalNonaktif >= tanggal)
+  )
+}
+
+// ============================================================
 // SUMMARY STYLE
 // ============================================================
 
@@ -416,10 +436,7 @@ export function DashboardPage() {
             )
 
           allEmployees.push(
-            ...storeEmployees.filter(
-              (employee) =>
-                employee.aktif !== false,
-            ),
+            ...storeEmployees,
           )
 
           for (const scheduleDate of monitoringDates) {
@@ -1052,7 +1069,13 @@ export function DashboardPage() {
                       <span className="rounded-md bg-card px-2 py-1 text-xs font-medium text-muted-foreground ring-1 ring-inset ring-border">
 
                         {
-                          storeEmployees.length
+                          storeEmployees.filter(
+                            (employee) =>
+                              isEmployeeAvailableOn(
+                                employee,
+                                date,
+                              ),
+                          ).length
                         }{" "}
                         karyawan
 
@@ -1092,8 +1115,17 @@ export function DashboardPage() {
                                 )
                                 ] ?? []
 
+                              const dateEmployees =
+                                storeEmployees.filter(
+                                  (employee) =>
+                                    isEmployeeAvailableOn(
+                                      employee,
+                                      monitoringDate,
+                                    ),
+                                )
+
                               const sortedEmployees =
-                                [...storeEmployees].sort(
+                                [...dateEmployees].sort(
                                   (a, b) => {
                                     const statusA =
                                       storeSchedules.find(

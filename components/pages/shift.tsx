@@ -139,7 +139,21 @@ function StoreJadwalShift() {
       .then(([stores, storeEmployees, monthlySchedules, activityData]) => {
         if (cancelled) return
         setStore(stores[0] ?? null)
-        setEmployees(storeEmployees.filter((employee) => employee.aktif !== false))
+        // Roster bulanan: employee tetap tampil bila masih AKTIF, atau bila
+        // TIDAK aktif tetapi memiliki tanggalNonaktif valid yang jatuh pada/
+        // setelah hari TERAKHIR bulan yang sedang ditampilkan (tanggalNonaktif =
+        // hari terakhir employee masih tersedia). Nonaktif legacy tanpa
+        // tanggalNonaktif tetap disembunyikan.
+        const lastDay = days[days.length - 1] ?? 1
+        const monthCutoff = `${period.year}-${String(period.month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+        setEmployees(
+          storeEmployees.filter(
+            (employee) =>
+              employee.aktif !== false ||
+              (typeof employee.tanggalNonaktif === "string" &&
+                employee.tanggalNonaktif >= monthCutoff),
+          ),
+        )
         setSchedules(monthlySchedules)
         if (activityData) setActivityFinals(activityData)
       })
