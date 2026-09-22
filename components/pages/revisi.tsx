@@ -184,11 +184,7 @@ function StoreRevisiForm() {
 
         if (!active) return
 
-        setEmployees(
-          data.filter(
-            (e) => e.aktif !== false,
-          ),
-        )
+        setEmployees(data)
       } catch (err) {
         console.error(
           "Gagal memuat karyawan:",
@@ -277,6 +273,37 @@ function StoreRevisiForm() {
   const selectedEmployee =
     employees.find((e) => e.id === employeeId)
 
+  // Employee yang tersedia untuk pengajuan pada tanggal absensi yang
+  // dipilih: aktif selalu tersedia; nonaktif tersedia bila tanggal
+  // absensi masih <= tanggalNonaktif (hari terakhir ketersediaan).
+  const availableEmployees =
+    React.useMemo(
+      () =>
+        employees.filter(
+          (e) =>
+            e.aktif !== false ||
+            (typeof e.tanggalNonaktif ===
+              "string" &&
+              e.tanggalNonaktif >=
+                tanggal),
+        ),
+      [employees, tanggal],
+    )
+
+  // Bila tanggal berubah dan employee yang sedang dipilih tidak lagi
+  // tersedia pada tanggal tersebut, kosongkan pilihan agar user
+  // memilih ulang employee yang valid (tidak otomatis mengganti).
+  React.useEffect(() => {
+    if (
+      employeeId &&
+      !availableEmployees.some(
+        (e) => e.id === employeeId,
+      )
+    ) {
+      setEmployeeId("")
+    }
+  }, [availableEmployees, employeeId])
+
   function resetForm() {
     setTanggal(todayISO())
     setEmployeeId("")
@@ -357,11 +384,11 @@ function StoreRevisiForm() {
     {
       value: "",
       label:
-        employees.length > 0
+        availableEmployees.length > 0
           ? "Pilih karyawan..."
           : "Tidak ada karyawan",
     },
-    ...employees.map((e) => ({
+    ...availableEmployees.map((e) => ({
       value: e.id,
       label: `${e.name}${e.posisi ? ` - ${e.posisi}` : ""}`,
     })),

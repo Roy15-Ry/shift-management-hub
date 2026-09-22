@@ -403,6 +403,63 @@ export async function POST(
       )
     }
 
+    // =============================================================
+    // VALIDASI KETERSEDIAAN EMPLOYEE TERHADAP TANGGAL REVISI
+    //
+    // Employee diambil harus milik Store yang sedang mengajukan.
+    // Employee aktif selalu boleh. Employee nonaktif hanya boleh bila
+    // tanggal absensi yang direvisi masih <= tanggalNonaktif (hari
+    // terakhir employee tersedia). Employee nonaktif tanpa
+    // tanggalNonaktif (legacy) tidak tersedia untuk pengajuan baru.
+    // =============================================================
+
+    const employeeSnapshot =
+      await adminDb
+        .collection("employees")
+        .doc(employeeId)
+        .get()
+
+    const employeeData =
+      employeeSnapshot.exists
+        ? (employeeSnapshot.data() ?? {})
+        : null
+
+    const employeeStoreId =
+      cleanString(
+        employeeData?.storeId,
+        100,
+      )
+
+    const employeeAktif =
+      employeeData?.aktif === true
+
+    const employeeTanggalNonaktif =
+      typeof employeeData
+        ?.tanggalNonaktif ===
+      "string"
+        ? employeeData.tanggalNonaktif
+        : null
+
+    const employeeAvailable =
+      employeeData !== null &&
+      employeeStoreId === storeId &&
+      (employeeAktif ||
+        (employeeTanggalNonaktif !==
+          null &&
+          tanggal <=
+            employeeTanggalNonaktif))
+
+    if (!employeeAvailable) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Employee tidak tersedia pada tanggal revisi yang dipilih.",
+        },
+        { status: 400 },
+      )
+    }
+
     if (
       !JENIS_REVISI_VALUES.has(
         jenisRevisi,
