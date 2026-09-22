@@ -32,6 +32,7 @@ export type FirestoreEmployee = {
   cabangId: string
   posisi: string
   aktif: boolean
+  tanggalNonaktif?: string | null
 }
 
 export type FirestoreSchedule = {

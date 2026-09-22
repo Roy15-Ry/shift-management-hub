@@ -7,6 +7,8 @@ import {
     Pencil,
     Plus,
     Trash2,
+    UserCheck,
+    UserX,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -38,6 +40,7 @@ type FirebaseEmployee = {
     storeId: string
     cabangId: string | null
     aktif: boolean
+    tanggalNonaktif?: string | null
 }
 
 function StatusPill({
@@ -116,6 +119,19 @@ export function StoreFirebaseDetail({
         )
 
     const [deleteEmployee, setDeleteEmployee] =
+        React.useState<FirebaseEmployee | null>(
+            null,
+        )
+
+    const [deactivateEmployee, setDeactivateEmployee] =
+        React.useState<FirebaseEmployee | null>(
+            null,
+        )
+
+    const [deactivateDate, setDeactivateDate] =
+        React.useState("")
+
+    const [activateEmployee, setActivateEmployee] =
         React.useState<FirebaseEmployee | null>(
             null,
         )
@@ -596,6 +612,170 @@ export function StoreFirebaseDetail({
     }
 
     // =====================================================
+    // NONAKTIFKAN
+    // =====================================================
+
+    function openDeactivateEmployee(
+        employee: FirebaseEmployee,
+    ) {
+        setDeactivateEmployee(employee)
+        setDeactivateDate("")
+    }
+
+    async function handleDeactivateEmployee() {
+        if (!deactivateEmployee) {
+            return
+        }
+
+        const tanggalNonaktif =
+            deactivateDate.trim()
+
+        if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(
+                tanggalNonaktif,
+            )
+        ) {
+            showToast(
+                "error",
+                "Tanggal wajib diisi",
+                "Pilih Tanggal Nonaktif terlebih dahulu.",
+            )
+            return
+        }
+
+        const employeeName =
+            deactivateEmployee.name
+
+        setSaving(true)
+
+        try {
+            const idToken =
+                await getIdToken()
+
+            const response =
+                await fetch(
+                    "/api/admin/employees",
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                            Authorization:
+                                `Bearer ${idToken}`,
+                        },
+                        body: JSON.stringify({
+                            employeeId:
+                                deactivateEmployee.id,
+                            aktif: false,
+                            tanggalNonaktif,
+                        }),
+                    },
+                )
+
+            const data =
+                await response.json()
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message ||
+                        "Gagal menonaktifkan karyawan.",
+                )
+            }
+
+            setDeactivateEmployee(null)
+            setDeactivateDate("")
+
+            await loadEmployees()
+
+            showToast(
+                "success",
+                "Karyawan dinonaktifkan",
+                `${employeeName} kini berstatus Nonaktif.`,
+            )
+        } catch (error) {
+            showToast(
+                "error",
+                "Gagal menonaktifkan karyawan",
+                error instanceof Error
+                    ? error.message
+                    : "Terjadi kesalahan saat menonaktifkan karyawan.",
+            )
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    // =====================================================
+    // AKTIFKAN KEMBALI
+    // =====================================================
+
+    async function handleActivateEmployee() {
+        if (!activateEmployee) {
+            return
+        }
+
+        const employeeName =
+            activateEmployee.name
+
+        setSaving(true)
+
+        try {
+            const idToken =
+                await getIdToken()
+
+            const response =
+                await fetch(
+                    "/api/admin/employees",
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                            Authorization:
+                                `Bearer ${idToken}`,
+                        },
+                        body: JSON.stringify({
+                            employeeId:
+                                activateEmployee.id,
+                            aktif: true,
+                            tanggalNonaktif: null,
+                        }),
+                    },
+                )
+
+            const data =
+                await response.json()
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message ||
+                        "Gagal mengaktifkan karyawan.",
+                )
+            }
+
+            setActivateEmployee(null)
+
+            await loadEmployees()
+
+            showToast(
+                "success",
+                "Karyawan diaktifkan kembali",
+                `${employeeName} kini berstatus Aktif.`,
+            )
+        } catch (error) {
+            showToast(
+                "error",
+                "Gagal mengaktifkan karyawan",
+                error instanceof Error
+                    ? error.message
+                    : "Terjadi kesalahan saat mengaktifkan karyawan.",
+            )
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    // =====================================================
     // FILTER
     // =====================================================
 
@@ -967,38 +1147,77 @@ export function StoreFirebaseDetail({
                                                             Lihat
                                                         </Button>
 
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                openEditEmployee(
-                                                                    employee,
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                saving
-                                                            }
-                                                        >
-                                                            <Pencil />
-                                                            Edit
-                                                        </Button>
+                                                        {employee.aktif ? (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        openEditEmployee(
+                                                                            employee,
+                                                                        )
+                                                                    }
+                                                                    disabled={
+                                                                        saving
+                                                                    }
+                                                                >
+                                                                    <Pencil />
+                                                                    Edit
+                                                                </Button>
 
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                setDeleteEmployee(
-                                                                    employee,
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                saving
-                                                            }
-                                                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                        >
-                                                            <Trash2 />
-                                                            Hapus
-                                                        </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        openDeactivateEmployee(
+                                                                            employee,
+                                                                        )
+                                                                    }
+                                                                    disabled={
+                                                                        saving
+                                                                    }
+                                                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                                >
+                                                                    <UserX />
+                                                                    Nonaktifkan
+                                                                </Button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        setActivateEmployee(
+                                                                            employee,
+                                                                        )
+                                                                    }
+                                                                    disabled={
+                                                                        saving
+                                                                    }
+                                                                >
+                                                                    <UserCheck />
+                                                                    Aktifkan
+                                                                </Button>
+
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        setDeleteEmployee(
+                                                                            employee,
+                                                                        )
+                                                                    }
+                                                                    disabled={
+                                                                        saving
+                                                                    }
+                                                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                                >
+                                                                    <Trash2 />
+                                                                    Hapus Permanen
+                                                                </Button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1093,6 +1312,19 @@ export function StoreFirebaseDetail({
                                 />
                             </p>
                         </div>
+
+                        {!viewEmployee.aktif && (
+                            <div>
+                                <p className="text-xs text-muted-foreground">
+                                    Tanggal Nonaktif
+                                </p>
+
+                                <p className="mt-0.5 text-sm font-medium">
+                                    {viewEmployee.tanggalNonaktif ||
+                                        "-"}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
             </Modal>
@@ -1279,7 +1511,172 @@ export function StoreFirebaseDetail({
                 </div>
             </Modal>
 
-            {/* HAPUS */}
+            {/* NONAKTIFKAN */}
+
+            <Modal
+                open={
+                    !!deactivateEmployee
+                }
+                onClose={() => {
+                    if (!saving) {
+                        setDeactivateEmployee(
+                            null,
+                        )
+                        setDeactivateDate(
+                            "",
+                        )
+                    }
+                }}
+                title="Nonaktifkan Karyawan"
+                description={
+                    deactivateEmployee
+                        ? `${deactivateEmployee.name} · ${deactivateEmployee.posisi}`
+                        : ""
+                }
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setDeactivateEmployee(
+                                    null,
+                                )
+                                setDeactivateDate(
+                                    "",
+                                )
+                            }}
+                            disabled={saving}
+                        >
+                            Batal
+                        </Button>
+
+                        <Button
+                            variant="destructive"
+                            onClick={
+                                handleDeactivateEmployee
+                            }
+                            disabled={
+                                saving ||
+                                !deactivateDate
+                            }
+                        >
+                            <UserX />
+                            {saving
+                                ? "Menyimpan..."
+                                : "Nonaktifkan"}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <p className="text-sm text-muted-foreground">
+                            Karyawan{" "}
+                            <span className="font-semibold text-foreground">
+                                {
+                                    deactivateEmployee
+                                        ?.name
+                                }
+                            </span>{" "}
+                            tidak lagi tersedia
+                            secara operasional
+                            mulai tanggal berikut.
+                        </p>
+                    </div>
+
+                    <Field label="Tanggal Nonaktif">
+                        <input
+                            type="date"
+                            value={deactivateDate}
+                            onChange={(event) =>
+                                setDeactivateDate(
+                                    event.target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+                        />
+                    </Field>
+
+                    <p className="text-xs text-muted-foreground">
+                        Tanggal Nonaktif adalah
+                        hari terakhir karyawan
+                        masih dianggap tersedia
+                        secara operasional.
+                        Setelah tanggal tersebut,
+                        karyawan mulai tidak
+                        tersedia.
+                    </p>
+                </div>
+            </Modal>
+
+            {/* AKTIFKAN */}
+
+            <Modal
+                open={
+                    !!activateEmployee
+                }
+                onClose={() => {
+                    if (!saving) {
+                        setActivateEmployee(
+                            null,
+                        )
+                    }
+                }}
+                title="Aktifkan Kembali Karyawan"
+                description="Kembalikan status karyawan menjadi Aktif."
+                footer={
+                    <>
+                        <Button
+                            variant="outline"
+                            onClick={() =>
+                                setActivateEmployee(
+                                    null,
+                                )
+                            }
+                            disabled={saving}
+                        >
+                            Batal
+                        </Button>
+
+                        <Button
+                            onClick={
+                                handleActivateEmployee
+                            }
+                            disabled={saving}
+                        >
+                            <UserCheck />
+                            {saving
+                                ? "Menyimpan..."
+                                : "Aktifkan"}
+                        </Button>
+                    </>
+                }
+            >
+                {activateEmployee && (
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <p className="text-sm font-medium">
+                            Aktifkan kembali
+                            karyawan ini?
+                        </p>
+
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Karyawan{" "}
+                            <span className="font-semibold text-foreground">
+                                {
+                                    activateEmployee.name
+                                }
+                            </span>{" "}
+                            akan kembali berstatus
+                            Aktif dan tanggal
+                            nonaktif akan
+                            dikosongkan.
+                        </p>
+                    </div>
+                )}
+            </Modal>
+
+            {/* HAPUS PERMANEN */}
 
             <Modal
                 open={
@@ -1292,8 +1689,8 @@ export function StoreFirebaseDetail({
                         )
                     }
                 }}
-                title="Hapus Karyawan"
-                description="Konfirmasi penghapusan karyawan."
+                title="Hapus Permanen Karyawan"
+                description="Konfirmasi penghapusan permanen karyawan."
                 footer={
                     <>
                         <Button
@@ -1318,7 +1715,7 @@ export function StoreFirebaseDetail({
                             <Trash2 />
                             {saving
                                 ? "Menghapus..."
-                                : "Hapus"}
+                                : "Hapus Permanen"}
                         </Button>
                     </>
                 }
@@ -1326,7 +1723,8 @@ export function StoreFirebaseDetail({
                 {deleteEmployee && (
                     <div className="rounded-lg border border-border bg-muted/40 p-4">
                         <p className="text-sm font-medium">
-                            Hapus karyawan ini?
+                            Hapus permanen karyawan
+                            ini?
                         </p>
 
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -1342,8 +1740,8 @@ export function StoreFirebaseDetail({
                                     deleteEmployee.nik
                                 }
                             </span>{" "}
-                            akan dihapus dari
-                            daftar.
+                            akan dihapus permanen
+                            dari daftar.
                         </p>
                     </div>
                 )}

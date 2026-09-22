@@ -90,6 +90,40 @@ function normalizeNik(
         .replace(/\s/g, "")
 }
 
+function isValidDateISO(
+    value: string,
+): boolean {
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(
+            value,
+        )
+    ) {
+        return false
+    }
+
+    const [
+        year,
+        month,
+        day,
+    ] = value
+        .split("-")
+        .map(Number)
+
+    const date =
+        new Date(
+            year,
+            month - 1,
+            day,
+        )
+
+    return (
+        date.getFullYear() === year &&
+        date.getMonth() ===
+            month - 1 &&
+        date.getDate() === day
+    )
+}
+
 // =====================================================
 // CEK ROLE CENTRAL
 // =====================================================
@@ -413,6 +447,11 @@ export async function GET(
                         aktif:
                             data.aktif ===
                             true,
+                        tanggalNonaktif:
+                            typeof data.tanggalNonaktif ===
+                            "string"
+                                ? data.tanggalNonaktif
+                                : null,
                     }
                 },
             )
@@ -760,6 +799,7 @@ export async function POST(
             storeId,
             cabangId,
             aktif: true,
+            tanggalNonaktif: null,
             createdAt:
                 FieldValue.serverTimestamp(),
         })
@@ -776,6 +816,7 @@ export async function POST(
                 storeId,
                 cabangId,
                 aktif: true,
+                tanggalNonaktif: null,
             },
         })
     } catch (error: unknown) {
@@ -934,6 +975,56 @@ export async function PATCH(
                 : existing?.aktif ===
                   true
 
+        // =====================================================
+        // TANGGAL NONAKTIF
+        //
+        // - aktif dalam kondisi true -> selalu null (dikosongkan).
+        // - transisi aktif -> nonaktif -> WAJIB membawa tanggal
+        //   nonaktif yang valid (ISO YYYY-MM-DD).
+        // - nonaktif yang sudah ada -> pertahankan nilai existing
+        //   bila request tidak membawa tanggal baru.
+        // =====================================================
+
+        const wasAktif =
+            existing?.aktif === true
+
+        let tanggalNonaktif:
+            | string
+            | null = null
+
+        if (!aktif) {
+            const rawTanggalNonaktif =
+                typeof body.tanggalNonaktif ===
+                "string"
+                    ? normalizeText(
+                          body.tanggalNonaktif,
+                      )
+                    : normalizeText(
+                          existing
+                              ?.tanggalNonaktif,
+                      )
+
+            if (
+                isValidDateISO(
+                    rawTanggalNonaktif,
+                )
+            ) {
+                tanggalNonaktif =
+                    rawTanggalNonaktif
+            } else if (wasAktif) {
+                // Transisi aktif -> nonaktif harus
+                // membawa tanggal nonaktif yang benar.
+                return NextResponse.json(
+                    {
+                        success: false,
+                        message:
+                            "Tanggal Nonaktif wajib diisi dengan benar.",
+                    },
+                    { status: 400 },
+                )
+            }
+        }
+
         if (
             !name ||
             !nik ||
@@ -995,6 +1086,7 @@ export async function PATCH(
             nik,
             posisi,
             aktif,
+            tanggalNonaktif,
             updatedAt:
                 FieldValue.serverTimestamp(),
         })
@@ -1013,6 +1105,7 @@ export async function PATCH(
                     existing?.cabangId ??
                     null,
                 aktif,
+                tanggalNonaktif,
             },
         })
     } catch (error: unknown) {
