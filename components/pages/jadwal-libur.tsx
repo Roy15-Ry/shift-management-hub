@@ -439,6 +439,20 @@ export function JadwalLiburPage() {
   // state hasil request yang lebih baru (loadData / refresh).
   const requestSeqRef = React.useRef(0)
 
+  // Tahap 4: kalender TIDAK dimuat saat halaman dibuka. Kalender
+  // baru dimuat ketika user menekan "LIHAT JADWAL LIBUR".
+  const [calendarOpen, setCalendarOpen] =
+    React.useState(false)
+  // Context (tahun/bulan/cabang) yang SUDAH berhasil dimuat penuh.
+  // Hanya diisi setelah full GET sukses; dipakai agar buka kembali
+  // dengan context yang sama TIDAK melakukan GET ulang.
+  const loadedContextRef =
+    React.useRef<{
+      year: number
+      month: number
+      cabang: string
+    } | null>(null)
+
   const isCentral =
     profile?.role === "central_cabang" ||
     profile?.role === "central_pusat"
@@ -505,6 +519,26 @@ export function JadwalLiburPage() {
 
   React.useEffect(() => {
     if (!profile || !user || !isCentral) {
+      setLoading(false)
+      return
+    }
+
+    // Tahap 4: selama kalender tertutup, JANGAN melakukan full GET.
+    if (!calendarOpen) {
+      setLoading(false)
+      return
+    }
+
+    // Reuse: bila context (tahun, bulan, cabang) sudah pernah
+    // dimuat, gunakan data yang ada — tanpa GET ulang.
+    const loadedContext =
+      loadedContextRef.current
+    if (
+      loadedContext !== null &&
+      loadedContext.year === period.year &&
+      loadedContext.month === period.month &&
+      loadedContext.cabang === cabangFilter
+    ) {
       setLoading(false)
       return
     }
@@ -593,6 +627,15 @@ export function JadwalLiburPage() {
           isCentralPusat:
             result.isCentralPusat === true,
         })
+
+        // Context dianggap loaded HANYA setelah full GET sukses.
+        // Jika request gagal, context TIDAK ditandai loaded sehingga
+        // buka kembali tetap melakukan GET (retry).
+        loadedContextRef.current = {
+          year: period.year,
+          month: period.month,
+          cabang: cabangFilter,
+        }
       } catch (loadError) {
         console.error(
           "Gagal memuat data Jadwal Libur:",
@@ -615,7 +658,7 @@ export function JadwalLiburPage() {
     return () => {
       cancelled = true
     }
-  }, [profile, user, isCentral, isCentralPusat, cabangFilter, period.year, period.month])
+  }, [profile, user, isCentral, isCentralPusat, cabangFilter, period.year, period.month, calendarOpen])
 
   function changeMonth(offset: number) {
     setPeriod((current) => {
@@ -629,6 +672,30 @@ export function JadwalLiburPage() {
         month: d.getMonth(),
       }
     })
+  }
+
+  // Tahap 4: buka kalender. Bila context (tahun/bulan/cabang) belum
+  // dimuat atau berbeda dari yang terakhir dimuat, tampilkan loading
+  // DAHULU agar data lama bulan/cabang lain tidak berkedip satu frame.
+  // Full GET tetap dijalankan oleh effect (bukan handler ini).
+  function handleOpenCalendar() {
+    const loadedContext =
+      loadedContextRef.current
+    const sameContext =
+      loadedContext !== null &&
+      loadedContext.year === period.year &&
+      loadedContext.month === period.month &&
+      loadedContext.cabang === cabangFilter
+    if (!sameContext) {
+      setLoading(true)
+    }
+    setCalendarOpen(true)
+  }
+
+  // Tutup kalender: data PERTAHANKAN (tidak direset) agar buka
+  // kembali dengan context yang sama tidak melakukan GET ulang.
+  function handleCloseCalendar() {
+    setCalendarOpen(false)
   }
 
   const monthLabel =
@@ -653,6 +720,68 @@ export function JadwalLiburPage() {
         title="Akses dibatasi"
         description="Halaman ini hanya tersedia untuk akun Central Cabang dan Central Pusat."
       />
+    )
+  }
+
+  // Tahap 4: selama kalender tertutup, jangan render konten kalender
+  // (CalendarGrid, legenda, keterangan, PDF) dan jangan memuat data.
+  if (!calendarOpen) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          monthLabel={monthLabel}
+          changeMonth={changeMonth}
+        />
+
+        {/* FILTER CABANG — HANYA CENTRAL PUSAT (dapat diubah saat tertutup) */}
+        {isCentralPusat && (
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold tracking-tight">
+                Cabang
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Pilih cabang untuk melihat jadwal liburnya.
+              </p>
+            </div>
+            <div className="w-full sm:w-60">
+              <SelectField
+                value={cabangFilter}
+                onChange={setCabangFilter}
+                options={[
+                  {
+                    value: "",
+                    label: "Semua Cabang",
+                  },
+                  ...branchOptions.map(
+                    (cabangId) => ({
+                      value: cabangId,
+                      label: cabangId,
+                    }),
+                  ),
+                ]}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+                Jadwal Libur
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Libur &amp; cuti karyawan per bulan.
+              </p>
+            </div>
+            <Button onClick={handleOpenCalendar}>
+              <Palmtree className="mr-2 size-4" />
+              LIHAT JADWAL LIBUR
+            </Button>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -1123,6 +1252,7 @@ export function JadwalLiburPage() {
         <PageHeader
           monthLabel={monthLabel}
           changeMonth={changeMonth}
+          onClose={handleCloseCalendar}
         />
 
         {isCentralPusat && (
@@ -1176,6 +1306,7 @@ export function JadwalLiburPage() {
         changeMonth={changeMonth}
         onDownload={handleDownloadPdf}
         pdfLoading={pdfLoading}
+        onClose={handleCloseCalendar}
       />
 
       {/* FILTER CABANG — HANYA CENTRAL PUSAT */}
@@ -1280,11 +1411,13 @@ function PageHeader({
   changeMonth,
   onDownload,
   pdfLoading,
+  onClose,
 }: {
   monthLabel: string
   changeMonth: (offset: number) => void
   onDownload?: () => void
   pdfLoading?: boolean
+  onClose?: () => void
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1331,6 +1464,14 @@ function PageHeader({
             {pdfLoading
               ? "Menyiapkan..."
               : "Simpan sebagai PDF"}
+          </Button>
+        )}
+        {onClose && (
+          <Button
+            variant="outline"
+            onClick={onClose}
+          >
+            Tutup
           </Button>
         )}
       </div>
