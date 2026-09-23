@@ -128,9 +128,10 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 // Perkiraan lebar teks (mm) untuk kebutuhan wrap dari sebuah label
-// kegiatan. Pendekatan lebar karakter rata-rata helvetica ±0,5 em.
+// kegiatan. Faktor 0,56 ≈ lebar rata-rata Helvetica BOLD (monospace ramping
+// tidak dipakai; konten kegiatan digambar bold). Margin ada di textWidthMm.
 function approximateTextWidth(text: string, fontSizePt: number) {
-  return text.length * fontSizePt * 0.3528 * 0.52
+  return text.length * fontSizePt * 0.3528 * 0.56
 }
 
 function wrapTextLines(text: string, maxWidthMm: number, fontSizePt: number): string[] {
@@ -336,7 +337,7 @@ function drawShiftBlock(
 //
 // Digambar manual agar:
 //   - label "Jadwal Kegiatan" membentang 2 baris di kolom kiri
-//   - kedua baris punya tinggi identik
+//   - tinggi tiap baris menyesuaikan jumlah baris teks (wrap, tanpa ellipsis)
 //   - grid vertikal sejajar persis dengan kolom tanggal blok shift
 // ------------------------------------------------------------
 
@@ -349,8 +350,43 @@ function drawActivityBlock(
   const dateWidth = (TABLE_WIDTH - KARYAWAN_WIDTH) / blockDays.length
   const left = MARGIN_X
   const right = left + KARYAWAN_WIDTH + blockDays.length * dateWidth
-  const rowHeight = ACTIVITY_ROW_HEIGHT
-  const totalHeight = rowHeight * 2
+  const fontSize = ACTIVITY_FONT_SIZE
+  const fontSizeMm = fontSize * 0.3528
+  // Tinggi satu baris teks (pt -> mm) dengan leading aman.
+  const lineHeight = fontSizeMm * 1.25
+  // Jarak baseline dari puncak baris teks (ascent Helvetica ±0,905 em),
+  // dipakai agar SELURUH glyph berada di dalam baris (tidak keluar/touching).
+  const ascentMm = fontSizeMm * 0.905
+  // Padding vertikal aman untuk baris multi-baris, agar glyph baris
+  // terakhir tidak menempel/menembus garis cell.
+  const PAD_Y = 1.5
+  const textWidthMm = dateWidth - 1.8
+
+  const rawRows: string[][] = [1, 2].map((row) =>
+    blockDays.map((day) => {
+      const tanggal = getDateKey(input.year, input.month, day)
+      return (input.getActivity(row as 1 | 2, tanggal) ?? "").trim()
+    }),
+  )
+
+  // Bungkus teks per cell sesuai lebar kolom (perilaku WEB: teks panjang
+  // turun ke baris berikutnya — TANPA ellipsis/pemotongan karakter).
+  const lineSets: string[][][] = rawRows.map((row) =>
+    row.map((teks) => {
+      if (!teks) return ["-"]
+      const lines = wrapTextLines(teks, textWidthMm, fontSize)
+      return lines.length > 0 ? lines : ["-"]
+    }),
+  )
+
+  // Tinggi baris: 1 baris -> tinggi normal (seperti sebelumnya);
+  // multi-baris -> jumlah baris x lineHeight + padding atas/bawah aman.
+  const rowHeights = lineSets.map((row) => {
+    const maxLines = Math.max(...row.map((lines) => lines.length))
+    if (maxLines <= 1) return ACTIVITY_ROW_HEIGHT
+    return maxLines * lineHeight + PAD_Y * 2
+  })
+  const totalHeight = rowHeights[0] + rowHeights[1]
 
   // Aman dari page-break: jika ruang sisa tidak cukup, pindah halaman.
   if (startY + totalHeight > PAGE_HEIGHT - MARGIN_BOTTOM) {
@@ -358,25 +394,16 @@ function drawActivityBlock(
     startY = MARGIN_TOP
   }
 
-  const fontSize = ACTIVITY_FONT_SIZE
-  const lineHeight = fontSize * 0.3528 * 1.25
-  const maxLines = Math.max(1, Math.floor((rowHeight - 1.2) / lineHeight))
-  const textWidthMm = dateWidth - 1.6
-
-  const rows: string[][] = [1, 2].map((row) =>
-    blockDays.map((day) => {
-      const tanggal = getDateKey(input.year, input.month, day)
-      return (input.getActivity(row as 1 | 2, tanggal) ?? "").trim()
-    }),
-  )
-
   // 1) latar + teks setiap sel kegiatan
+  let rowStart = startY
   for (let r = 0; r < 2; r++) {
+    const rowHeight = rowHeights[r]
     for (let c = 0; c < blockDays.length; c++) {
       const x = left + KARYAWAN_WIDTH + c * dateWidth
-      const y = startY + r * rowHeight
-      const teks = rows[r][c]
+      const y = rowStart
+      const teks = rawRows[r][c]
       const hasContent = teks.length > 0
+      const lines = lineSets[r][c]
 
       const fill = hasContent ? ACTIVITY_FILL : COLOR_WHITE
       doc.setFillColor(fill[0], fill[1], fill[2])
@@ -387,40 +414,31 @@ function drawActivityBlock(
       const color = hasContent ? ACTIVITY_TEXT : ACTIVITY_EMPTY_TEXT
       doc.setTextColor(color[0], color[1], color[2])
 
-      let lines = hasContent ? wrapTextLines(teks, textWidthMm, fontSize) : ["-"]
-      if (lines.length === 0) lines = ["-"]
-      if (lines.length > maxLines) {
-        lines = lines.slice(0, maxLines)
-        const lastIndex = lines.length - 1
-        const lastLine = lines[lastIndex]
-        lines[lastIndex] = lastLine.length > 1 ? `${lastLine.slice(0, -1)}…` : "…"
-      }
-
       const blockTop = y + (rowHeight - lines.length * lineHeight) / 2
       lines.forEach((line, lineIndex) => {
-        const lineCenter = blockTop + lineIndex * lineHeight + lineHeight / 2
-        doc.text(line, x + dateWidth / 2, lineCenter, { align: "center", baseline: "middle" })
+        const baseline = blockTop + lineIndex * lineHeight + ascentMm
+        doc.text(line, x + dateWidth / 2, baseline, { align: "center" })
       })
     }
+    rowStart += rowHeight
   }
 
-  // 2) label "Jadwal Kegiatan" membentang 2 baris
+  // 2) label "Jadwal Kegiatan" membentang kedua baris (tinggi menyesuaikan)
   doc.setFillColor(LABEL_FILL[0], LABEL_FILL[1], LABEL_FILL[2])
   doc.rect(left, startY, KARYAWAN_WIDTH, totalHeight, "F")
   doc.setFont("helvetica", "bold")
   doc.setFontSize(fontSize + 0.5)
   doc.setTextColor(COLOR_BLACK[0], COLOR_BLACK[1], COLOR_BLACK[2])
-  doc.text("Jadwal Kegiatan", left + 2, startY + rowHeight, { baseline: "middle" })
+  doc.text("Jadwal Kegiatan", left + 2, startY + totalHeight / 2, { baseline: "middle" })
 
   // 3) grid presisi (garis tipis, sejajar dari header sampai kegiatan)
   doc.setDrawColor(130, 130, 130)
   doc.setLineWidth(0.18)
-  for (let i = 0; i <= 2; i++) {
-    // Baris tengah hanya melintasi area kolom tanggal (jangan menembus
-    // label "Jadwal Kegiatan" yang membentang 2 baris di kolom kiri).
-    const gridStart = i === 1 ? left + KARYAWAN_WIDTH : left
-    doc.line(gridStart, startY + i * rowHeight, right, startY + i * rowHeight)
-  }
+  doc.line(left, startY, right, startY)
+  // Baris tengah hanya melintasi area kolom tanggal (jangan menembus
+  // label "Jadwal Kegiatan" yang membentang 2 baris di kolom kiri).
+  doc.line(left + KARYAWAN_WIDTH, startY + rowHeights[0], right, startY + rowHeights[0])
+  doc.line(left, startY + totalHeight, right, startY + totalHeight)
   const verticalXs: number[] = [left]
   for (let c = 0; c <= blockDays.length; c++) {
     verticalXs.push(left + KARYAWAN_WIDTH + c * dateWidth)
