@@ -442,10 +442,16 @@ export async function GET(
       >()
 
       // 1) Jadwal FINAL (schedules) sesuai scope + bulan.
+      //    Status LIBUR/CUTI difilter LANGSUNG di query (bukan
+      //    setelah data dibaca) agar dokumen berstatus selain
+      //    LIBUR/CUTI tidak ikut dibaca. Dokumen final non-LIBUR/
+      //    CUTI memang tidak pernah masuk recordByKey, sehingga
+      //    hasil akhir tetap identik dengan sebelum optimasi.
       let schedulesQuery =
         adminDb
           .collection("schedules")
           .where("storeId", "==", store.id)
+          .where("status", "in", ["libur", "cuti"])
 
       if (monthRange) {
         schedulesQuery =
