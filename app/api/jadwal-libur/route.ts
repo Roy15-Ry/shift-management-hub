@@ -241,6 +241,20 @@ export async function GET(
           )
       }
 
+      // Optimasi Tahap 3: batasi pembacaan ke periode bulan aktif
+      // langsung di Firestore (hanya bila bulanKey valid). Untuk
+      // bulanKey === null, query tetap tanpa filter bulan (perilaku
+      // lama dipertahankan). Filter bulan di memori di bawah tetap
+      // dipertahankan sehingga hasil akhir ekuivalen.
+      if (bulanKey !== null) {
+        keteranganRef =
+          keteranganRef.where(
+            "bulan",
+            "==",
+            bulanKey,
+          )
+      }
+
       const keteranganSnapshot =
         await keteranganRef.get()
 
