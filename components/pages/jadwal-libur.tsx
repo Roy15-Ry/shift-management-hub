@@ -1027,6 +1027,7 @@ export function JadwalLiburPage() {
       const params = new URLSearchParams({
         year: String(period.year),
         month: String(period.month),
+        fields: "keterangan",
       })
 
       if (isCentralPusat && cabangFilter) {

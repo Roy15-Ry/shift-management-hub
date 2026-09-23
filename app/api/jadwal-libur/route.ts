@@ -190,6 +190,112 @@ export async function GET(
     const month = Number(url.searchParams.get("month"))
 
     // =====================================================
+    // GET RINGAN — HANYA KETERANGAN (ADDITIVE)
+    //
+    // Mode "fields=keterangan" dipakai refreshKeterangan() di
+    // halaman JADWAL LIBUR setelah ADD/EDIT/DELETE Keterangan.
+    // Jalur ini TIDAK membaca stores, employees, schedules,
+    // maupun schedule_drafts. HANYA membaca collection
+    // jadwal-libur-keterangan dengan scope dan bulan yang
+    // ekuivalen dengan blok keterangan GET penuh di bawah.
+    //
+    // Authorization (users/{uid} + role check) sudah dilakukan
+    // pada kode di atas dan tetap berlaku di kedua jalur.
+    //
+    // NOTE: scope di bawah WAJIB mencerminkan blok keterangan
+    // GET penuh agar hasil keterangan tetap ekuivalen.
+    // =====================================================
+
+    const lightKeteranganOnly =
+      url.searchParams.get("fields") ===
+      "keterangan"
+
+    if (lightKeteranganOnly) {
+      const bulanKey =
+        Number.isInteger(year) &&
+        Number.isInteger(month) &&
+        month >= 0 &&
+        month <= 11
+          ? `${year}-${String(month + 1).padStart(2, "0")}`
+          : null
+
+      const userCabangId =
+        normalize(user.cabangId)
+
+      // STORE / CENTRAL CABANG: persempit query ke cabang user.
+      // CENTRAL PUSAT: baca seluruh keterangan (kewenangan pusat).
+      let keteranganRef:
+        FirebaseFirestore.Query =
+        adminDb
+          .collection("jadwal-libur-keterangan")
+
+      if (
+        !isCentralPusat &&
+        userCabangId
+      ) {
+        keteranganRef =
+          keteranganRef.where(
+            "cabangId",
+            "==",
+            userCabangId,
+          )
+      }
+
+      const keteranganSnapshot =
+        await keteranganRef.get()
+
+      // Scope keterangan:
+      // - CENTRAL PUSAT "Semua Cabang" -> semua keterangan tiap cabang
+      // - CENTRAL PUSAT cabang terpilih -> hanya cabang tersebut
+      // - CENTRAL CABANG / STORE      -> hanya cabang akunnya
+      const keteranganScopeIsPusatAll =
+        isCentralPusat &&
+        (!cabangFilter ||
+          cabangFilter === "ALL")
+
+      const keteranganMatchesBranch = (
+        itemCabang: string,
+      ) => {
+        if (keteranganScopeIsPusatAll) {
+          return true
+        }
+        if (isCentralPusat) {
+          return itemCabang === cabangFilter
+        }
+        return itemCabang === userCabangId
+      }
+
+      const keterangan =
+        keteranganSnapshot.docs
+          .map((doc) => {
+            const data = doc.data()
+
+            return {
+              id: doc.id,
+              jenis: data.jenis ?? "",
+              teks: data.teks ?? "",
+              bulan: data.bulan ?? "",
+              tanggal: data.tanggal ?? "",
+              cabangId: normalize(data.cabangId),
+            }
+          })
+          .filter(
+            (item) =>
+              (!bulanKey ||
+                item.bulan === bulanKey) &&
+              keteranganMatchesBranch(
+                item.cabangId,
+              ),
+          )
+
+      return NextResponse.json({
+        success: true,
+        isCentralPusat,
+        keterangan,
+      })
+    }
+
+    // =====================================================
     // AMBIL TOKO SESUAI SCOPE ROLE
     // =====================================================
 
