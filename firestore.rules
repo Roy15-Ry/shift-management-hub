@@ -153,6 +153,56 @@ service cloud.firestore {
     }
 
     // =====================================================
+    // ADDITIONAL SELLING — PENCATATAN
+    //
+    // Data pencatatan Additional Selling. Seluruh mutation
+    // dilakukan melalui server (Admin SDK) seperti pola
+    // revisi/schedules, sehingga write klien ditutup.
+    // =====================================================
+
+    match /additional_selling/{recordId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat() ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // ADDITIONAL SELLING — TARGET BULANAN PER EMPLOYEE
+    // =====================================================
+
+    match /additional_selling_targets/{targetId} {
+
+      allow read: if isSignedIn()
+        && (
+          (
+            isStore()
+            && resource.data.storeId == userData().storeId
+          )
+          ||
+          isCentralPusat() ||
+          (
+            isCentralCabang()
+            && resource.data.cabangId == userData().cabangId
+          )
+        );
+
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
     // HISTORY
     // =====================================================
 

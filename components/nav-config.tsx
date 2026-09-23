@@ -6,6 +6,7 @@ import {
   History,
   Palmtree,
   UsersRound,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react"
 import type { PageKey } from "@/components/app-context"
@@ -106,6 +107,33 @@ export const STORE_NAV_ITEMS: NavItem[] = [
 
 /*
  * =====================================================
+ * PROGRAM KERJA — GRUP MENU (NESTED)
+ * =====================================================
+ *
+ * Grup menu bersarang "PROGRAM KERJA". Saat ini berisi satu
+ * submenu ADDITIONAL SELLING. Grup ditambahkan secara minimal
+ * HANYA untuk kebutuhan fitur ini; item menu existing lain
+ * (CENTRAL_NAV_ITEMS / STORE_NAV_ITEMS) tidak diubah.
+ *
+ * Sidebar merender grup ini setelah menu utama per role dan
+ * menampilkan submenu hanya ketika grup diklik (collapse).
+ */
+export const PROGRAM_KERJA_GROUP: {
+  label: string
+  items: NavItem[]
+} = {
+  label: "PROGRAM KERJA",
+  items: [
+    {
+      key: "additional-selling",
+      label: "ADDITIONAL SELLING",
+      icon: TrendingUp,
+    },
+  ],
+}
+
+/*
+ * =====================================================
  * JUDUL HALAMAN
  * =====================================================
  */
@@ -119,4 +147,5 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   "shift-cabang": "SHIFT CABANG",
   history: "HISTORY",
   "jadwal-libur": "JADWAL LIBUR",
+  "additional-selling": "ADDITIONAL SELLING",
 }

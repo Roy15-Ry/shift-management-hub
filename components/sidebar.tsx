@@ -1,11 +1,13 @@
 "use client"
 
-import { CalendarClock, X } from "lucide-react"
+import * as React from "react"
+import { CalendarClock, ChevronDown, FolderOpen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
 import {
   CENTRAL_NAV_ITEMS,
+  PROGRAM_KERJA_GROUP,
   STORE_NAV_ITEMS,
 } from "@/components/nav-config"
 
@@ -43,6 +45,27 @@ function SidebarContent({
     : role === "store"
       ? STORE_NAV_ITEMS
       : CENTRAL_NAV_ITEMS
+
+  /*
+   * =====================================================
+   * SUBMENU PROGRAM KERJA
+   * =====================================================
+   *
+   * Grup bersarang minimal HANYA untuk Additional Selling.
+   * Terbuka saat grup diklik, atau otomatis terbuka ketika
+   * halaman aktif berada di dalam grup.
+   */
+  const [programOpen, setProgramOpen] =
+    React.useState(false)
+
+  React.useEffect(() => {
+    if (page === "additional-selling") {
+      setProgramOpen(true)
+    }
+  }, [page])
+
+  const programActive =
+    page === "additional-selling"
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -123,6 +146,66 @@ function SidebarContent({
             </button>
           )
         })}
+
+        {/* PROGRAM KERJA — SUBMENU NESTED */}
+        <div className="pt-1">
+          <button
+            type="button"
+            aria-expanded={programOpen}
+            onClick={() =>
+              setProgramOpen((current) => !current)
+            }
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <FolderOpen className="size-[18px] shrink-0" />
+
+            <span className="flex-1 text-left">
+              {PROGRAM_KERJA_GROUP.label}
+            </span>
+
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-200",
+                programOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          {programOpen && (
+            <div className="mt-1 space-y-1 pl-8">
+              {PROGRAM_KERJA_GROUP.items.map((item) => {
+                const active = page === item.key
+                const Icon = item.icon
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    aria-current={
+                      active ? "page" : undefined
+                    }
+                    onClick={() => {
+                      setPage(item.key)
+                      onNavigate?.()
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    )}
+                  >
+                    <Icon className="size-[18px] shrink-0" />
+
+                    <span className="flex-1 text-left">
+                      {item.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </nav>
     </div>
   )

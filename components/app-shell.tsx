@@ -20,6 +20,7 @@ import { ShiftPage, ShiftCabangPage } from "@/components/pages/shift"
 import { HistoryPage } from "@/components/pages/history"
 import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
 import { JadwalLiburPage } from "@/components/pages/jadwal-libur"
+import { AdditionalSellingPage } from "@/components/pages/additional-selling"
 
 function PageContent() {
   const { page, setPage } = useApp()
@@ -45,6 +46,7 @@ function PageContent() {
     "shift-cabang",
     "history",
     "pengaturan",
+    "additional-selling",
   ]
 
   if (
@@ -81,6 +83,9 @@ function PageContent() {
 
     case "jadwal-libur":
       return <JadwalLiburPage />
+
+    case "additional-selling":
+      return <AdditionalSellingPage />
 
     default:
       return null
