@@ -183,6 +183,33 @@ export async function GET(
         : null
 
     // =====================================================
+    // ENFORCEMENT — CENTRAL PUSAT WAJIB MEMILIH SATU CABANG
+    //
+    // Central Pusat TIDAK boleh membaca data operasional untuk
+    // seluruh cabang. Request tanpa cabang, cabang kosong, "ALL",
+    // maupun "__ALL__" ditolak 400 SEBELUM query operasional
+    // dijalankan (berlaku untuk full GET dan fields=keterangan).
+    // Non-pusat tidak terpengaruh (cabangFilter di atas null).
+    // =====================================================
+    if (
+      isCentralPusat &&
+      (
+        !cabangFilter ||
+        cabangFilter === "ALL" ||
+        cabangFilter === "__ALL__"
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Central Pusat wajib memilih satu cabang untuk melihat jadwal libur.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // =====================================================
     // PARAMETER TAMBAHAN (HANYA FILTER SETELAH OTORISASI)
     // =====================================================
 

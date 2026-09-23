@@ -413,7 +413,7 @@ export function JadwalLiburPage() {
     })
 
   // Filter cabang HANYA untuk CENTRAL PUSAT.
-  // "" = Semua Cabang; selain itu = cabang terpilih.
+  // "" = belum memilih cabang; selain itu = cabang terpilih.
   const [cabangFilter, setCabangFilter] =
     React.useState("")
   // Daftar cabang untuk dropdown CENTRAL PUSAT.
@@ -751,7 +751,7 @@ export function JadwalLiburPage() {
                 options={[
                   {
                     value: "",
-                    label: "Semua Cabang",
+                    label: "Pilih Cabang",
                   },
                   ...branchOptions.map(
                     (cabangId) => ({
@@ -775,7 +775,10 @@ export function JadwalLiburPage() {
                 Libur &amp; cuti karyawan per bulan.
               </p>
             </div>
-            <Button onClick={handleOpenCalendar}>
+            <Button
+              onClick={handleOpenCalendar}
+              disabled={isCentralPusat && !cabangFilter}
+            >
               <Palmtree className="mr-2 size-4" />
               LIHAT JADWAL LIBUR
             </Button>
@@ -1272,7 +1275,7 @@ export function JadwalLiburPage() {
                 options={[
                   {
                     value: "",
-                    label: "Semua Cabang",
+                    label: "Pilih Cabang",
                   },
                   ...branchOptions.map(
                     (cabangId) => ({
@@ -1328,7 +1331,7 @@ export function JadwalLiburPage() {
               options={[
                 {
                   value: "",
-                  label: "Semua Cabang",
+                  label: "Pilih Cabang",
                 },
                 ...branchOptions.map(
                   (cabangId) => ({
