@@ -1208,6 +1208,234 @@ export async function POST(
     }
 
     // ========================================================
+    // MODE: FINAL-DELETE
+    //
+    // Menghapus SCHEDULE FINAL (collection "schedules").
+    //
+    //   - CELL:  body { employeeId, tanggal } → hapus SATU
+    //            dokumen (storeId + tanggal + employeeId).
+    //   - BULAN: body { year, month } → hapus SELURUH dokumen
+    //            schedules bulan tersebut milik store akun.
+    //
+    // storeId/cabangId berasal dari akun terautentikasi (bukan
+    // body). HANYA store yang boleh — Central Cabang/Pusat tidak
+    // memiliki akses ke endpoint ini. Rules schedules tetap
+    // client-write false; delete dilakukan via Admin SDK.
+    // Status "Selesai" adalah fase UI; tidak ada field status
+    // dihapus karena definisinya tidak diubah.
+    // ========================================================
+
+    if (
+      mode === "final-delete"
+    ) {
+      const hasCell =
+        body?.tanggal != null &&
+        body?.employeeId != null
+
+      const hasMonth =
+        body?.year != null &&
+        body?.month != null
+
+      if (
+        !hasCell &&
+        !hasMonth
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Parameter (employeeId + tanggal) atau (year + month) wajib diisi.",
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+      if (hasCell) {
+        const employeeId =
+          String(
+            body?.employeeId ?? "",
+          ).trim()
+
+        const tanggal =
+          String(
+            body?.tanggal ?? "",
+          ).trim()
+
+        if (
+          !employeeId
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "employeeId wajib diisi.",
+            },
+            {
+              status: 400,
+            },
+          )
+        }
+
+        if (
+          !isValidDateISO(tanggal)
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "Tanggal tidak valid.",
+            },
+            {
+              status: 400,
+            },
+          )
+        }
+
+        // Identitas dokumen final deterministik: satu dokumen
+        // per sel (store + tanggal + employee). Hanya sel yang
+        // sesuai yang dihapus — karyawan/tanggal lain aman.
+        const docId =
+          scheduleId(
+            storeId,
+            tanggal,
+            employeeId,
+          )
+
+        await adminDb
+          .collection("schedules")
+          .doc(docId)
+          .delete()
+
+        return NextResponse.json({
+          success: true,
+          message:
+            "Jadwal final sel berhasil dihapus.",
+          deleted: 1,
+        })
+      }
+
+      // ----- FINAL-DELETE BULAN -----
+
+      const year =
+        Number(
+          body?.year,
+        )
+
+      const month =
+        Number(
+          body?.month,
+        )
+
+      // bulan dalam POST: 0-11
+      if (
+        !Number.isInteger(year) ||
+        !Number.isInteger(month) ||
+        month < 0 ||
+        month > 11
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Parameter year dan month wajib diisi.",
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+      // Periode bulan target: [start, end)
+      const nextMonth =
+        month === 11
+          ? month + 1 - 12
+          : month + 1
+
+      const nextYear =
+        month === 11
+          ? year + 1
+          : year
+
+      const start =
+        `${year}-${String(
+          month + 1,
+        ).padStart(2, "0")}-01`
+
+      const end =
+        `${nextYear}-${String(
+          nextMonth + 1,
+        ).padStart(2, "0")}-01`
+
+      const snapshot =
+        await adminDb
+          .collection("schedules")
+          .where(
+            "storeId",
+            "==",
+            storeId,
+          )
+          .where(
+            "tanggal",
+            ">=",
+            start,
+          )
+          .where(
+            "tanggal",
+            "<",
+            end,
+          )
+          .get()
+
+      const docs =
+        snapshot.docs.filter(
+          (frame) =>
+            frame.data()
+              ?.cabangId ===
+            cabangId,
+        )
+
+      // Batas batch Firestore: 500 operasi. Hapus dalam chunk
+      // aman agar jumlah dokumen besar tidak melampaui limit.
+      let deleted = 0
+
+      for (
+        let offset = 0;
+        offset < docs.length;
+        offset += 499
+      ) {
+        const chunk =
+          docs.slice(
+            offset,
+            offset + 499,
+          )
+
+        const batch =
+          adminDb.batch()
+
+        for (
+          const frame of chunk
+        ) {
+          batch.delete(
+            frame.ref,
+          )
+        }
+
+        await batch.commit()
+        deleted +=
+          chunk.length
+      }
+
+      return NextResponse.json({
+        success: true,
+        message:
+          "Jadwal final bulan ini berhasil dihapus.",
+        deleted,
+      })
+    }
+
+    // ========================================================
     // MODE TIDAK DIKENAL
     // ========================================================
 

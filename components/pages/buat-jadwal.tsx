@@ -910,17 +910,57 @@ export function BuatJadwalPage() {
     const key = getCellKey(employeeId, tanggal)
     const hasSavedDraft =
       savedDraftByCell.has(key)
+    const hasFinal =
+      savedScheduleByCell.has(key)
 
-    // Hanya lakukan Firestore DELETE jika draft cell sudah
-    // tersimpan di schedule_drafts. Jika belum, cukup update
-    // state lokal (tanpa Firestore write).
-    if (hasSavedDraft) {
-      if (!user || !storeId) return
-      setSaving(true)
-      setActionError("")
-      try {
-        const idToken = await user.getIdToken()
-        const response = await fetch(
+    // Sel benar-benar kosong: cukup update state lokal,
+    // tanpa Firestore write.
+    if (!hasSavedDraft && !hasFinal) {
+      removeCell(key)
+      setPhase((p) => (p === "Selesai" ? p : "Draft"))
+      setMessage("Cell dikosongkan.")
+      setStatusKhususTarget(null)
+      return
+    }
+
+    if (!user || !storeId) return
+    setSaving(true)
+    setActionError("")
+    try {
+      const idToken = await user.getIdToken()
+
+      // Sel berisi jadwal FINAL (Selesai): hapus SATU dokumen
+      // schedule final untuk storeId + tanggal + employeeId.
+      if (hasFinal) {
+        const finalResponse = await fetch(
+          "/api/store/schedule?mode=final-delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ employeeId, tanggal }),
+          },
+        )
+        const finalData = await finalResponse.json()
+        if (!finalResponse.ok || !finalData.success) {
+          throw new Error(finalData?.message ?? "Gagal membatalkan pilihan.")
+        }
+        // Hanya setelah DELETE berhasil, buang jadwal final dari
+        // state agar cell menjadi kosong.
+        setSchedules((current) =>
+          current.filter(
+            (schedule) =>
+              !(schedule.employeeId === employeeId && schedule.tanggal === tanggal),
+          ),
+        )
+      }
+
+      // Sel juga/faktual berisi draft tersimpan di schedule_drafts:
+      // gunakan flow draft-delete existing.
+      if (hasSavedDraft) {
+        const draftResponse = await fetch(
           "/api/store/schedule?mode=draft-delete",
           {
             method: "POST",
@@ -931,9 +971,9 @@ export function BuatJadwalPage() {
             body: JSON.stringify({ employeeId, tanggal }),
           },
         )
-        const data = await response.json()
-        if (!response.ok || !data.success) {
-          throw new Error(data?.message ?? "Gagal membatalkan pilihan.")
+        const draftData = await draftResponse.json()
+        if (!draftResponse.ok || !draftData.success) {
+          throw new Error(draftData?.message ?? "Gagal membatalkan pilihan.")
         }
         // Hanya setelah DELETE berhasil, buang draft dari state
         // tersimpan agar savedDraftByCell ikut berubah.
@@ -943,21 +983,26 @@ export function BuatJadwalPage() {
               !(draft.employeeId === employeeId && draft.tanggal === tanggal),
           ),
         )
-      } catch (deleteError) {
-        console.error("Failed to delete draft:", deleteError)
-        setActionError(
-          deleteError instanceof Error ? deleteError.message : "Gagal membatalkan pilihan.",
-        )
-        return
-      } finally {
-        setSaving(false)
       }
-    }
 
-    removeCell(key)
-    setPhase((p) => (p === "Selesai" ? p : "Draft"))
-    setMessage(hasSavedDraft ? "Draft dibatalkan." : "Cell dikosongkan.")
-    setStatusKhususTarget(null)
+      removeCell(key)
+      setPhase((p) => (p === "Selesai" ? p : "Draft"))
+      setMessage(
+        hasFinal && hasSavedDraft
+          ? "Jadwal final dan draft dibatalkan."
+          : hasFinal
+            ? "Jadwal final sel dibatalkan."
+            : "Draft dibatalkan.",
+      )
+      setStatusKhususTarget(null)
+    } catch (deleteError) {
+      console.error("Failed to delete schedule:", deleteError)
+      setActionError(
+        deleteError instanceof Error ? deleteError.message : "Gagal membatalkan pilihan.",
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   function chooseStatusKhusus(statusKhusus: StatusKhusus) {
@@ -1186,6 +1231,34 @@ export function BuatJadwalPage() {
     setActionError("")
     try {
       const idToken = await user.getIdToken()
+
+      // Jika bulan ini berstatus Selesai (ada jadwal final),
+      // hapus SELURUH dokumen schedules bulan ini untuk store
+      // ini. Setelah berhasil, state schedules dikosongkan agar
+      // refresh tidak menghidupkan kembali data yang sudah dihapus.
+      const hasFinal = schedules.length > 0
+
+      if (hasFinal) {
+        const finalResponse = await fetch(
+          "/api/store/schedule?mode=final-delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ year: period.year, month: period.month }),
+          },
+        )
+        const finalData = await finalResponse.json()
+        if (!finalResponse.ok || !finalData.success) {
+          throw new Error(finalData?.message ?? "Gagal mengosongkan jadwal final.")
+        }
+        setSchedules([])
+      }
+
+      // Flow draft-clear existing tetap berjalan: menghapus draft
+      // (schedule_drafts + schedule_activity_drafts) bulan ini.
       const response = await fetch(
         "/api/store/schedule?mode=draft-clear",
         {
@@ -1207,12 +1280,12 @@ export function BuatJadwalPage() {
       setSavedActivityDrafts([])
       setActivityChanges({})
       if (storeId) clearLocalActivities(activityDraftKey(storeId, period.year, period.month))
-      setPhase(schedules.length > 0 ? "Selesai" : "Belum dibuat")
-      setMessage("Draft jadwal berhasil dikosongkan.")
+      setPhase("Belum dibuat")
+      setMessage(hasFinal ? "Jadwal bulan ini berhasil dikosongkan." : "Draft jadwal berhasil dikosongkan.")
     } catch (clearError) {
-      console.error("Failed to clear draft schedule:", clearError)
+      console.error("Failed to clear schedule:", clearError)
       setActionError(
-        clearError instanceof Error ? clearError.message : "Gagal mengosongkan draft jadwal.",
+        clearError instanceof Error ? clearError.message : "Gagal mengosongkan jadwal.",
       )
       setMessage("")
     } finally {
@@ -1831,7 +1904,11 @@ export function BuatJadwalPage() {
         open={showKosongkanConfirm}
         onClose={() => setShowKosongkanConfirm(false)}
         title="KOSONGKAN JADWAL?"
-        description="Seluruh pilihan jadwal pada draft bulan ini akan dikosongkan. Jadwal yang sudah selesai/final tidak akan diubah."
+        description={
+          schedules.length > 0
+            ? "Jadwal bulan ini sudah selesai. Kosongkan Jadwal akan menghapus seluruh jadwal shift pada bulan ini. Tindakan ini tidak dapat dibatalkan. Lanjutkan?"
+            : "Seluruh pilihan jadwal pada draft bulan ini akan dikosongkan."
+        }
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowKosongkanConfirm(false)}>
