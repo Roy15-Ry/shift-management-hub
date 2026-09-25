@@ -11,6 +11,7 @@ import {
   Loader2,
   Send,
   Store as StoreIcon,
+  Trash2,
   UserPlus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -568,11 +569,22 @@ function RevisiCard({
   canProcess,
   onProcess,
   processing,
+  onCancel,
+  canceling,
 }: {
   item: Revisi
   canProcess: boolean
   onProcess: (id: string) => void
   processing: boolean
+  /*
+   * BATALKAN PENGAJUAN — opsional.
+   *
+   * Hanya diisi oleh list STORE. Karena tombol dirender hanya
+   * bila onCancel tersedia, Central Cabang dan Central Pusat
+   * tidak pernah memperoleh tombol pembatalan.
+   */
+  onCancel?: (id: string) => void
+  canceling?: boolean
 }) {
   const jenis =
     getRevisiJenisItem(item.jenisRevisi)
@@ -682,6 +694,27 @@ function RevisiCard({
                 "BARU"
                   ? "Proses"
                   : "Selesai"}
+              </Button>
+            )}
+
+          {/* BATALKAN PENGAJUAN — hanya BARU, hanya list Store */}
+          {onCancel &&
+            item.status ===
+              "BARU" && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={canceling}
+                onClick={() =>
+                  onCancel(item.id)
+                }
+              >
+                {canceling ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                Batalkan Pengajuan
               </Button>
             )}
         </div>
@@ -1062,11 +1095,55 @@ function StoreSubmissions({
   isLoading: boolean
   monthLabel: string
 }) {
+  const { cancelRevisi } = useApp()
+
+  const [cancelingId, setCancelingId] =
+    React.useState<string | null>(null)
+
+  const [confirmId, setConfirmId] =
+    React.useState<string | null>(null)
+
+  const [error, setError] =
+    React.useState("")
+
+  const [success, setSuccess] =
+    React.useState("")
+
   const sorted = [...revisi].sort((a, b) =>
     b.tanggalPengajuan.localeCompare(
       a.tanggalPengajuan,
     ),
   )
+
+  const confirmItem =
+    sorted.find((r) => r.id === confirmId)
+
+  async function handleConfirmCancel() {
+    if (!confirmId) {
+      return
+    }
+
+    setError("")
+    setSuccess("")
+    setCancelingId(confirmId)
+
+    try {
+      await cancelRevisi(confirmId)
+
+      setSuccess(
+        "Pengajuan revisi berhasil dibatalkan.",
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Pengajuan revisi gagal dibatalkan. Silakan coba lagi.",
+      )
+    } finally {
+      setCancelingId(null)
+      setConfirmId(null)
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -1085,6 +1162,18 @@ function StoreSubmissions({
         </div>
       </div>
 
+      {error && (
+        <p className="rounded-lg border border-status-sakit/25 bg-status-sakit-bg px-3 py-2 text-sm text-status-sakit">
+          {error}
+        </p>
+      )}
+
+      {success && (
+        <p className="rounded-lg border border-status-pagi/25 bg-status-pagi-bg px-3 py-2 text-sm text-status-pagi">
+          {success}
+        </p>
+      )}
+
       {isLoading ? (
         <LoadingState label="Memuat pengajuan..." />
       ) : sorted.length === 0 ? (
@@ -1102,10 +1191,59 @@ function StoreSubmissions({
               canProcess={false}
               onProcess={() => {}}
               processing={false}
+              onCancel={setConfirmId}
+              canceling={
+                cancelingId === r.id
+              }
             />
           ))}
         </div>
       )}
+
+      {/* KONFIRMASI PEMBATALAN SATU PENGAJUAN */}
+      <Modal
+        open={confirmItem !== undefined}
+        onClose={() =>
+          setConfirmId(null)
+        }
+        title="Batalkan pengajuan ini?"
+        description={
+          confirmItem
+            ? `Pengajuan revisi untuk ${confirmItem.employeeName} pada tanggal ${confirmItem.tanggal} akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setConfirmId(null)
+              }
+              disabled={
+                cancelingId !== null
+              }
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={
+                handleConfirmCancel
+              }
+              disabled={
+                cancelingId !== null
+              }
+            >
+              {cancelingId !==
+              null ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Ya, Batalkan"
+              )}
+            </Button>
+          </>
+        }
+      />
     </section>
   )
 }

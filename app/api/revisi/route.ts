@@ -878,3 +878,232 @@ export async function PATCH(
     )
   }
 }
+
+// ============================================================
+// DELETE
+// Membatalkan SATU pengajuan revisi absensi (khusus STORE).
+//
+// Pembatalan memakai HARD DELETE terhadap SATU dokumen revisi
+// yang dipilih. Pengajuan lain tidak tersentuh.
+//
+// Aturan:
+//   - Hanya akun STORE.
+//   - Hanya pengajuan milik toko store tersebut.
+//   - Hanya status BARU. PROSES dan SELESAI ditolak.
+// ============================================================
+
+export async function DELETE(
+  request: Request,
+) {
+  try {
+    const {
+      role,
+      data: userData,
+    } =
+      await getAuthenticatedUser(
+        request,
+      )
+
+    if (!isStoreRole(role)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Hanya akun Store yang dapat membatalkan pengajuan revisi.",
+        },
+        { status: 403 },
+      )
+    }
+
+    // storeId selalu diambil dari akun, bukan dari body request.
+    const storeId =
+      cleanString(
+        userData?.storeId,
+        100,
+      )
+
+    if (!storeId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Akun Store belum memiliki data toko yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    let body: Record<
+      string,
+      unknown
+    >
+    try {
+      body =
+        (await request.json()) as Record<
+          string,
+          unknown
+        >
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Body request tidak valid.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Client hanya mengirim SATU identifier dokumen.
+    const id =
+      cleanString(
+        body?.id,
+        200,
+      )
+
+    if (!id) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Data revisi tidak valid.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Hanya dokumen tunggal yang diambil dan dihapus.
+    // Tidak ada query massal dan tidak ada DELETE di
+    // collection lain.
+    const docRef =
+      adminDb
+        .collection("revisi")
+        .doc(id)
+
+    const docSnapshot =
+      await docRef.get()
+
+    if (!docSnapshot.exists) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Pengajuan revisi tidak ditemukan.",
+        },
+        { status: 404 },
+      )
+    }
+
+    const docData =
+      docSnapshot.data() ?? {}
+
+    // =====================================================
+    // KEPEMILIKAN
+    //
+    // Pengajuan hanya boleh dibatalkan oleh STORE yang
+    // memiliki dokumen tersebut.
+    // =====================================================
+
+    const docStoreId =
+      cleanString(
+        docData?.storeId,
+        100,
+      )
+
+    if (
+      !docStoreId ||
+      docStoreId !== storeId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Pengajuan revisi bukan milik toko Anda.",
+        },
+        { status: 403 },
+      )
+    }
+
+    // =====================================================
+    // STATUS
+    //
+    // Hanya status BARU yang boleh dibatalkan. PROSES dan
+    // SELESAI ditolak.
+    // =====================================================
+
+    const currentStatus =
+      cleanString(
+        docData?.status,
+        20,
+      )
+
+    if (currentStatus !== "BARU") {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Hanya pengajuan dengan status BARU yang dapat dibatalkan.",
+        },
+        { status: 400 },
+      )
+    }
+
+    await docRef.delete()
+
+    return NextResponse.json(
+      {
+        success: true,
+        message:
+          "Pengajuan revisi berhasil dibatalkan.",
+      },
+    )
+  } catch (error) {
+    const code =
+      error instanceof Error &&
+      error.message
+        ? error.message
+        : ""
+
+    if (
+      code === "AUTH_REQUIRED"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Anda harus login terlebih dahulu.",
+        },
+        { status: 401 },
+      )
+    }
+
+    if (
+      code === "FORBIDDEN" ||
+      code ===
+        "USER_PROFILE_NOT_FOUND"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Akses ditolak.",
+        },
+        { status: 403 },
+      )
+    }
+
+    console.error(
+      "Gagal membatalkan revisi:",
+      error,
+    )
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Pengajuan revisi gagal dibatalkan. Silakan coba lagi.",
+      },
+      { status: 500 },
+    )
+  }
+}

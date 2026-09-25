@@ -62,6 +62,12 @@ type AppContextValue = {
 
   isCreatingRevisi: boolean
 
+  cancelRevisi: (
+    id: string,
+  ) => Promise<void>
+
+  isCancellingRevisi: boolean
+
   pendingRevisiCount: number
 
   sidebarCollapsed: boolean
@@ -456,6 +462,9 @@ export function AppProvider({
   const [isCreatingRevisi, setIsCreatingRevisi] =
     React.useState(false)
 
+  const [isCancellingRevisi, setIsCancellingRevisi] =
+    React.useState(false)
+
   const [isBatchProcessing, setIsBatchProcessing] =
     React.useState(false)
 
@@ -752,6 +761,82 @@ export function AppProvider({
     )
 
   // ============================================================
+  // CANCEL REVISI
+  // ============================================================
+  //
+  // Membatalkan SATU pengajuan milik store yang sedang login
+  // (validasi store dilakukan di server). Setelah server
+  // mengonfirmasi berhasil, item tersebut langsung dihapus dari
+  // state lokal sehingga tidak perlu refresh ulang.
+
+  const cancelRevisi =
+    React.useCallback(
+      async (id: string) => {
+        if (!user) {
+          throw new Error(
+            "Anda harus login terlebih dahulu.",
+          )
+        }
+
+        setIsCancellingRevisi(true)
+
+        try {
+          const idToken =
+            await user.getIdToken()
+
+          const response =
+            await fetch(
+              "/api/revisi",
+              {
+                method: "DELETE",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                  id,
+                }),
+              },
+            )
+
+          const result =
+            (await response.json()) as {
+              success?: boolean
+              message?: string
+            }
+
+          if (
+            !response.ok ||
+            !result?.success
+          ) {
+            throw new Error(
+              result?.message ??
+                "Pengajuan revisi gagal dibatalkan.",
+            )
+          }
+
+          setRevisi(
+            (prev) =>
+              prev.filter(
+                (item) => item.id !== id,
+              ),
+          )
+        } catch (error) {
+          console.error(
+            "Gagal membatalkan revisi:",
+            error,
+          )
+
+          throw error
+        } finally {
+          setIsCancellingRevisi(false)
+        }
+      },
+      [user],
+    )
+
+  // ============================================================
   // ADVANCE ALL REVISI
   // ============================================================
 
@@ -863,6 +948,9 @@ export function AppProvider({
 
     createRevisi,
     isCreatingRevisi,
+
+    cancelRevisi,
+    isCancellingRevisi,
 
     pendingRevisiCount,
 
