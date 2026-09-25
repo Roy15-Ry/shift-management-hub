@@ -5,8 +5,10 @@ import {
   ChevronLeft,
   ChevronRight,
   HandCoins,
+  Package,
   PenLine,
   Plus,
+  Sparkles,
   Target,
   Trash2,
   TrendingUp,
@@ -30,25 +32,128 @@ import { getFirestoreEmployees } from "@/lib/firestore-data"
 import type { FirestoreEmployee } from "@/lib/firestore-data"
 
 // ============================================================
-// ADDITIONAL SELLING
+// TARGET PENJUALAN
 //
-// PROGRAM KERJA -> ADDITIONAL SELLING
-//   - DASHBOARD PROGRAM  : total pencapaian, total target,
-//                          progress keseluruhan, progress per
-//                          karyawan (periode -> bulan).
-//   - INFORMASI PROGRAM  : konten statis (tujuan, goals, skema,
-//                          panduan, rumus, prinsip).
-//   - PENCATATAN         : tabel pencatatan + filter + tambah /
-//                          edit / hapus (khusus STORE) + total.
+// PROGRAM KERJA -> TARGET PENJUALAN
+//   - DASHBOARD PROGRAM : tiga dashboard terpisah sesuai jenis
+//                         target. Setiap dashboard punya total
+//                         target, total realisasi, progress, dan
+//                         rincian per karyawan.
+//   - HISTORY           : riwayat realisasi LOKAL modul ini,
+//                         mencakup tiga jenis penjualan.
 //
 // SCOPE:
-//   STORE          -> hanya tokonya sendiri (form aktif).
+//   STORE          -> hanya tokonya sendiri. Dapat membuat /
+//                     mengubah TARGET dan mencatat REALISASI.
 //   CENTRAL CABANG -> hanya cabangnya sendiri (read-only).
 //   CENTRAL PUSAT  -> wajib memilih SATU cabang (read-only).
 //
-// Data dimuat melalui server (Admin SDK). Employee data dibaca
-// langsung (getFirestoreEmployees) hanya untuk akun STORE.
+// Data dimuat melalui server (Admin SDK). Employee hanya dibaca
+// langsung (getFirestoreEmployees) untuk akun STORE.
 // ============================================================
+
+// ============================================================
+// KONSTANTA
+// ============================================================
+
+const JENIS_LIST = [
+  "ADDITIONAL_SELLING",
+  "UPSIZE_BOTOL",
+  "SELLING_EKSKLUSIF_PERFUME",
+] as const
+
+type PenjualanJenis = (typeof JENIS_LIST)[number]
+
+const UKURAN_BOTOL_LIST = ["55 ML", "100 ML"] as const
+const PRODUK_LIST = ["PAX", "FEEL BETTER", "LAINNYA"] as const
+
+type UkuranBotol = (typeof UKURAN_BOTOL_LIST)[number]
+type Produk = (typeof PRODUK_LIST)[number]
+
+const JENIS_LABEL: Record<PenjualanJenis, string> = {
+  ADDITIONAL_SELLING: "Additional Selling",
+  UPSIZE_BOTOL: "Upsize Botol",
+  SELLING_EKSKLUSIF_PERFUME: "Selling Eksklusif Perfume",
+}
+
+const JENIS_PLURAL: Record<PenjualanJenis, string> = {
+  ADDITIONAL_SELLING: "Additional Selling",
+  UPSIZE_BOTOL: "Upsize Botol",
+  SELLING_EKSKLUSIF_PERFUME: "Perfume",
+}
+
+// Satuan nilai per jenis. Additional Selling memakai Rupiah,
+// dua jenis lainnya memakai PCS.
+const JENIS_UNIT: Record<PenjualanJenis, string> = {
+  ADDITIONAL_SELLING: "Rupiah",
+  UPSIZE_BOTOL: "Botol",
+  SELLING_EKSKLUSIF_PERFUME: "Parfum",
+}
+
+const JENIS_ICON: Record<
+  PenjualanJenis,
+  React.ComponentType<{ className?: string }>
+> = {
+  ADDITIONAL_SELLING: HandCoins,
+  UPSIZE_BOTOL: Package,
+  SELLING_EKSKLUSIF_PERFUME: Sparkles,
+}
+
+// ============================================================
+// TEMA WARNA
+//
+// Hanya memakai token yang sudah ada di aplikasi sehingga tetap
+// harmonis dan tidak mengubah tema global. Nuansa "neon" diciptakan
+// lewat ring tipis, glow lembut, dan transisi hover.
+// ============================================================
+
+type Tone = {
+  chip: string
+  text: string
+  soft: string
+  bar: string
+  barGlow: string
+  card: string
+  icon: string
+  track: string
+  dot: string
+}
+
+const TONE: Record<PenjualanJenis, Tone> = {
+  ADDITIONAL_SELLING: {
+    chip: "bg-status-pagi-bg text-status-pagi ring-1 ring-inset ring-status-pagi/25",
+    text: "text-status-pagi",
+    soft: "bg-status-pagi-bg",
+    bar: "bg-gradient-to-r from-status-pagi via-status-pagi/45 to-transparent",
+    barGlow: "shadow-[0_0_16px_-2px] shadow-status-pagi/45",
+    card: "ring-1 ring-inset ring-status-pagi/20 transition-all duration-200 hover:ring-status-pagi/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-status-pagi/45",
+    icon: "ring-1 ring-inset ring-status-pagi/25 shadow-[0_0_20px_-6px] shadow-status-pagi/50",
+    track: "bg-status-pagi",
+    dot: "bg-status-pagi",
+  },
+  UPSIZE_BOTOL: {
+    chip: "bg-status-siang-bg text-status-siang ring-1 ring-inset ring-status-siang/25",
+    text: "text-status-siang",
+    soft: "bg-status-siang-bg",
+    bar: "bg-gradient-to-r from-status-siang via-status-siang/45 to-transparent",
+    barGlow: "shadow-[0_0_16px_-2px] shadow-status-siang/45",
+    card: "ring-1 ring-inset ring-status-siang/20 transition-all duration-200 hover:ring-status-siang/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-status-siang/45",
+    icon: "ring-1 ring-inset ring-status-siang/25 shadow-[0_0_20px_-6px] shadow-status-siang/50",
+    track: "bg-status-siang",
+    dot: "bg-status-siang",
+  },
+  SELLING_EKSKLUSIF_PERFUME: {
+    chip: "bg-primary/10 text-primary ring-1 ring-inset ring-primary/25",
+    text: "text-primary",
+    soft: "bg-primary/10",
+    bar: "bg-gradient-to-r from-primary via-primary/45 to-transparent",
+    barGlow: "shadow-[0_0_16px_-2px] shadow-primary/40",
+    card: "ring-1 ring-inset ring-primary/20 transition-all duration-200 hover:ring-primary/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-primary/40",
+    icon: "ring-1 ring-inset ring-primary/25 shadow-[0_0_20px_-6px] shadow-primary/45",
+    track: "bg-primary",
+    dot: "bg-primary",
+  },
+}
 
 // ============================================================
 // TYPES
@@ -62,7 +167,12 @@ export type AddSellTransaction = {
   employeeId: string
   employeeName: string
   tanggal: string
+  jenis: PenjualanJenis
   nominal: number
+  pcs: number
+  ukuranBotol: string
+  produk: string
+  namaProdukLain: string
   keterangan: string
   createdAt: string | null
   updatedAt: string | null
@@ -75,22 +185,31 @@ export type AddSellTarget = {
   employeeId: string
   employeeName: string
   periode: string
+  jenis: PenjualanJenis
   targetNominal: number
+  targetPcs: number
 }
 
 export type AddSellPerEmployee = {
   employeeId: string
   employeeName: string
-  targetNominal: number
-  nominal: number
+  hasTarget: boolean
+  target: number
+  achievement: number
   progress: number
 }
 
-export type AddSellSummary = {
-  totalNominal: number
+export type AddSellJenisSummary = {
   totalTarget: number
+  totalAchievement: number
   progress: number
+  totalEmployees: number
+  employeesWithoutTarget: number
   perEmployee: AddSellPerEmployee[]
+}
+
+export type AddSellSummary = {
+  byJenis: Partial<Record<PenjualanJenis, AddSellJenisSummary>>
 }
 
 type AddSellData = {
@@ -108,23 +227,40 @@ type AddSellGetResponse = {
   summary?: AddSellSummary
 }
 
-type TabKey = "dashboard" | "pencatatan"
+type TabKey = "dashboard" | "history"
+
+const EMPTY_JENIS_SUMMARY: AddSellJenisSummary = {
+  totalTarget: 0,
+  totalAchievement: 0,
+  progress: 0,
+  totalEmployees: 0,
+  employeesWithoutTarget: 0,
+  perEmployee: [],
+}
 
 // ============================================================
 // UTILITAS
 // ============================================================
 
-const monthFormatter = new Intl.DateTimeFormat(
-  "id-ID",
-  { month: "long", year: "numeric" },
-)
+const monthFormatter = new Intl.DateTimeFormat("id-ID", {
+  month: "long",
+  year: "numeric",
+})
+
+const tanggalFormatter = new Intl.DateTimeFormat("id-ID", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+})
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0")
 }
 
 function getLocalDateISO(date = new Date()): string {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  return `${date.getFullYear()}-${pad2(
+    date.getMonth() + 1,
+  )}-${pad2(date.getDate())}`
 }
 
 function formatRupiah(value: number): string {
@@ -132,31 +268,68 @@ function formatRupiah(value: number): string {
   return `Rp${safe.toLocaleString("id-ID")}`
 }
 
-const tanggalFormatter = new Intl.DateTimeFormat(
-  "id-ID",
-  { day: "2-digit", month: "short", year: "numeric" },
-)
-
 function formatTanggal(tanggal: string): string {
   const [year, month, day] = tanggal.split("-").map(Number)
   if (!year || !month || !day) {
     return tanggal
   }
-  return tanggalFormatter.format(
-    new Date(year, month - 1, day),
-  )
+  return tanggalFormatter.format(new Date(year, month - 1, day))
 }
 
 function toDigitsOnly(value: string, max = 12): string {
   return value.replace(/\D/g, "").slice(0, max)
 }
 
-// Format tampilan nominal pada input: titik sebagai pemisah
-// ribuan. Nilai yang tersimpan tetap digit murni (tanpa titik).
-// keepZero: tampilkan "0" untuk nilai nol (dipakai input TARGET,
-// karena target nol tetap sah). Input Nilai Add Selling (default)
-// tetap menunjukkan string kosong untuk nol.
-function formatNominalInput(digits: string, keepZero = false): string {
+// Nilai penjualan ditampilkan sesuai satuan jenisnya.
+function formatNilai(
+  jenis: PenjualanJenis,
+  value: number,
+): string {
+  const safe = Number.isFinite(value) ? value : 0
+  return jenis === "ADDITIONAL_SELLING"
+    ? formatRupiah(safe)
+    : `${safe.toLocaleString("id-ID")} PCS`
+}
+
+function nilaiFromRow(
+  txn: Pick<AddSellTransaction, "jenis" | "nominal" | "pcs">,
+): number {
+  return txn.jenis === "ADDITIONAL_SELLING"
+    ? Number(txn.nominal) || 0
+    : Number(txn.pcs) || 0
+}
+
+function targetFromRow(
+  row: Pick<AddSellTarget, "jenis" | "targetNominal" | "targetPcs">,
+): number {
+  return row.jenis === "ADDITIONAL_SELLING"
+    ? Number(row.targetNominal) || 0
+    : Number(row.targetPcs) || 0
+}
+
+// Detail realise per jenis untuk tabel History.
+function detailRealisasi(
+  txn: AddSellTransaction,
+): string {
+  if (txn.jenis === "UPSIZE_BOTOL") {
+    return txn.ukuranBotol || "-"
+  }
+
+  if (txn.jenis === "SELLING_EKSKLUSIF_PERFUME") {
+    return txn.produk === "LAINNYA"
+      ? txn.namaProdukLain || "-"
+      : txn.produk || "-"
+  }
+
+  return "-"
+}
+
+// Format input nominal dengan titik ribuan. Target nol tetap
+// ditampilkan sebagai "0" karena target nol tetap sah.
+function formatNominalInput(
+  digits: string,
+  keepZero = false,
+): string {
   if (!digits) {
     return ""
   }
@@ -180,7 +353,6 @@ export function AdditionalSellingPage() {
 
   const role = (profile?.role ?? "").trim().toLowerCase()
   const isStore = role === "store"
-  const isCentralCabang = role === "central_cabang"
   const isCentralPusat = role === "central_pusat"
 
   // ----------------------------------------------------------
@@ -201,18 +373,15 @@ export function AdditionalSellingPage() {
     })
   }
 
-  const monthLabel =
-    monthFormatter
-      .format(new Date(period.year, period.month, 1))
-      .toUpperCase()
+  const monthLabel = monthFormatter
+    .format(new Date(period.year, period.month, 1))
+    .toUpperCase()
 
   // ----------------------------------------------------------
   // TAB
   // ----------------------------------------------------------
 
   const [tab, setTab] = React.useState<TabKey>("dashboard")
-
-  const [infoOpen, setInfoOpen] = React.useState(false)
 
   // ----------------------------------------------------------
   // CENTRAL PUSAT — pilih SATU cabang dahulu
@@ -319,7 +488,7 @@ export function AdditionalSellingPage() {
         )
 
         if (!response.ok) {
-          throw new Error("Data Additional Selling tidak dapat dimuat.")
+          throw new Error("Data penjualan tidak dapat dimuat.")
         }
 
         const result = (await response.json()) as AddSellGetResponse
@@ -331,20 +500,15 @@ export function AdditionalSellingPage() {
           transactions: Array.isArray(result.transactions)
             ? result.transactions
             : [],
-          targets: Array.isArray(result.targets)
-            ? result.targets
-            : [],
-          summary: result.summary ?? {
-            totalNominal: 0,
-            totalTarget: 0,
-            progress: 0,
-            perEmployee: [],
-          },
+          targets: Array.isArray(result.targets) ? result.targets : [],
+          summary: result.summary ?? { byJenis: {} },
         })
       } catch (loadError) {
-        console.error("Gagal memuat Additional Selling:", loadError)
+        console.error("Gagal memuat penjualan:", loadError)
         if (!cancelled) {
-          setError("Data Additional Selling belum dapat dimuat. Silakan coba lagi.")
+          setError(
+            "Data penjualan belum dapat dimuat. Silakan coba lagi.",
+          )
         }
       } finally {
         if (!cancelled) {
@@ -371,7 +535,7 @@ export function AdditionalSellingPage() {
   ])
 
   // ----------------------------------------------------------
-  // EMPLOYEES (khusus STORE) — untuk form & filter
+  // EMPLOYEES (khusus STORE) — untuk form & target
   // ----------------------------------------------------------
 
   const [employees, setEmployees] = React.useState<FirestoreEmployee[]>([])
@@ -402,35 +566,46 @@ export function AdditionalSellingPage() {
     }
   }, [isStore, profile?.storeId])
 
+  const summaryByJenis = data?.summary?.byJenis ?? {}
+
+  function summaryOf(jenis: PenjualanJenis): AddSellJenisSummary {
+    return summaryByJenis[jenis] ?? EMPTY_JENIS_SUMMARY
+  }
+
   // ----------------------------------------------------------
-  // PENCATATAN — FILTER
+  // HISTORY — FILTER LOKAL
   // ----------------------------------------------------------
 
+  const [jenisFilter, setJenisFilter] = React.useState<string>("all")
   const [tanggalFilter, setTanggalFilter] = React.useState("all")
   const [timFilter, setTimFilter] = React.useState("all")
 
   React.useEffect(() => {
+    setJenisFilter("all")
     setTanggalFilter("all")
     setTimFilter("all")
   }, [period.year, period.month, cabangFilter])
 
   const transactions = data?.transactions ?? []
 
-  const tanggalOptions = React.useMemo(() => {
-    const dates = Array.from(
-      new Set(transactions.map((t) => t.tanggal).filter(Boolean)),
-    ).sort()
-    return dates
-  }, [transactions])
+  const tanggalOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Set(transactions.map((t) => t.tanggal).filter(Boolean)),
+      ).sort(),
+    [transactions],
+  )
 
   const timOptions = React.useMemo(() => {
     const map = new Map<string, string>()
+
     for (const t of transactions) {
       if (!t.employeeId) continue
       if (!map.has(t.employeeId)) {
         map.set(t.employeeId, t.employeeName || "-")
       }
     }
+
     return Array.from(map.entries())
       .map(([employeeId, employeeName]) => ({ employeeId, employeeName }))
       .sort((a, b) =>
@@ -442,67 +617,98 @@ export function AdditionalSellingPage() {
 
   const filteredTransactions = React.useMemo(
     () =>
-      transactions.filter(
-        (t) =>
-          (tanggalFilter === "all" || t.tanggal === tanggalFilter) &&
-          (timFilter === "all" ||
-            t.employeeId === timFilter),
-      ),
-    [transactions, tanggalFilter, timFilter],
+      transactions
+        .filter(
+          (t) =>
+            (jenisFilter === "all" || t.jenis === jenisFilter) &&
+            (tanggalFilter === "all" || t.tanggal === tanggalFilter) &&
+            (timFilter === "all" || t.employeeId === timFilter),
+        )
+        // History lokal: terbaru di atas.
+        .sort((a, b) => {
+          if (a.tanggal !== b.tanggal) {
+            return a.tanggal < b.tanggal ? 1 : -1
+          }
+          const ca = a.createdAt ?? ""
+          const cb = b.createdAt ?? ""
+          return ca < cb ? 1 : ca > cb ? -1 : 0
+        }),
+    [transactions, jenisFilter, tanggalFilter, timFilter],
   )
 
-  const totalFiltered = React.useMemo(
-    () =>
-      filteredTransactions.reduce(
-        (total, t) => total + (Number(t.nominal) || 0),
-        0,
-      ),
-    [filteredTransactions],
-  )
+  // Total per jenis dari baris yang sedang difilter.
+  const filteredTotals = React.useMemo(() => {
+    const totals: Record<string, number> = {}
+
+    for (const txn of filteredTransactions) {
+      totals[txn.jenis] = (totals[txn.jenis] ?? 0) + nilaiFromRow(txn)
+    }
+
+    return totals
+  }, [filteredTransactions])
 
   function resetFilters() {
+    setJenisFilter("all")
     setTanggalFilter("all")
     setTimFilter("all")
   }
 
+  const hasFilter =
+    jenisFilter !== "all" ||
+    tanggalFilter !== "all" ||
+    timFilter !== "all"
+
   // ----------------------------------------------------------
-  // PENCATATAN — FORM TAMBAH / EDIT
+  // REALISASI — FORM TAMBAH / EDIT
   // ----------------------------------------------------------
 
   type FormState = {
     id?: string
     tanggal: string
     employeeId: string
+    jenis: PenjualanJenis
     nominal: string
+    pcs: string
+    ukuranBotol: UkuranBotol
+    produk: Produk
+    namaProdukLain: string
     keterangan: string
   }
 
-  const emptyForm: FormState = {
-    tanggal: getLocalDateISO(),
-    employeeId: "",
-    nominal: "",
-    keterangan: "",
+  function emptyFormState(): FormState {
+    return {
+      tanggal: getLocalDateISO(),
+      employeeId: "",
+      jenis: "ADDITIONAL_SELLING",
+      nominal: "",
+      pcs: "",
+      ukuranBotol: "55 ML",
+      produk: "PAX",
+      namaProdukLain: "",
+      keterangan: "",
+    }
   }
 
   const [formOpen, setFormOpen] = React.useState(false)
   const [formMode, setFormMode] = React.useState<"add" | "edit">("add")
-  const [form, setForm] = React.useState<FormState>(emptyForm)
+  const [form, setForm] = React.useState<FormState>(emptyFormState)
   const [formError, setFormError] = React.useState("")
   const [formSaving, setFormSaving] = React.useState(false)
 
-  // Employee yang tersedia pada tanggal form: aktif, ATAU
-  // nonaktif namun tanggal belum melewati tanggalNonaktif.
+  // Employee tersedia pada tanggal form: aktif, ATAU nonaktif namun
+  // tanggal belum melewati tanggalNonaktif.
   const availableEmployees = React.useMemo(() => {
     const employeesAll = isStore ? employees : []
-    return employeesAll.filter(
-      (e) =>
-        e.aktif !== false ||
-        (typeof e.tanggalNonaktif === "string" &&
-          e.tanggalNonaktif >= form.tanggal),
-    )
+    return employeesAll
+      .filter(
+        (e) =>
+          e.aktif !== false ||
+          (typeof e.tanggalNonaktif === "string" &&
+            e.tanggalNonaktif >= form.tanggal),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, "id", { sensitivity: "base" }))
   }, [employees, isStore, form.tanggal])
 
-  // Kosongkan pilihan bila employee terpilih tidak lagi tersedia.
   React.useEffect(() => {
     if (
       formOpen &&
@@ -515,7 +721,7 @@ export function AdditionalSellingPage() {
 
   function openAddForm() {
     setFormMode("add")
-    setForm({ ...emptyForm, tanggal: getLocalDateISO() })
+    setForm(emptyFormState())
     setFormError("")
     setFormOpen(true)
   }
@@ -526,7 +732,18 @@ export function AdditionalSellingPage() {
       id: txn.id,
       tanggal: txn.tanggal,
       employeeId: txn.employeeId,
-      nominal: String(Number(txn.nominal) || 0),
+      jenis: txn.jenis,
+      nominal:
+        txn.jenis === "ADDITIONAL_SELLING" && Number(txn.nominal) > 0
+          ? String(Number(txn.nominal))
+          : "",
+      pcs:
+        txn.jenis !== "ADDITIONAL_SELLING" && Number(txn.pcs) > 0
+          ? String(Number(txn.pcs))
+          : "",
+      ukuranBotol: (txn.ukuranBotol || "55 ML") as UkuranBotol,
+      produk: (txn.produk || "PAX") as Produk,
+      namaProdukLain: txn.namaProdukLain ?? "",
       keterangan: txn.keterangan ?? "",
     })
     setFormError("")
@@ -542,11 +759,50 @@ export function AdditionalSellingPage() {
       return
     }
 
-    const nominal = Number(toDigitsOnly(form.nominal, 12))
+    const body: Record<string, unknown> = {
+      tanggal: form.tanggal,
+      employeeId: form.employeeId,
+      jenis: form.jenis,
+      keterangan: form.keterangan.trim(),
+    }
 
-    if (!Number.isInteger(nominal) || nominal <= 0) {
-      setFormError("Nilai Add Selling harus berupa bilangan bulat Rupiah yang valid.")
-      return
+    if (form.jenis === "ADDITIONAL_SELLING") {
+      const nominal = Number(toDigitsOnly(form.nominal, 12))
+
+      if (!Number.isInteger(nominal) || nominal <= 0) {
+        setFormError(
+          "Nilai Additional Selling harus berupa bilangan bulat Rupiah yang valid.",
+        )
+        return
+      }
+
+      body.nominal = nominal
+    } else {
+      const pcs = Number(toDigitsOnly(form.pcs, 7))
+
+      if (!Number.isInteger(pcs) || pcs <= 0) {
+        setFormError(
+          "Jumlah PCS harus berupa bilangan bulat positif yang valid.",
+        )
+        return
+      }
+
+      body.pcs = pcs
+
+      if (form.jenis === "UPSIZE_BOTOL") {
+        body.ukuranBotol = form.ukuranBotol
+      } else {
+        if (form.produk === "LAINNYA" && !form.namaProdukLain.trim()) {
+          setFormError(
+            "Nama produk wajib diisi ketika produk LAINNYA dipilih.",
+          )
+          return
+        }
+
+        body.produk = form.produk
+        body.namaProdukLain =
+          form.produk === "LAINNYA" ? form.namaProdukLain.trim() : ""
+      }
     }
 
     if (!user) {
@@ -558,15 +814,7 @@ export function AdditionalSellingPage() {
 
     try {
       const idToken = await user.getIdToken()
-
       const isEdit = formMode === "edit"
-
-      const body: Record<string, unknown> = {
-        tanggal: form.tanggal,
-        employeeId: form.employeeId,
-        nominal,
-        keterangan: form.keterangan.trim(),
-      }
 
       if (isEdit) {
         body.id = form.id
@@ -590,8 +838,8 @@ export function AdditionalSellingPage() {
         throw new Error(
           result?.message ??
             (isEdit
-              ? "Pencatatan gagal diperbarui."
-              : "Pencatatan gagal disimpan."),
+              ? "Realisasi gagal diperbarui."
+              : "Realisasi gagal disimpan."),
         )
       }
 
@@ -599,19 +847,17 @@ export function AdditionalSellingPage() {
 
       showToast(
         "success",
-        isEdit
-          ? "Pencatatan diperbarui"
-          : "Pencatatan tersimpan",
+        isEdit ? "Realisasi diperbarui" : "Realisasi tersimpan",
         result.message,
       )
 
       setReloadKey((current) => current + 1)
     } catch (submitError) {
-      console.error("Gagal menyimpan pencatatan:", submitError)
+      console.error("Gagal menyimpan realisasi:", submitError)
       setFormError(
         submitError instanceof Error
           ? submitError.message
-          : "Pencatatan gagal disimpan.",
+          : "Realisasi gagal disimpan.",
       )
     } finally {
       setFormSaving(false)
@@ -619,7 +865,7 @@ export function AdditionalSellingPage() {
   }
 
   // ----------------------------------------------------------
-  // PENCATATAN — HAPUS (konfirmasi)
+  // REALISASI — HAPUS (konfirmasi)
   // ----------------------------------------------------------
 
   const [pendingDelete, setPendingDelete] =
@@ -649,22 +895,20 @@ export function AdditionalSellingPage() {
       }
 
       if (!response.ok || !result.success) {
-        throw new Error(result?.message ?? "Pencatatan gagal dihapus.")
+        throw new Error(result?.message ?? "Realisasi gagal dihapus.")
       }
 
       setPendingDelete(null)
 
-      showToast("success", "Pencatatan dihapus", result.message)
+      showToast("success", "Realisasi dihapus", result.message)
 
       setReloadKey((current) => current + 1)
     } catch (deleteError) {
-      console.error("Gagal menghapus pencatatan:", deleteError)
+      console.error("Gagal menghapus realisasi:", deleteError)
       showToast(
         "error",
         "Gagal menghapus",
-        deleteError instanceof Error
-          ? deleteError.message
-          : undefined,
+        deleteError instanceof Error ? deleteError.message : undefined,
       )
     } finally {
       setDeleting(false)
@@ -672,35 +916,74 @@ export function AdditionalSellingPage() {
   }
 
   // ----------------------------------------------------------
-  // TARGET — ATUR (khusus STORE, tab DASHBOARD PROGRAM)
+  // TARGET — ATUR PAKET 3 JENIS (khusus STORE)
+  //
+  // Tiga jenis target dianggap SATU PAKET per employee + periode.
+  // Ketiganya wajib diisi sebelum dapat disimpan, sehingga tidak
+  // pernah ada target parsial.
+  //
+  // Draft disimpan per JENIS (bukan per employee+jenis gabung)
+  // dan SELALU diturunkan ulang dari data server setiap kali
+  // employee berganti. Ini mencegah nilai jenis lama "bocor" ke
+  // jenis berikutnya.
   // ----------------------------------------------------------
 
-  const [targetDrafts, setTargetDrafts] = React.useState<Record<string, string>>({})
+  const EMPTY_TARGET_DRAFTS: Record<PenjualanJenis, string> = {
+    ADDITIONAL_SELLING: "",
+    UPSIZE_BOTOL: "",
+    SELLING_EKSKLUSIF_PERFUME: "",
+  }
+
+  const [targetOpen, setTargetOpen] = React.useState(false)
+  const [targetEmployeeId, setTargetEmployeeId] = React.useState("")
+  const [targetMode, setTargetMode] = React.useState<"edit" | "view">(
+    "edit",
+  )
+  const [targetDrafts, setTargetDrafts] = React.useState<
+    Record<PenjualanJenis, string>
+  >(EMPTY_TARGET_DRAFTS)
+  const [targetInvalid, setTargetInvalid] =
+    React.useState<PenjualanJenis | null>(null)
+  const [targetError, setTargetError] = React.useState("")
   const [savingTargets, setSavingTargets] = React.useState(false)
+  const [deletingTargets, setDeletingTargets] = React.useState(false)
 
-  const targetByEmployeeId = React.useMemo(() => {
-    const map = new Map<string, number>()
+  // Target employee terpilih pada periode aktif, semua jenis.
+  const targetPackage = React.useMemo(() => {
+    const map: Partial<Record<PenjualanJenis, number>> = {}
+
     for (const t of data?.targets ?? []) {
-      if (t.employeeId != null) {
-        map.set(t.employeeId, Number(t.targetNominal) || 0)
-      }
+      if (!t.employeeId) continue
+      if (t.employeeId !== targetEmployeeId) continue
+      map[t.jenis] = targetFromRow(t)
     }
-    return map
-  }, [data?.targets])
 
-  // Baris target: employee AKTIF toko + employee yang sudah punya
-  // target di periode ini (mis. sudah nonaktif).
+    return map
+  }, [data?.targets, targetEmployeeId])
+
+  // Paket dianggap lengkap hanya bila KETIGA jenis punya target.
+  const targetComplete = React.useMemo(
+    () => JENIS_LIST.every((j) => targetPackage[j] != null),
+    [targetPackage],
+  )
+
+  // Baris employee: employee AKTIF toko + employee yang sudah
+  // punya target di periode ini (mis. sudah nonaktif).
   const targetRows = React.useMemo(() => {
     const map = new Map<string, string>()
+
     for (const e of employees) {
       if (e.aktif === false) continue
       map.set(e.id, e.name)
     }
+
     for (const t of data?.targets ?? []) {
+      if (!t.employeeId) continue
       if (!map.has(t.employeeId)) {
         map.set(t.employeeId, t.employeeName || "-")
       }
     }
+
     return Array.from(map.entries())
       .map(([employeeId, employeeName]) => ({ employeeId, employeeName }))
       .sort((a, b) =>
@@ -710,54 +993,111 @@ export function AdditionalSellingPage() {
       )
   }, [employees, data?.targets])
 
-  // Isi draft dari data server ketika data target / employees berubah.
+  // Muat ulang draft dari server setiap employee berganti. Draft
+  // lama DIBUANGtotal (bukan digabung), sehingga tidak mungkin
+  // ada nilai jenis sebelumnya yang ikut tersimpan.
   React.useEffect(() => {
-    if (!isStore) return
+    if (!targetOpen) return
 
-    setTargetDrafts((current) => {
-      const next = { ...current }
+    const next: Record<PenjualanJenis, string> = {
+      ...EMPTY_TARGET_DRAFTS,
+    }
 
-      for (const row of targetRows) {
-        const existing = targetByEmployeeId.get(row.employeeId)
-        if (existing != null) {
-          next[row.employeeId] = String(existing)
-        }
-      }
+    for (const jenis of JENIS_LIST) {
+      const value = targetPackage[jenis]
+      next[jenis] = value != null ? String(value) : ""
+    }
 
-      return next
-    })
-  }, [isStore, targetRows, targetByEmployeeId])
+    setTargetDrafts(next)
+    setTargetInvalid(null)
+    setTargetError("")
+    setTargetMode(
+      JENIS_LIST.every((j) => targetPackage[j] != null)
+        ? "view"
+        : "edit",
+    )
+  }, [targetOpen, targetEmployeeId, targetPackage])
+
+  // Satu-satunya pintu masuk modal target: satu tombol "Buat
+  // Target" di header. Employee selalu dipilih dari "Nama Tim"
+  // di dalam modal.
+  function openTargetForm() {
+    setTargetEmployeeId("")
+    setTargetError("")
+    setTargetInvalid(null)
+    setTargetOpen(true)
+  }
+
+  function changeTargetEmployee(next: string) {
+    setTargetEmployeeId(next)
+    setTargetInvalid(null)
+    setTargetError("")
+  }
+
+  function setTargetDraft(
+    jenis: PenjualanJenis,
+    value: string,
+  ) {
+    setTargetDrafts((current) => ({
+      ...current,
+      [jenis]: toDigitsOnly(value, 12),
+    }))
+  }
 
   async function handleSaveTargets() {
     if (!user || !isStore) return
 
-    const items: { employeeId: string; targetNominal: number }[] = []
-
-    for (const row of targetRows) {
-      const draft = toDigitsOnly(targetDrafts[row.employeeId] ?? "", 12)
-      const existing = targetByEmployeeId.get(row.employeeId)
-
-      if (draft === "" && existing == null) {
-        continue
-      }
-
-      const value = draft === "" ? 0 : Number(draft)
-
-      if (!Number.isInteger(value) || value < 0) {
-        continue
-      }
-
-      items.push({
-        employeeId: row.employeeId,
-        targetNominal: value,
-      })
-    }
-
-    if (items.length === 0) {
-      showToast("info", "Tidak ada target", "Tidak ada target yang perlu disimpan.")
+    if (!targetEmployeeId) {
+      setTargetError("Pilih Tim terlebih dahulu.")
       return
     }
 
+    // Ketiga jenis WAJIB terisi. Tidak ada target parsial.
+    const targets: {
+      employeeId: string
+      jenis: PenjualanJenis
+      nilaiTarget: number
+    }[] = []
+
+    for (const jenis of JENIS_LIST) {
+      const draft = toDigitsOnly(
+        targetDrafts[jenis] ?? "",
+        12,
+      )
+
+      if (draft === "") {
+        setTargetInvalid(jenis)
+        setTargetError(
+          `Target ${JENIS_LABEL[jenis]} wajib diisi. Ketiga jenis target harus lengkap.`,
+        )
+        return
+      }
+
+      const value = Number(draft)
+
+      if (
+        !Number.isInteger(value) ||
+        value < 0 ||
+        value >= 1_000_000_000_000
+      ) {
+        setTargetInvalid(jenis)
+        setTargetError(
+          jenis === "ADDITIONAL_SELLING"
+            ? "Nilai target Additional Selling harus berupa bilangan bulat Rupiah yang valid."
+            : `Nilai target ${JENIS_LABEL[jenis]} harus berupa bilangan bulat PCS yang valid.`,
+        )
+        return
+      }
+
+      targets.push({
+        employeeId: targetEmployeeId,
+        jenis,
+        nilaiTarget: value,
+      })
+    }
+
+    setTargetInvalid(null)
+    setTargetError("")
     setSavingTargets(true)
 
     try {
@@ -769,10 +1109,7 @@ export function AdditionalSellingPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          periode,
-          targets: items,
-        }),
+        body: JSON.stringify({ periode, targets }),
       })
 
       const result = (await response.json()) as {
@@ -784,213 +1121,837 @@ export function AdditionalSellingPage() {
         throw new Error(result?.message ?? "Target gagal disimpan.")
       }
 
-      showToast("success", "Target tersimpan", result.message)
+      // Modal SENGAJA TIDAK ditutup setelah save berhasil.
+      // Employee terpilih tetap sama, data di-refresh lewat
+      // reloadKey, dan effect akan memuat nilai tersimpan +
+      // mode "view" (tombol Hapus/Edit). Store bisa langsung
+      // memilih employee berikutnya tanpa menutup modal.
+      setTargetInvalid(null)
+      setTargetError("")
+
+      showToast(
+        "success",
+        "Target tersimpan",
+        result.message,
+      )
 
       setReloadKey((current) => current + 1)
     } catch (saveError) {
       console.error("Gagal menyimpan target:", saveError)
-      showToast(
-        "error",
-        "Gagal menyimpan target",
-        saveError instanceof Error ? saveError.message : undefined,
+      setTargetError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Target gagal disimpan.",
       )
     } finally {
       setSavingTargets(false)
     }
   }
 
-  // ----------------------------------------------------------
-  // SCOPE LABEL
-  // ----------------------------------------------------------
+  // Hapus paket target employee + periode (3 jenis). Transaksi
+  // realisasi pada "additional_selling" TIDAK tersentuh.
+  async function handleDeleteTargets() {
+    if (!user || !isStore || !targetEmployeeId) return
 
-  const scopeLabel = isCentralPusat
-    ? cabangFilter || "CABANG"
-    : isCentralCabang
-      ? profile?.cabangId || "CABANG"
-      : profile?.namaStore || profile?.storeId || "TOKO"
+    setTargetError("")
+    setDeletingTargets(true)
+
+    try {
+      const idToken = await user.getIdToken()
+
+      const response = await fetch(
+        "/api/additional-selling/target",
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            periode,
+            employeeId: targetEmployeeId,
+          }),
+        },
+      )
+
+      const result = (await response.json()) as {
+        success?: boolean
+        message?: string
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result?.message ?? "Target gagal dihapus.",
+        )
+      }
+
+      setTargetMode("edit")
+      setTargetInvalid(null)
+
+      showToast(
+        "success",
+        "Target dihapus",
+        result.message,
+      )
+
+      setReloadKey((current) => current + 1)
+    } catch (deleteError) {
+      console.error(
+        "Gagal menghapus target:",
+        deleteError,
+      )
+      setTargetError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Target gagal dihapus.",
+      )
+    } finally {
+      setDeletingTargets(false)
+    }
+  }
 
   // ----------------------------------------------------------
   // RENDER
   // ----------------------------------------------------------
 
+  const storeName = profile?.namaStore || profile?.storeId || "CABANG"
+
   return (
     <div className="space-y-5">
-      {/* HEADER + NAVIGASI BULAN */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-1.5 text-lg font-semibold tracking-tight">
-            Additional Selling
+      {/* ============================================ */}
+      {/* HEADER                                       */}
+      {/* ============================================ */}
 
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "grid size-9 place-items-center rounded-xl",
+                  TONE.ADDITIONAL_SELLING.soft,
+                  TONE.ADDITIONAL_SELLING.text,
+                  "ring-1 ring-inset ring-status-pagi/30",
+                  "shadow-[0_0_18px_-4px] shadow-status-pagi/45",
+                )}
+              >
+                <Target className="size-5" />
+              </span>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight">
+                  Target Penjualan
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Program Kerja · {storeName}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isStore && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => openTargetForm()}
+                className={cn(
+                  "gap-1.5",
+                  "ring-1 ring-inset ring-status-pagi/30",
+                  "shadow-[0_0_16px_-6px] shadow-status-pagi/50",
+                  "transition-all duration-200",
+                  "hover:ring-status-pagi/60",
+                  "hover:shadow-[0_0_20px_-4px] hover:shadow-status-pagi/60",
+                )}
+              >
+                <Target className="size-4" />
+                Buat Target
+              </Button>
+
+              <Button
+                type="button"
+                onClick={openAddForm}
+                className={cn(
+                  "gap-1.5",
+                  "ring-1 ring-inset ring-primary/30",
+                  "shadow-[0_0_16px_-6px] shadow-primary/50",
+                  "transition-all duration-200",
+                  "hover:ring-primary/60",
+                  "hover:shadow-[0_0_20px_-4px] hover:shadow-primary/60",
+                )}
+              >
+                <Plus className="size-4" />
+                Catat Penjualan
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* FILTER PERIODE + CABANG */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1">
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              aria-label="Informasi Program"
-              title="Informasi Program"
-              onClick={() => setInfoOpen(true)}
-              className="font-bold"
+              size="icon-sm"
+              onClick={() => changeMonth(-1)}
+              aria-label="Bulan sebelumnya"
             >
-              !
+              <ChevronLeft className="size-4" />
             </Button>
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Program Kerja &middot; Pencatatan penjualan tambahan per tim
-          </p>
-        </div>
+            <span className="min-w-[128px] text-center text-sm font-semibold">
+              {monthLabel}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => changeMonth(1)}
+              aria-label="Bulan berikutnya"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Bulan sebelumnya"
-            onClick={() => changeMonth(-1)}
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <p className="min-w-44 text-center text-sm font-semibold">
-            {monthLabel}
-          </p>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Bulan berikutnya"
-            onClick={() => changeMonth(1)}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
+          {isCentralPusat && (
+            <div className="min-w-[200px]">
+              <SelectField
+                value={cabangFilter}
+                onChange={setCabangFilter}
+                options={[
+                  { value: "", label: "Pilih Cabang" },
+                  ...branchOptions.map((cabangId) => ({
+                    value: cabangId,
+                    label: cabangId,
+                  })),
+                ]}
+              />
+            </div>
+          )}
+
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "dashboard", label: "Dashboard Program" },
+              { value: "history", label: "History" },
+            ]}
+          />
         </div>
       </div>
 
-      {/* FILTER CABANG — HANYA CENTRAL PUSAT */}
-      {isCentralPusat && (
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold tracking-tight">
-              Cabang
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Pilih satu cabang untuk melihat data Additional Selling-nya.
-            </p>
-          </div>
-          <div className="w-full sm:w-60">
-            <SelectField
-              value={cabangFilter}
-              onChange={setCabangFilter}
-              options={[
-                { value: "", label: "Pilih Cabang" },
-                ...branchOptions.map((cabangId) => ({
-                  value: cabangId,
-                  label: cabangId,
-                })),
-              ]}
-            />
-          </div>
-        </div>
-      )}
+      {/* ============================================ */}
+      {/* CENTRAL PUSAT — CABANG BELUM DIPILIH        */}
+      {/* ============================================ */}
 
-      {/* TAB */}
-      <Segmented
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "dashboard", label: "DASHBOARD PROGRAM" },
-          { value: "pencatatan", label: "PENCATATAN" },
-        ]}
-      />
-
-      {pusatLocked ? (
+      {pusatLocked && (
         <EmptyState
-          icon={TrendingUp}
-          title="Pilih cabang dahulu"
-          description="Central Pusat wajib memilih satu cabang untuk melihat data Additional Selling."
-        />
-      ) : loading ? (
-        <LoadingState label="Memuat data Additional Selling..." />
-      ) : error ? (
-        <EmptyState
-          icon={TrendingUp}
-          title="Data belum dapat dimuat"
-          description={error}
-        />
-      ) : tab === "pencatatan" ? (
-        <PencatatanTab
-          isStore={isStore}
-          transactions={filteredTransactions}
-          tanggalOptions={tanggalOptions}
-          tanggalFilter={tanggalFilter}
-          setTanggalFilter={setTanggalFilter}
-          timOptions={timOptions}
-          timFilter={timFilter}
-          setTimFilter={setTimFilter}
-          onResetFilters={resetFilters}
-          totalFiltered={totalFiltered}
-          onAdd={openAddForm}
-          onEdit={openEditForm}
-          onDelete={(txn) => setPendingDelete(txn)}
-          hasData={transactions.length > 0}
-        />
-      ) : (
-        <DashboardTab
-          scopeLabel={scopeLabel}
-          monthLabel={monthLabel}
-          summary={data?.summary}
-          targets={data?.targets ?? []}
-          isStore={isStore}
-          targetRows={targetRows}
-          targetDrafts={targetDrafts}
-          setTargetDraft={(employeeId, value) =>
-            setTargetDrafts((current) => ({
-              ...current,
-              [employeeId]: toDigitsOnly(value, 12),
-            }))
-          }
-          onSaveTargets={handleSaveTargets}
-          savingTargets={savingTargets}
+          title="Pilih cabang terlebih dahulu"
+          description="Central Pusat wajib memilih satu cabang sebelum melihat data target penjualan."
         />
       )}
 
-      {/* MODAL TAMBAH / EDIT PENCATATAN */}
+      {/* ============================================ */}
+      {/* TAB: DASHBOARD PROGRAM                       */}
+      {/* ============================================ */}
+
+      {!pusatLocked && tab === "dashboard" && (
+        <>
+          {loading && <LoadingState label="Memuat dashboard..." />}
+
+          {!loading && error && (
+            <EmptyState title={error} description="Silakan muat ulang halaman." />
+          )}
+
+          {!loading && !error && (
+            <div className="space-y-5">
+              {JENIS_LIST.map((jenis) => (
+                <JenisSection
+                  key={jenis}
+                  jenis={jenis}
+                  summary={summaryOf(jenis)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ============================================ */}
+      {/* TAB: HISTORY (LOKAL MODUL INI)               */}
+      {/* ============================================ */}
+
+      {!pusatLocked && tab === "history" && (
+        <>
+          {loading && <LoadingState label="Memuat history..." />}
+
+          {!loading && error && (
+            <EmptyState title={error} description="Silakan muat ulang halaman." />
+          )}
+
+          {!loading && !error && (
+            <div className="space-y-4">
+              {/* FILTER */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <SelectField
+                  value={jenisFilter}
+                  onChange={setJenisFilter}
+                  options={[
+                    { value: "all", label: "Semua Jenis" },
+                    ...JENIS_LIST.map((j) => ({
+                      value: j,
+                      label: JENIS_LABEL[j],
+                    })),
+                  ]}
+                />
+
+                <SelectField
+                  value={tanggalFilter}
+                  onChange={setTanggalFilter}
+                  options={[
+                    { value: "all", label: "Semua Tanggal" },
+                    ...[...tanggalOptions].reverse().map((d) => ({
+                      value: d,
+                      label: formatTanggal(d),
+                    })),
+                  ]}
+                />
+
+                <SelectField
+                  value={timFilter}
+                  onChange={setTimFilter}
+                  options={[
+                    { value: "all", label: "Semua Tim" },
+                    ...timOptions.map((o) => ({
+                      value: o.employeeId,
+                      label: o.employeeName,
+                    })),
+                  ]}
+                />
+
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetFilters}
+                    disabled={!hasFilter}
+                    className="w-full"
+                  >
+                    Reset Filter
+                  </Button>
+                </div>
+              </div>
+
+              {/* TOTAL PER JENIS */}
+              {hasFilter && (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {JENIS_LIST.map((jenis) => {
+                    const tone = TONE[jenis]
+                    const Icon = JENIS_ICON[jenis]
+                    const value = filteredTotals[jenis] ?? 0
+
+                    return (
+                      <div
+                        key={jenis}
+                        className={cn(
+                          "flex items-center gap-3 rounded-xl border border-border bg-card p-3",
+                          tone.card,
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "grid size-9 shrink-0 place-items-center rounded-lg",
+                            tone.soft,
+                            tone.text,
+                          )}
+                        >
+                          <Icon className="size-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs text-muted-foreground">
+                            {JENIS_PLURAL[jenis]}
+                          </p>
+                          <p className="truncate text-sm font-semibold tabular-nums">
+                            {formatNilai(jenis, value)}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* TABEL */}
+              {filteredTransactions.length === 0 ? (
+                <EmptyState
+                  title={
+                    hasFilter
+                      ? "Tidak ada data sesuai filter"
+                      : "Belum ada realisasi"
+                  }
+                  description={
+                    hasFilter
+                      ? "Coba ubah atau reset filter yang aktif."
+                      : isStore
+                        ? "Catat penjualan pertama melalui tombol Catat Penjualan."
+                        : "Belum ada realisasi penjualan pada periode ini."
+                  }
+                  icon={HandCoins}
+                />
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">Tanggal</th>
+                          <th className="px-3 py-3 font-medium">Toko</th>
+                          <th className="px-3 py-3 font-medium">Tim</th>
+                          <th className="px-3 py-3 font-medium">Jenis</th>
+                          <th className="px-3 py-3 font-medium">Detail</th>
+                          <th className="px-3 py-3 text-right font-medium">
+                            Nilai
+                          </th>
+                          <th className="px-3 py-3 text-right font-medium">
+                            Aksi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTransactions.map((txn) => {
+                          const tone = TONE[txn.jenis]
+                          const Icon = JENIS_ICON[txn.jenis]
+                          const canAct =
+                            isStore &&
+                            txn.storeId === profile?.storeId
+
+                          return (
+                            <tr
+                              key={txn.id}
+                              className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
+                            >
+                              <td className="whitespace-nowrap px-3 py-3">
+                                {formatTanggal(txn.tanggal)}
+                              </td>
+                              <td className="px-3 py-3">
+                                {txn.storeName || "-"}
+                              </td>
+                              <td className="px-3 py-3">
+                                {txn.employeeName || "-"}
+                              </td>
+                              <td className="px-3 py-3">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium",
+                                    tone.chip,
+                                  )}
+                                >
+                                  <Icon className="size-3.5" />
+                                  {JENIS_LABEL[txn.jenis]}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-muted-foreground">
+                                {detailRealisasi(txn)}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">
+                                {formatNilai(
+                                  txn.jenis,
+                                  nilaiFromRow(txn),
+                                )}
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  {canAct && (
+                                    <>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        onClick={() =>
+                                          openEditForm(txn)
+                                        }
+                                        aria-label="Ubah realisasi"
+                                      >
+                                        <PenLine className="size-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        onClick={() =>
+                                          setPendingDelete(txn)
+                                        }
+                                        className="text-destructive hover:bg-destructive/10"
+                                        aria-label="Hapus realisasi"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ============================================ */}
+      {/* MODAL: ATUR TARGET (PAKET 3 JENIS)           */}
+      {/* ============================================ */}
+
       <Modal
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        title={
-          formMode === "edit"
-            ? "Edit Pencatatan Additional Selling"
-            : "Tambah Pencatatan Additional Selling"
-        }
-        description="Pencatatan nilai tambahan penjualan per anggota tim."
-      >
-        <form onSubmit={handleSubmitForm} className="flex flex-col gap-4">
-          <Field label="Tanggal">
-            <DateField
-              value={form.tanggal}
-              onChange={(v) =>
-                setForm((current) => ({ ...current, tanggal: v }))
-              }
-            />
-          </Field>
+        open={targetOpen && isStore}
+        onClose={() => setTargetOpen(false)}
+        title="Atur Target Penjualan"
+        description={`Periode ${monthLabel}. Ketiga jenis target wajib diisi sebagai satu paket.`}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTargetOpen(false)}
+              disabled={savingTargets || deletingTargets}
+            >
+              Tutup
+            </Button>
 
+            {targetComplete ? (
+              <>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleDeleteTargets}
+                  disabled={deletingTargets || savingTargets}
+                >
+                  {deletingTargets
+                    ? "Menghapus..."
+                    : "Hapus Target"}
+                </Button>
+
+                {/* Mode edit menampilkan SIMPAN, bukan Edit
+                    Target, agar hasil edit bisa disimpan tanpa
+                    harus menutup modal. */}
+                {targetMode === "edit" ? (
+                  <Button
+                    type="button"
+                    onClick={handleSaveTargets}
+                    disabled={
+                      savingTargets || deletingTargets
+                    }
+                    className={cn(
+                      TONE.ADDITIONAL_SELLING.card,
+                      "ring-1 ring-inset",
+                    )}
+                  >
+                    {savingTargets
+                      ? "Menyimpan..."
+                      : "Simpan Target"}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setTargetMode("edit")
+                      setTargetError("")
+                      setTargetInvalid(null)
+                    }}
+                    disabled={deletingTargets || savingTargets}
+                  >
+                    Edit Target
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleSaveTargets}
+                disabled={
+                  savingTargets ||
+                  deletingTargets ||
+                  !targetEmployeeId
+                }
+                className={cn(
+                  TONE.ADDITIONAL_SELLING.card,
+                  "ring-1 ring-inset",
+                )}
+              >
+                {savingTargets
+                  ? "Menyimpan..."
+                  : "Simpan Target"}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* PILIH TIM */}
           <Field label="Nama Tim">
             <SelectField
-              value={form.employeeId}
-              onChange={(v) =>
-                setForm((current) => ({ ...current, employeeId: v }))
-              }
+              value={targetEmployeeId}
+              onChange={changeTargetEmployee}
               options={[
                 { value: "", label: "Pilih Tim" },
-                ...availableEmployees.map((e) => ({
-                  value: e.id,
-                  label: e.name,
+                ...targetRows.map((row) => ({
+                  value: row.employeeId,
+                  label: row.employeeName,
                 })),
               ]}
             />
           </Field>
 
-          <Field label="Nilai Add Selling">
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                Rp
-              </span>
+          {/* STATUS PAKET */}
+          {targetEmployeeId && (
+            <div
+              className={cn(
+                "rounded-lg border px-3 py-2 text-xs font-medium",
+                targetComplete
+                  ? "border-status-pagi/30 bg-status-pagi-bg text-status-pagi"
+                  : "border-border bg-muted/50 text-muted-foreground",
+              )}
+            >
+              {targetComplete
+                ? "Paket target 3 jenis tersimpan. Realisasi tidak terpengaruh bila target dihapus."
+                : "Paket target belum lengkap. Isi ketiga jenis agar dapat disimpan."}
+            </div>
+          )}
+
+          {/* TIGA JENIS TARGET */}
+          {targetRows.length === 0 ? (
+            <EmptyState
+              title="Belum ada karyawan"
+              description="Tidak ada karyawan aktif pada toko ini."
+            />
+          ) : (
+            <div className="space-y-2">
+              {JENIS_LIST.map((jenis) => {
+                const tone = TONE[jenis]
+                const Icon = JENIS_ICON[jenis]
+                const draft = targetDrafts[jenis] ?? ""
+                const invalid = targetInvalid === jenis
+                const readOnly = targetMode === "view"
+                const isRupiah =
+                  jenis === "ADDITIONAL_SELLING"
+
+                return (
+                  <div key={jenis}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border bg-card px-3 py-2",
+                        invalid
+                          ? "border-destructive/60"
+                          : "border-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "grid size-8 shrink-0 place-items-center rounded-md",
+                          tone.soft,
+                          tone.text,
+                        )}
+                      >
+                        <Icon className="size-4" />
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {JENIS_LABEL[jenis]}
+                        </p>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {draft === ""
+                            ? "Belum ada target"
+                            : formatNilai(jenis, Number(draft))}
+                        </p>
+                      </div>
+
+                      {/* Input + satuan.
+                          "Rp" (Additional Selling) dan "PCS" (dua
+                          jenis lain) adalah adornment visual di luar
+                          <input>, jadi TIDAK PERNAH ikut masuk ke
+                          state draft maupun payload API. Nilai yang
+                          dikirim tetap NUMBER murni.
+
+                          Additional Selling memakai formatNominalInput
+                          untuk HANYA tampilan: state tetap digit
+                          murni karena setTargetDraft selalu
+                          toDigitsOnly() (titik dibuang). Jadi
+                          tampil "1.000.000" -> state "1000000"
+                          -> payload 1000000. keepZero=true supaya
+                          target 0 tetap tampil "0" dan tetap
+                          berbeda dari "belum ada target". */}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {isRupiah && (
+                          <span
+                            className={cn(
+                              "select-none text-xs font-semibold",
+                              readOnly
+                                ? "text-muted-foreground/70"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            Rp
+                          </span>
+                        )}
+
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          readOnly={readOnly}
+                          value={
+                            isRupiah
+                              ? formatNominalInput(
+                                  draft,
+                                  true,
+                                )
+                              : draft
+                          }
+                          onChange={(e) =>
+                            setTargetDraft(
+                              jenis,
+                              e.target.value,
+                            )
+                          }
+                          placeholder="0"
+                          aria-label={`Target ${JENIS_LABEL[jenis]}`}
+                          className={cn(
+                            "h-8 w-28 rounded-md border bg-background px-2.5 text-right text-sm tabular-nums outline-none transition-all",
+                            "focus:border-primary focus:ring-2 focus:ring-primary/25",
+                            readOnly
+                              ? "border-border opacity-70"
+                              : invalid
+                                ? "border-destructive/60"
+                                : "border-border",
+                          )}
+                        />
+
+                        {!isRupiah && (
+                          <span
+                            className={cn(
+                              "select-none text-xs font-semibold",
+                              readOnly
+                                ? "text-muted-foreground/70"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            PCS
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {invalid && (
+                      <p className="mt-1 pl-1 text-[11px] font-medium text-destructive">
+                        Wajib diisi.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {targetError && (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+              {targetError}
+            </p>
+          )}
+        </div>
+      </Modal>
+
+      {/* ============================================ */}
+      {/* MODAL: CATAT / UBAH REALISASI                */}
+      {/* ============================================ */}
+
+      <Modal
+        open={formOpen && isStore}
+        onClose={() => setFormOpen(false)}
+        title={
+          formMode === "edit" ? "Ubah Realisasi" : "Catat Penjualan"
+        }
+        description={`Periode ${monthLabel}. Realisasi dapat dicatat tanpa target.`}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setFormOpen(false)}
+              disabled={formSaving}
+            >
+              Batal
+            </Button>
+            <Button
+              type="submit"
+              form="realisasi-form"
+              disabled={formSaving}
+            >
+              {formSaving
+                ? "Menyimpan..."
+                : formMode === "edit"
+                  ? "Simpan Perubahan"
+                  : "Simpan"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="realisasi-form"
+          onSubmit={handleSubmitForm}
+          className="space-y-4"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tanggal">
+              <DateField
+                value={form.tanggal}
+                onChange={(v) =>
+                  setForm((current) => ({ ...current, tanggal: v }))
+                }
+              />
+            </Field>
+
+            <Field label="Nama Tim">
+              <SelectField
+                value={form.employeeId}
+                onChange={(v) =>
+                  setForm((current) => ({
+                    ...current,
+                    employeeId: v,
+                  }))
+                }
+                options={[
+                  { value: "", label: "Pilih Tim" },
+                  ...availableEmployees.map((e) => ({
+                    value: e.id,
+                    label: e.name,
+                  })),
+                ]}
+              />
+            </Field>
+          </div>
+
+          <Field label="Jenis Penjualan">
+            <SelectField
+              value={form.jenis}
+              onChange={(v) =>
+                setForm((current) => ({
+                  ...current,
+                  jenis: v as PenjualanJenis,
+                }))
+              }
+              options={JENIS_LIST.map((j) => ({
+                value: j,
+                label: JENIS_LABEL[j],
+              }))}
+            />
+          </Field>
+
+          {form.jenis === "ADDITIONAL_SELLING" ? (
+            <Field label="Nilai Additional Selling (Rp)">
               <input
                 type="text"
                 inputMode="numeric"
@@ -1001,11 +1962,85 @@ export function AdditionalSellingPage() {
                     nominal: toDigitsOnly(e.target.value, 12),
                   }))
                 }
-                placeholder="0"
-                className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+                placeholder="Contoh: 150000"
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
               />
-            </div>
-          </Field>
+            </Field>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Jumlah PCS">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={form.pcs}
+                    onChange={(e) =>
+                      setForm((current) => ({
+                        ...current,
+                        pcs: toDigitsOnly(e.target.value, 7),
+                      }))
+                    }
+                    placeholder="Contoh: 12"
+                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+                  />
+                </Field>
+
+                {form.jenis === "UPSIZE_BOTOL" && (
+                  <Field label="Ukuran Botol">
+                    <SelectField
+                      value={form.ukuranBotol}
+                      onChange={(v) =>
+                        setForm((current) => ({
+                          ...current,
+                          ukuranBotol: v as UkuranBotol,
+                        }))
+                      }
+                      options={UKURAN_BOTOL_LIST.map((u) => ({
+                        value: u,
+                        label: u,
+                      }))}
+                    />
+                  </Field>
+                )}
+
+                {form.jenis === "SELLING_EKSKLUSIF_PERFUME" && (
+                  <Field label="Produk">
+                    <SelectField
+                      value={form.produk}
+                      onChange={(v) =>
+                        setForm((current) => ({
+                          ...current,
+                          produk: v as Produk,
+                        }))
+                      }
+                      options={PRODUK_LIST.map((p) => ({
+                        value: p,
+                        label: p,
+                      }))}
+                    />
+                  </Field>
+                )}
+              </div>
+
+              {form.jenis === "SELLING_EKSKLUSIF_PERFUME" &&
+                form.produk === "LAINNYA" && (
+                  <Field label="Nama Produk Lainnya">
+                    <input
+                      type="text"
+                      value={form.namaProdukLain}
+                      onChange={(e) =>
+                        setForm((current) => ({
+                          ...current,
+                          namaProdukLain: e.target.value,
+                        }))
+                      }
+                      placeholder="Tuliskan nama produk"
+                      className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+                    />
+                  </Field>
+                )}
+            </>
+          )}
 
           <Field label="Keterangan (opsional)">
             <textarea
@@ -1013,50 +2048,45 @@ export function AdditionalSellingPage() {
               onChange={(e) =>
                 setForm((current) => ({
                   ...current,
-                  keterangan: e.target.value.slice(0, 500),
+                  keterangan: e.target.value,
                 }))
               }
               rows={3}
-              placeholder="Catatan tambahan (opsional)"
-              className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+              maxLength={500}
+              placeholder="Catatan tambahan"
+              className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
             />
           </Field>
 
           {formError && (
-            <p className="text-sm text-destructive">{formError}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+              {formError}
+            </p>
           )}
-
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setFormOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button type="submit" disabled={formSaving}>
-              {formSaving ? "Menyimpan..." : "Simpan"}
-            </Button>
-          </div>
         </form>
       </Modal>
 
-      {/* MODAL KONFIRMASI HAPUS */}
+      {/* ============================================ */}
+      {/* MODAL: KONFIRMASI HAPUS                     */}
+      {/* ============================================ */}
+
       <Modal
-        open={pendingDelete !== null}
+        open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
-        title="Hapus Pencatatan?"
-        description={
-          pendingDelete
-            ? `${pendingDelete.employeeName || "-"} — ${formatTanggal(pendingDelete.tanggal)} (${formatRupiah(Number(pendingDelete.nominal) || 0)})`
-            : undefined
-        }
+        title="Hapus realisasi?"
+        description="Data realisasi yang dihapus tidak dapat dikembalikan."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setPendingDelete(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDelete(null)}
+              disabled={deleting}
+            >
               Batal
             </Button>
             <Button
+              type="button"
               variant="destructive"
               onClick={performDelete}
               disabled={deleting}
@@ -1065,545 +2095,270 @@ export function AdditionalSellingPage() {
             </Button>
           </>
         }
-      />
-
-      {/* MODAL INFORMASI PROGRAM — akses kecil via tombol "!" */}
-      <Modal
-        open={infoOpen}
-        onClose={() => setInfoOpen(false)}
-        title="Informasi Program"
-        description="PROGRAM KERJA &middot; ADDITIONAL SELLING"
       >
-        <div className="max-h-[65vh] overflow-y-auto pr-1">
-          <InformasiProgram />
-        </div>
+        {pendingDelete && (
+          <div className="space-y-2 text-sm">
+            <p className="font-medium">
+              {JENIS_LABEL[pendingDelete.jenis]} ·{" "}
+              {formatNilai(pendingDelete.jenis, nilaiFromRow(pendingDelete))}
+            </p>
+            <p className="text-muted-foreground">
+              {formatTanggal(pendingDelete.tanggal)} ·{" "}
+              {pendingDelete.employeeName} ·{" "}
+              {pendingDelete.storeName}
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   )
 }
 
 // ============================================================
-// DASHBOARD PROGRAM
+// DASHBOARD PER JENIS
 // ============================================================
 
-function DashboardTab({
-  scopeLabel,
-  monthLabel,
+function JenisSection({
+  jenis,
   summary,
-  targets,
-  isStore,
-  targetRows,
-  targetDrafts,
-  setTargetDraft,
-  onSaveTargets,
-  savingTargets,
 }: {
-  scopeLabel: string
-  monthLabel: string
-  summary?: AddSellSummary
-  targets: AddSellTarget[]
-  isStore: boolean
-  targetRows: { employeeId: string; employeeName: string }[]
-  targetDrafts: Record<string, string>
-  setTargetDraft: (employeeId: string, value: string) => void
-  onSaveTargets: () => void
-  savingTargets: boolean
+  jenis: PenjualanJenis
+  summary: AddSellJenisSummary
 }) {
-  const totalNominal = summary?.totalNominal ?? 0
-  const totalTarget = summary?.totalTarget ?? 0
-  const progress = summary?.progress ?? 0
-
-  // Nama Tim WAJIB bersumber dari target: employee yang memiliki
-  // target pada periode ini harus tampil dengan namanya walaupun
-  // belum ada pencatatan. Nama diambil dari target, bukan dari
-  // transaksi.
-  const targetNameById = React.useMemo(() => {
-    const map = new Map<string, string>()
-    for (const target of targets) {
-      if (!target.employeeId) continue
-      if (!map.has(target.employeeId)) {
-        map.set(target.employeeId, target.employeeName || "")
-      }
-    }
-    return map
-  }, [targets])
-
-  const perEmployee = (summary?.perEmployee ?? []).map((row) => ({
-    ...row,
-    employeeName:
-      row.employeeName && row.employeeName !== "-"
-        ? row.employeeName
-        : targetNameById.get(row.employeeId) || row.employeeName,
-  }))
+  const tone = TONE[jenis]
+  const Icon = JENIS_ICON[jenis]
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold tracking-tight">
-              Periode {monthLabel}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Scope: {scopeLabel}
-            </p>
+    <Card
+      className={cn(
+        "overflow-hidden",
+        tone.card,
+        "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+      )}
+    >
+      {/* HEADER + NEON BAR */}
+      <div className="relative">
+        <div
+          className={cn(
+            "h-1 w-full",
+            tone.bar,
+            tone.barGlow,
+          )}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "grid size-10 place-items-center rounded-xl",
+                tone.soft,
+                tone.text,
+                tone.icon,
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">
+                {JENIS_LABEL[jenis]}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Satuan: {JENIS_UNIT[jenis]}
+              </p>
+            </div>
           </div>
-          <Badge variant="muted">SYSTEM</Badge>
         </div>
       </div>
 
-      {/* 3 KARTU RINGKASAN */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <SummaryCard
-          icon={<TrendingUp className="size-4" />}
-          label="TOTAL ADDITIONAL SELLING"
-          value={formatRupiah(totalNominal)}
-        />
-        <SummaryCard
-          icon={<Target className="size-4" />}
-          label="TOTAL TARGET"
-          value={formatRupiah(totalTarget)}
-        />
-        <SummaryCard
-          icon={<HandCoins className="size-4" />}
-          label="PROGRESS KESELURUHAN"
-          value={`${progress}%`}
-        />
-      </div>
+      <CardContent className="space-y-4 pt-0">
+        {/* STAT CARDS */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Total Target"
+            value={formatNilai(jenis, summary.totalTarget)}
+            tone={tone}
+            icon={Target}
+          />
+          <StatCard
+            label="Total Realisasi"
+            value={formatNilai(jenis, summary.totalAchievement)}
+            tone={tone}
+            icon={TrendingUp}
+          />
 
-      {/* PROGRESS PER KARYAWAN */}
-      <Card>
-        <CardContent className="p-5">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            PROGRESS PER KARYAWAN
-          </p>
+          <div
+            className={cn(
+              "rounded-xl border border-border bg-background p-3",
+              tone.card,
+            )}
+          >
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TrendingUp className={cn("size-3.5", tone.text)} />
+              Progress Keseluruhan
+            </div>
+            <p
+              className={cn(
+                "mt-1.5 text-xl font-semibold tabular-nums",
+                summary.progress > 0 ? tone.text : "text-muted-foreground",
+              )}
+            >
+              {summary.totalTarget > 0 ? `${summary.progress}%` : "-"}
+            </p>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width] duration-500",
+                  tone.track,
+                )}
+                style={{
+                  width: `${Math.min(100, Math.max(0, summary.progress))}%`,
+                }}
+              />
+            </div>
+          </div>
 
-          {perEmployee.length === 0 ? (
-            <EmptyState
-              title="Belum ada data"
-              description="Belum ada target atau pencatatan pada periode ini."
-            />
-          ) : (
+          <div
+            className={cn(
+              "rounded-xl border border-border bg-background p-3",
+              tone.card,
+            )}
+          >
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={cn("size-2 rounded-full", tone.dot)} />
+              Karyawan
+            </div>
+            <p className="mt-1.5 text-xl font-semibold tabular-nums">
+              {summary.totalEmployees}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {summary.employeesWithoutTarget > 0
+                ? `${summary.employeesWithoutTarget} belum ada target`
+                : "Semua sudah ada target"}
+            </p>
+          </div>
+        </div>
+
+        {/* RINCIAN PER KARYAWAN */}
+        {summary.perEmployee.length === 0 ? (
+          <EmptyState
+            title="Belum ada data"
+            description="Belum ada target maupun realisasi pada periode ini."
+            icon={Icon}
+          />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-2.5 font-medium">Nama Tim</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Target</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Pencapaian</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Progress</th>
+                    <th className="px-3 py-2.5 text-right font-medium">
+                      Target
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-medium">
+                      Realisasi
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-medium">
+                      Progress
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {perEmployee.map((row) => (
+                  {summary.perEmployee.map((row) => (
                     <tr
-                      key={row.employeeId}
-                      className="border-b border-border/60 last:border-0"
+                      key={`${jenis}-${row.employeeId}`}
+                      className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
                     >
                       <td className="px-3 py-2.5 font-medium">
                         {row.employeeName}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {formatRupiah(row.targetNominal)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {formatRupiah(row.nominal)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-semibold">
-                        {row.progress}%
-                      </td>
+
+                      {!row.hasTarget ? (
+                        // Target belum dibuat. Capaian dan progress
+                        // sengaja disembunyikan agar tidak disalahartikan
+                        // sebagai pencapaian nol.
+                        <td colSpan={3} className="px-3 py-2.5">
+                          <Badge
+                            variant="outline"
+                            className="border-dashed text-muted-foreground"
+                          >
+                            Target belum dibuat
+                          </Badge>
+                        </td>
+                      ) : (
+                        <>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
+                            {formatNilai(jenis, row.target)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">
+                            {formatNilai(jenis, row.achievement)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={cn(
+                                    "h-full rounded-full transition-[width] duration-500",
+                                    tone.track,
+                                  )}
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      Math.max(0, row.progress),
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                              <span
+                                className={cn(
+                                  "w-14 text-right text-xs font-semibold tabular-nums",
+                                  row.progress > 0
+                                    ? tone.text
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {row.progress}%
+                              </span>
+                            </div>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
-                  <tr className="bg-muted/40">
-                    <td className="px-3 py-2.5 font-semibold">TOTAL</td>
-                    <td className="px-3 py-2.5 text-right font-semibold">
-                      {formatRupiah(totalTarget)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-semibold">
-                      {formatRupiah(totalNominal)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-semibold">
-                      {progress}%
-                    </td>
-                  </tr>
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ATUR TARGET — KHUSUS STORE */}
-      {isStore && (
-        <Card>
-          <CardContent className="p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  ATUR TARGET KARYAWAN
-                </p>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Target per karyawan untuk periode {monthLabel}.
-                </p>
-              </div>
-              <Button
-                onClick={onSaveTargets}
-                disabled={savingTargets}
-              >
-                <Target className="mr-2 size-4" />
-                {savingTargets ? "Menyimpan..." : "Simpan Target"}
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {targetRows.map((row) => (
-                <div
-                  key={row.employeeId}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {row.employeeName}
-                  </span>
-                  <div className="relative w-36 shrink-0">
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      Rp
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formatNominalInput(targetDrafts[row.employeeId] ?? "", true)}
-                      onChange={(e) =>
-                        setTargetDraft(row.employeeId, e.target.value)
-                      }
-                      placeholder="0"
-                      className="h-9 w-full rounded-lg border border-input bg-card pl-8 pr-2.5 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function SummaryCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-5">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-lg font-bold leading-tight">{value}</p>
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-// ============================================================
-// INFORMASI PROGRAM (statis)
-// ============================================================
-
-function InformasiProgram() {
-  const steps = [
-    "Gali kebutuhan",
-    "Pilih produk utama",
-    "Berikan rekomendasi tambahan",
-    "Teknik menawarkan",
-    "Closing",
-  ]
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="size-4 text-primary" />
-            <p className="text-sm font-semibold uppercase tracking-wide">
-              Tujuan Program
-            </p>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Meningkatkan nilai transaksi dengan cara menggali kebutuhan
-            pelanggan, memberikan rekomendasi produk tambahan yang relevan,
-            serta mencatat penjualan tambahan (Additional Selling) per anggota
-            tim secara transparan.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <div className="flex items-center gap-2">
-            <Target className="size-4 text-primary" />
-            <p className="text-sm font-semibold uppercase tracking-wide">
-              Goals
-            </p>
-          </div>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>Setiap anggota tim memiliki target bulanan yang jelas.</li>
-            <li>Pencapaian diukur dari total Additional Selling tercatat.</li>
-            <li>Dashboard memberikan transparansi progress keseluruhan.</li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <div className="flex items-center gap-2">
-            <HandCoins className="size-4 text-primary" />
-            <p className="text-sm font-semibold uppercase tracking-wide">
-              Skema Additional Selling
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {[
-              "GALI KEBUTUHAN",
-              "PRODUK UTAMA",
-              "REKOMENDASI",
-              "TAMBAHAN",
-              "CLOSING",
-            ].map((label, index) => (
-              <div key={label} className="flex items-center gap-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                  {index + 1}
-                </span>
-                <p className="text-sm font-medium">{label}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <div className="flex items-center gap-2">
-            <PenLine className="size-4 text-primary" />
-            <p className="text-sm font-semibold uppercase tracking-wide">
-              Panduan
-            </p>
-          </div>
-          <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-            {steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Rumus
-            </p>
-            <p className="mt-1 text-sm text-foreground">
-              KEBUTUHAN &rarr; PRODUK UTAMA &rarr; REKOMENDASI &rarr;
-              TAMBAHAN &rarr; CLOSING
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Prinsip
-            </p>
-            <p className="mt-1 text-sm italic text-foreground">
-              &ldquo;Gali kebutuhannya, berikan rekomendasinya, lengkapi
-              kebutuhannya, dan tingkatkan nilai transaksinya.&rdquo;
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-// ============================================================
-// PENCATATAN — TABEL + FILTER
-// ============================================================
-
-function PencatatanTab({
-  isStore,
-  transactions,
-  tanggalOptions,
-  tanggalFilter,
-  setTanggalFilter,
-  timOptions,
-  timFilter,
-  setTimFilter,
-  onResetFilters,
-  totalFiltered,
-  onAdd,
-  onEdit,
-  onDelete,
-  hasData,
+function StatCard({
+  label,
+  value,
+  tone,
+  icon: Icon,
 }: {
-  isStore: boolean
-  transactions: AddSellTransaction[]
-  tanggalOptions: string[]
-  tanggalFilter: string
-  setTanggalFilter: (v: string) => void
-  timOptions: { employeeId: string; employeeName: string }[]
-  timFilter: string
-  setTimFilter: (v: string) => void
-  onResetFilters: () => void
-  totalFiltered: number
-  onAdd: () => void
-  onEdit: (txn: AddSellTransaction) => void
-  onDelete: (txn: AddSellTransaction) => void
-  hasData: boolean
+  label: string
+  value: string
+  tone: Tone
+  icon: React.ComponentType<{ className?: string }>
 }) {
   return (
-    <div className="space-y-4">
-      {/* FILTER */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm lg:flex-row lg:items-end">
-        <Field label="Tanggal" className="w-full lg:w-52">
-          <SelectField
-            value={tanggalFilter}
-            onChange={setTanggalFilter}
-            options={[
-              { value: "all", label: "Semua Tanggal" },
-              ...tanggalOptions.map((tanggal) => ({
-                value: tanggal,
-                label: formatTanggal(tanggal),
-              })),
-            ]}
-          />
-        </Field>
-
-        <Field label="Nama Tim" className="w-full lg:w-52">
-          <SelectField
-            value={timFilter}
-            onChange={setTimFilter}
-            options={[
-              { value: "all", label: "Semua Tim" },
-              ...timOptions.map((t) => ({
-                value: t.employeeId,
-                label: t.employeeName,
-              })),
-            ]}
-          />
-        </Field>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="lg:ml-auto"
-          onClick={onResetFilters}
-        >
-          Reset Filter
-        </Button>
-
-        {isStore && (
-          <Button type="button" onClick={onAdd}>
-            <Plus className="mr-2 size-4" />
-            Tambah Pencatatan
-          </Button>
-        )}
-      </div>
-
-      {!hasData ? (
-        <EmptyState
-          icon={TrendingUp}
-          title="Belum ada pencatatan"
-          description="Belum ada pencatatan Additional Selling pada periode ini."
-        />
-      ) : transactions.length === 0 ? (
-        <EmptyState
-          icon={TrendingUp}
-          title="Tidak ada hasil"
-          description="Tidak ada pencatatan yang cocok dengan filter saat ini."
-        />
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">No</th>
-                  <th className="px-4 py-3 font-medium">Tanggal</th>
-                  <th className="px-4 py-3 font-medium">Nama Tim</th>
-                  <th className="px-4 py-3 text-right font-medium">
-                    Nilai Add Selling
-                  </th>
-                  <th className="px-4 py-3 font-medium">Keterangan</th>
-                  {isStore && <th className="px-4 py-3 text-right font-medium">Aksi</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((txn, index) => (
-                  <tr
-                    key={txn.id}
-                    className="border-b border-border/60 last:border-0"
-                  >
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3">
-                      {formatTanggal(txn.tanggal)}
-                    </td>
-                    <td className="px-4 py-3 font-medium">
-                      {txn.employeeName}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      {formatRupiah(Number(txn.nominal) || 0)}
-                    </td>
-                    <td className="max-w-[220px] truncate px-4 py-3 text-muted-foreground">
-                      {txn.keterangan || "-"}
-                    </td>
-                    {isStore && (
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onEdit(txn)}
-                            aria-label="Edit pencatatan"
-                            title="Edit"
-                          >
-                            <PenLine className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onDelete(txn)}
-                            aria-label="Hapus pencatatan"
-                            title="Hapus"
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-3">
-            <p className="text-sm font-medium text-muted-foreground">
-              TOTAL NILAI ADDITIONAL SELLING
-            </p>
-            <p className="text-sm font-bold">
-              {formatRupiah(totalFiltered)}
-            </p>
-          </div>
-        </div>
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-background p-3",
+        tone.card,
       )}
+    >
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={cn("size-3.5", tone.text)} />
+        {label}
+      </div>
+      <p className="mt-1.5 truncate text-xl font-semibold tabular-nums">
+        {value}
+      </p>
     </div>
   )
 }

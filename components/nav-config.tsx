@@ -111,7 +111,7 @@ export const STORE_NAV_ITEMS: NavItem[] = [
  * =====================================================
  *
  * Grup menu bersarang "PROGRAM KERJA". Saat ini berisi satu
- * submenu ADDITIONAL SELLING. Grup ditambahkan secara minimal
+ * submenu TARGET PENJUALAN. Grup ditambahkan secara minimal
  * HANYA untuk kebutuhan fitur ini; item menu existing lain
  * (CENTRAL_NAV_ITEMS / STORE_NAV_ITEMS) tidak diubah.
  *
@@ -126,7 +126,7 @@ export const PROGRAM_KERJA_GROUP: {
   items: [
     {
       key: "additional-selling",
-      label: "ADDITIONAL SELLING",
+      label: "TARGET PENJUALAN",
       icon: TrendingUp,
     },
   ],
@@ -147,5 +147,5 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   "shift-cabang": "SHIFT CABANG",
   history: "HISTORY",
   "jadwal-libur": "JADWAL LIBUR",
-  "additional-selling": "ADDITIONAL SELLING",
+  "additional-selling": "TARGET PENJUALAN",
 }
