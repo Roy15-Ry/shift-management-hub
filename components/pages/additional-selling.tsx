@@ -9,6 +9,7 @@ import {
   PenLine,
   Plus,
   Sparkles,
+  Store,
   Target,
   Trash2,
   TrendingUp,
@@ -28,8 +29,11 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
-import { getFirestoreEmployees } from "@/lib/firestore-data"
-import type { FirestoreEmployee } from "@/lib/firestore-data"
+import { getFirestoreEmployees, getFirestoreStores } from "@/lib/firestore-data"
+import type {
+  FirestoreEmployee,
+  FirestoreStore,
+} from "@/lib/firestore-data"
 
 // ============================================================
 // TARGET PENJUALAN
@@ -344,6 +348,76 @@ function formatNominalInput(
 }
 
 // ============================================================
+// CENTRAL STORE PICKER (pola lokal, sama dengan Monitoring
+// Error; sengaja tidak diekstrak agar Monitoring Error tidak
+// ikut berubah)
+// ============================================================
+
+function CentralStorePicker({
+  stores,
+  onSelect,
+}: {
+  stores: FirestoreStore[]
+  onSelect: (storeId: string) => void
+}) {
+  if (stores.length === 0) {
+    return (
+      <EmptyState
+        title="Belum ada toko"
+        description="Tidak ada toko yang tersedia pada cabang ini."
+        icon={Store}
+      />
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {stores.map((store) => (
+        <button
+          key={store.id}
+          type="button"
+          onClick={() => onSelect(store.id)}
+          className={cn(
+            "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
+            "transition-all duration-300",
+            "hover:border-primary/40 hover:shadow-md",
+            "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+          )}
+        >
+          <span
+            aria-hidden
+            className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
+          />
+
+          <span
+            className={cn(
+              "flex size-12 shrink-0 items-center justify-center rounded-lg",
+              "bg-primary/10 text-primary",
+              "ring-1 ring-inset ring-primary/25",
+              "shadow-[0_0_18px_-8px] shadow-primary/50",
+            )}
+          >
+            <Store className="size-5" />
+          </span>
+
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-foreground">
+              {store.nama}
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Target Penjualan
+            </span>
+          </span>
+
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ============================================================
 // HALAMAN UTAMA
 // ============================================================
 
@@ -354,6 +428,8 @@ export function AdditionalSellingPage() {
   const role = (profile?.role ?? "").trim().toLowerCase()
   const isStore = role === "store"
   const isCentralPusat = role === "central_pusat"
+  const isCentralCabang = role === "central_cabang"
+  const isCentral = isCentralPusat || isCentralCabang
 
   // ----------------------------------------------------------
   // PERIODE (tahun + bulan)
@@ -435,6 +511,65 @@ export function AdditionalSellingPage() {
   }, [isCentralPusat, user])
 
   // ----------------------------------------------------------
+  // CENTRAL — pilih SATU toko (dashboard per toko, tanpa
+  // agregat seluruh cabang)
+  // ----------------------------------------------------------
+
+  const [storeOptions, setStoreOptions] = React.useState<FirestoreStore[]>([])
+  const [storeFilter, setStoreFilter] = React.useState("")
+
+  const storeScopeCabang = isCentralPusat
+    ? cabangFilter
+    : isCentralCabang
+      ? (profile?.cabangId ?? "")
+      : ""
+
+  React.useEffect(() => {
+    if (!isCentral || !storeScopeCabang) {
+      setStoreOptions([])
+      return
+    }
+
+    let cancelled = false
+
+    getFirestoreStores(
+      isCentralPusat ? "central_pusat" : "central_cabang",
+      undefined,
+      storeScopeCabang,
+    )
+      .then((list) => {
+        if (cancelled) return
+
+        // Central Pusat memuat seluruh toko, jadi cabang terpilih
+        // tetap disaring di sisi klien.
+        const scope = storeScopeCabang.toUpperCase()
+
+        const sorted = list
+          .filter((store) =>
+            isCentralPusat
+              ? String(store.cabangId ?? "")
+                  .trim()
+                  .toUpperCase() === scope
+              : true,
+          )
+          .sort((a, b) =>
+            a.nama.localeCompare(b.nama, "id", {
+              sensitivity: "base",
+            }),
+          )
+        setStoreOptions(sorted)
+      })
+      .catch((error) => {
+        console.error("Gagal memuat daftar toko:", error)
+        if (!cancelled) setStoreOptions([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isCentral, storeScopeCabang])
+
+  // ----------------------------------------------------------
   // DATA (GET /api/additional-selling)
   // ----------------------------------------------------------
 
@@ -445,6 +580,9 @@ export function AdditionalSellingPage() {
   const requestSeqRef = React.useRef(0)
 
   const pusatLocked = isCentralPusat && !cabangFilter
+  // Central belum memilih toko.
+  const storeLocked = isCentral && !storeFilter
+  const locked = pusatLocked || storeLocked
 
   React.useEffect(() => {
     if (!profile || !user) {
@@ -452,7 +590,7 @@ export function AdditionalSellingPage() {
       return
     }
 
-    if (pusatLocked) {
+    if (pusatLocked || storeLocked) {
       setLoading(false)
       setData(null)
       return
@@ -476,6 +614,12 @@ export function AdditionalSellingPage() {
 
         if (isCentralPusat && cabangFilter) {
           params.set("cabang", cabangFilter)
+        }
+
+        // Untuk role Store parameter store TIDAK dikirim: server
+        // selalu memakai user.storeId.
+        if (isCentral && storeFilter) {
+          params.set("store", storeFilter)
         }
 
         const response = await fetch(
@@ -531,6 +675,9 @@ export function AdditionalSellingPage() {
     reloadKey,
     isCentralPusat,
     pusatLocked,
+    storeLocked,
+    storeFilter,
+    isCentral,
     periode,
   ])
 
@@ -1214,7 +1361,17 @@ export function AdditionalSellingPage() {
   // RENDER
   // ----------------------------------------------------------
 
-  const storeName = profile?.namaStore || profile?.storeId || "CABANG"
+  // Untuk Store tetap nama tokonya sendiri. Untuk Central memakai
+  // nama toko yang dipilih (bukan lagi label agregat cabang).
+  const selectedStoreName = isCentral
+    ? (storeOptions.find((s) => s.id === storeFilter)?.nama ?? "")
+    : ""
+
+  const storeName =
+    profile?.namaStore ||
+    profile?.storeId ||
+    selectedStoreName ||
+    "CABANG"
 
   return (
     <div className="space-y-5">
@@ -1248,75 +1405,82 @@ export function AdditionalSellingPage() {
             </div>
           </div>
 
-          {isStore && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => openTargetForm()}
-                className={cn(
-                  "gap-1.5",
-                  "ring-1 ring-inset ring-status-pagi/30",
-                  "shadow-[0_0_16px_-6px] shadow-status-pagi/50",
-                  "transition-all duration-200",
-                  "hover:ring-status-pagi/60",
-                  "hover:shadow-[0_0_20px_-4px] hover:shadow-status-pagi/60",
-                )}
-              >
-                <Target className="size-4" />
-                Buat Target
-              </Button>
+          <div className="flex flex-col items-end gap-2">
+            {isStore && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => openTargetForm()}
+                  className={cn(
+                    "gap-1.5",
+                    "ring-1 ring-inset ring-status-pagi/30",
+                    "shadow-[0_0_16px_-6px] shadow-status-pagi/50",
+                    "transition-all duration-200",
+                    "hover:ring-status-pagi/60",
+                    "hover:shadow-[0_0_20px_-4px] hover:shadow-status-pagi/60",
+                  )}
+                >
+                  <Target className="size-4" />
+                  Buat Target
+                </Button>
 
+                <Button
+                  type="button"
+                  onClick={openAddForm}
+                  className={cn(
+                    "gap-1.5",
+                    "ring-1 ring-inset ring-primary/30",
+                    "shadow-[0_0_16px_-6px] shadow-primary/50",
+                    "transition-all duration-200",
+                    "hover:ring-primary/60",
+                    "hover:shadow-[0_0_20px_-4px] hover:ring-primary/60",
+                  )}
+                >
+                  <Plus className="size-4" />
+                  Catat Penjualan
+                </Button>
+              </div>
+            )}
+
+            {/* NAVIGASI PERIODE - bagian dari header utama */}
+            <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1">
               <Button
                 type="button"
-                onClick={openAddForm}
-                className={cn(
-                  "gap-1.5",
-                  "ring-1 ring-inset ring-primary/30",
-                  "shadow-[0_0_16px_-6px] shadow-primary/50",
-                  "transition-all duration-200",
-                  "hover:ring-primary/60",
-                  "hover:shadow-[0_0_20px_-4px] hover:shadow-primary/60",
-                )}
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => changeMonth(-1)}
+                aria-label="Bulan sebelumnya"
               >
-                <Plus className="size-4" />
-                Catat Penjualan
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="min-w-[128px] text-center text-sm font-semibold">
+                {monthLabel}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => changeMonth(1)}
+                aria-label="Bulan berikutnya"
+              >
+                <ChevronRight className="size-4" />
               </Button>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* FILTER PERIODE + CABANG */}
+        {/* FILTER CABANG + TOKO + TAB */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => changeMonth(-1)}
-              aria-label="Bulan sebelumnya"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="min-w-[128px] text-center text-sm font-semibold">
-              {monthLabel}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => changeMonth(1)}
-              aria-label="Bulan berikutnya"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-
           {isCentralPusat && (
             <div className="min-w-[200px]">
               <SelectField
                 value={cabangFilter}
-                onChange={setCabangFilter}
+                onChange={(value) => {
+                  setCabangFilter(value)
+                  // Ganti cabang → pilihan toko direset.
+                  setStoreFilter("")
+                }}
                 options={[
                   { value: "", label: "Pilih Cabang" },
                   ...branchOptions.map((cabangId) => ({
@@ -1326,6 +1490,17 @@ export function AdditionalSellingPage() {
                 ]}
               />
             </div>
+          )}
+
+          {isCentral && storeFilter && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setStoreFilter("")}
+            >
+              Ganti Toko
+            </Button>
           )}
 
           <Segmented
@@ -1351,10 +1526,35 @@ export function AdditionalSellingPage() {
       )}
 
       {/* ============================================ */}
+      {/* CENTRAL — TOKO BELUM DIPILIH                 */}
+      {/* ============================================ */}
+
+      {!pusatLocked && isCentral && storeLocked && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold">Pilih Toko</h2>
+            <p className="text-sm text-muted-foreground">
+              {storeOptions.length} toko
+              {storeScopeCabang
+                ? ` pada cabang ${storeScopeCabang}`
+                : ""}
+              . Klik satu toko untuk melihat dashboard program
+              dan history toko tersebut.
+            </p>
+          </div>
+
+          <CentralStorePicker
+            stores={storeOptions}
+            onSelect={setStoreFilter}
+          />
+        </div>
+      )}
+
+      {/* ============================================ */}
       {/* TAB: DASHBOARD PROGRAM                       */}
       {/* ============================================ */}
 
-      {!pusatLocked && tab === "dashboard" && (
+      {!locked && tab === "dashboard" && (
         <>
           {loading && <LoadingState label="Memuat dashboard..." />}
 
@@ -1380,7 +1580,7 @@ export function AdditionalSellingPage() {
       {/* TAB: HISTORY (LOKAL MODUL INI)               */}
       {/* ============================================ */}
 
-      {!pusatLocked && tab === "history" && (
+      {!locked && tab === "history" && (
         <>
           {loading && <LoadingState label="Memuat history..." />}
 

@@ -7,6 +7,7 @@ import {
   Palmtree,
   UsersRound,
   TrendingUp,
+  ShieldAlert,
   type LucideIcon,
 } from "lucide-react"
 import type { PageKey } from "@/components/app-context"
@@ -129,6 +130,11 @@ export const PROGRAM_KERJA_GROUP: {
       label: "TARGET PENJUALAN",
       icon: TrendingUp,
     },
+    {
+      key: "monitoring-error",
+      label: "MONITORING ERROR",
+      icon: ShieldAlert,
+    },
   ],
 }
 
@@ -148,4 +154,5 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   history: "HISTORY",
   "jadwal-libur": "JADWAL LIBUR",
   "additional-selling": "TARGET PENJUALAN",
+  "monitoring-error": "MONITORING ERROR",
 }

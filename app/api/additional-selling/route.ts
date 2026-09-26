@@ -294,12 +294,16 @@ async function getAllStoresByCabang(): Promise<
 async function scopeForRole(
   user: AddSellUser,
   cabangParam: string,
+  storeParam: string,
 ): Promise<{
   scope: "store" | "cabang" | "pusat"
   storeIds: string[]
+  invalidStore?: boolean
 }> {
   const role = user.role.toLowerCase()
 
+  // STORE: parameter store dari client DIABAIKAN. Scope tetap
+  // user.storeId agar client tidak dapat membaca toko lain.
   if (role === "store") {
     if (!user.storeId) {
       return { scope: "store", storeIds: [] }
@@ -309,25 +313,62 @@ async function scopeForRole(
 
   const storesByCabang = await getAllStoresByCabang()
 
+  // Untuk Central, dashboard WAJIB per toko. Toko yang diminta
+  // diverifikasi di server terhadap cabang yang berwenang:
+  //   central_cabang -> cabang dari users/{uid}
+  //   central_pusat  -> cabang dari cabangParam
+  // Toko di luar scope DITOLAK, bukan diganti dengan data kosong.
   if (role === "central_cabang") {
     if (!user.cabangId) {
+      return {
+        scope: "cabang",
+        storeIds: [],
+        invalidStore: true,
+      }
+    }
+
+    const cabang = normalize(user.cabangId)
+
+    const allowed = Array.from(
+      storesByCabang.entries(),
+    )
+      .filter(([, cabangId]) => cabangId === cabang)
+      .map(([storeId]) => storeId)
+
+    if (!storeParam) {
       return { scope: "cabang", storeIds: [] }
     }
-    const cabang = normalize(user.cabangId)
+
+    if (!allowed.includes(storeParam)) {
+      return {
+        scope: "cabang",
+        storeIds: [],
+        invalidStore: true,
+      }
+    }
+
+    return { scope: "cabang", storeIds: [storeParam] }
+  }
+
+  const allowed = Array.from(
+    storesByCabang.entries(),
+  )
+    .filter(([, cabangId]) => cabangId === cabangParam)
+    .map(([storeId]) => storeId)
+
+  if (!storeParam) {
+    return { scope: "pusat", storeIds: [] }
+  }
+
+  if (!allowed.includes(storeParam)) {
     return {
-      scope: "cabang",
-      storeIds: Array.from(storesByCabang.entries())
-        .filter(([, cabangId]) => cabangId === cabang)
-        .map(([storeId]) => storeId),
+      scope: "pusat",
+      storeIds: [],
+      invalidStore: true,
     }
   }
 
-  return {
-    scope: "pusat",
-    storeIds: Array.from(storesByCabang.entries())
-      .filter(([, cabangId]) => cabangId === cabangParam)
-      .map(([storeId]) => storeId),
-  }
+  return { scope: "pusat", storeIds: [storeParam] }
 }
 
 // ============================================================
@@ -712,7 +753,33 @@ export async function GET(request: Request) {
       }
     }
 
-    const { storeIds } = await scopeForRole(user, cabangParam)
+    // Toko yang diminta Central. Untuk role Store parameter ini
+    // DIABAIKAN di dalam scopeForRole (scope tetap user.storeId).
+    const storeParam = cleanString(
+      url.searchParams.get("store") ?? "",
+      100,
+    )
+
+    const scope = await scopeForRole(
+      user,
+      cabangParam,
+      storeParam,
+    )
+
+    // Toko di luar scope akun/branch → tolak request, jangan
+    // kembalikan data toko tersebut.
+    if (scope.invalidStore) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Toko yang dipilih tidak berada dalam cakupan akun Anda.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const { storeIds } = scope
 
     if (storeIds.length === 0) {
       return NextResponse.json({

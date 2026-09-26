@@ -21,6 +21,7 @@ import { HistoryPage } from "@/components/pages/history"
 import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
 import { JadwalLiburPage } from "@/components/pages/jadwal-libur"
 import { AdditionalSellingPage } from "@/components/pages/additional-selling"
+import { MonitoringErrorPage } from "@/components/pages/monitoring-error"
 
 function PageContent() {
   const { page, setPage } = useApp()
@@ -47,6 +48,7 @@ function PageContent() {
     "history",
     "pengaturan",
     "additional-selling",
+    "monitoring-error",
   ]
 
   if (
@@ -86,6 +88,9 @@ function PageContent() {
 
     case "additional-selling":
       return <AdditionalSellingPage />
+
+    case "monitoring-error":
+      return <MonitoringErrorPage />
 
     default:
       return null

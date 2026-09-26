@@ -58,14 +58,22 @@ function SidebarContent({
   const [programOpen, setProgramOpen] =
     React.useState(false)
 
+  const PROGRAM_PAGES = [
+    "additional-selling",
+    "monitoring-error",
+  ] as const
+
+  const isProgramPage = (
+    PROGRAM_PAGES as readonly string[]
+  ).includes(page)
+
   React.useEffect(() => {
-    if (page === "additional-selling") {
+    if (isProgramPage) {
       setProgramOpen(true)
     }
-  }, [page])
+  }, [isProgramPage])
 
-  const programActive =
-    page === "additional-selling"
+  const programActive = isProgramPage
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
