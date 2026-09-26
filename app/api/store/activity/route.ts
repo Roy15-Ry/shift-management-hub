@@ -243,9 +243,10 @@ export async function GET(
 
 // ============================================================
 // POST
-// mode=draft   — simpan draft activity
-// mode=delete  — hapus draft activity (1 cell)
-// mode=final   — finalisasi: copy draft → final, hapus draft
+// mode=draft         — simpan draft activity
+// mode=delete        — hapus draft activity (1 cell)
+// mode=final         — finalisasi: copy draft → final, hapus draft
+// mode=final-delete  — hapus final activity (1 cell)
 // ============================================================
 
 export async function POST(
@@ -363,6 +364,60 @@ export async function POST(
       return NextResponse.json({
         success: true,
         message: "Draft kegiatan berhasil dihapus.",
+      })
+    }
+
+    // ========================================================
+    // MODE: FINAL-DELETE
+    // Menghapus SATU document Jadwal Kegiatan FINAL
+    // (collection "schedule_activities") untuk satu cell
+    // (storeId + tanggal + row).
+    //
+    // Dipakai ketika jadwal sudah SELESAI dan kegiatan yang
+    // sudah difinalkan masih perlu dihapus. Pola ini
+    // merupakan padanan mode "final-delete" pada
+    // app/api/store/schedule/route.ts (hanya referensi
+    // authorization + perilaku delete).
+    //
+    // HANYA menyentuh schedule_activities. TIDAK pernah
+    // menyentuh schedule_activity_drafts, schedules,
+    // schedule_drafts, maupun history. storeId/cabangId
+    // SELALU diambil dari akun terautentikasi (bukan
+    // body), sehingga user hanya bisa menghapus kegiatan
+    // milik tokonya sendiri. Tidak ada operasi month-wide.
+    // ========================================================
+
+    if (mode === "final-delete") {
+      const tanggal = String(body?.tanggal ?? "").trim()
+      const row = Number(body?.row)
+
+      if (
+        !isValidDateISO(tanggal) ||
+        (row !== 1 && row !== 2)
+      ) {
+        return NextResponse.json(
+          { success: false, message: "Data tidak valid." },
+          { status: 400 },
+        )
+      }
+
+      // Identitas dokumen final deterministik: satu dokumen
+      // per (store + tanggal + row). Tidak membaca collection
+      // terlebih dahulu, dan tidak menyentuh cell lain.
+      const docId = activityId(
+        storeId,
+        tanggal,
+        row as 1 | 2,
+      )
+
+      await adminDb
+        .collection("schedule_activities")
+        .doc(docId)
+        .delete()
+
+      return NextResponse.json({
+        success: true,
+        message: "Kegiatan final berhasil dihapus.",
       })
     }
 

@@ -442,8 +442,9 @@ function ActivityPopover(props: {
   onSave: (teks: string) => void
   onDelete: () => void
   onClose: () => void
+  deleteOnly?: boolean
 }) {
-  const { x, y, currentText, onSave, onDelete, onClose } = props
+  const { x, y, currentText, onSave, onDelete, onClose, deleteOnly = false } = props
   const ref = React.useRef<HTMLDivElement>(null)
   const [teks, setTeks] = React.useState(currentText)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
@@ -481,10 +482,12 @@ function ActivityPopover(props: {
   }, [onClose])
 
   React.useEffect(() => {
+    if (deleteOnly) return
     inputRef.current?.focus()
-  }, [])
+  }, [deleteOnly])
 
   function handleSave() {
+    if (deleteOnly) return
     const trimmed = teks.trim()
     if (trimmed.length === 0) return
     onSave(trimmed)
@@ -522,20 +525,23 @@ function ActivityPopover(props: {
         rows={2}
         value={teks}
         maxLength={ACTIVITY_MAX_LENGTH}
+        readOnly={deleteOnly}
         onChange={(event) => setTeks(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Tulis kegiatan..."
         className="block w-full resize-none rounded-md border border-border bg-background px-2 py-1 text-sm leading-snug text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       />
       <div className="mt-1.5 flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-          className="flex-1 rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Simpan
-        </button>
+        {!deleteOnly && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            className="flex-1 rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Simpan
+          </button>
+        )}
         {currentText.length > 0 && (
           <button
             type="button"
@@ -594,6 +600,7 @@ export function BuatJadwalPage() {
 
   const [showGenerateConfirm, setShowGenerateConfirm] = React.useState(false)
   const [showKosongkanConfirm, setShowKosongkanConfirm] = React.useState(false)
+  const [showBelumLengkapConfirm, setShowBelumLengkapConfirm] = React.useState(false)
 
   const isStore = profile?.role?.trim().toLowerCase() === "store"
   const storeId = profile?.storeId
@@ -1148,8 +1155,33 @@ export function BuatJadwalPage() {
     })
   }
 
-  function handleActivityDelete() {
-    if (!activityTarget || !canEditCells) return
+  // ============================================================
+  // HAPUS JADWAL KEGIATAN (1 cell)
+  //
+  // Boleh dijalankan pada semua fase, termasuk saat jadwal
+  // sudah SELESAI.Target delete SPESIFIK satu cell
+  // (row + tanggal) — tidak pernah month-wide, tidak pernah
+  // menyentuh cell shift lain.
+  //
+  // Sumber data kegiatan diperiksa dua-duanya:
+  //   - savedActivityDraftByRow  (schedule_activity_drafts)
+  //   - savedActivityFinalByRow  (schedule_activities)
+  // bila keduanya ada, keduanya dihapus (draf lalu final)
+  // agar tidak ada data yang "resurrect" lewat fallback
+  // getActivityCellValue.
+  //
+  // PENTING: phase SENGAJA tidak disentuh. Menghapus
+  // kegiatan pada jadwal yang sudah SELESAI TIDAK menurunkan
+  // status ke Draft maupun ke "Belum dibuat".
+  //
+  // State (savedActivityDrafts / savedActivityFinals /
+  // activityChanges) hanya diperbarui SETELAH API sukses,
+  // sehingga pesan sukses tidak pernah muncul untuk operasi
+  // yang benar-benar gagal.
+  // ============================================================
+
+  async function handleActivityDelete() {
+    if (!activityTarget) return
     const { row, tanggal } = activityTarget
     const key = getActivityKey(row, tanggal)
     setActivityTarget(null)
@@ -1157,6 +1189,7 @@ export function BuatJadwalPage() {
     setActionError("")
 
     const hasSavedDraft = savedActivityDraftByRow.has(key)
+    const hasFinal = savedActivityFinalByRow.has(key)
 
     const applyLocalDelete = () => {
       setActivityChanges((current) => {
@@ -1168,42 +1201,73 @@ export function BuatJadwalPage() {
       setMessage("Isi kegiatan dikosongkan.")
     }
 
-    if (!hasSavedDraft) {
+    if (!hasSavedDraft && !hasFinal) {
       applyLocalDelete()
       return
     }
 
     if (!user) return
     setSaving(true)
-    user
-      .getIdToken()
-      .then((idToken) =>
-        fetch("/api/store/activity?mode=delete", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "Content-Type": "application/json",
+    try {
+      const idToken = await user.getIdToken()
+
+      // Jadwal Kegiatan FINAL (schedule_activities).
+      // Error dilempar apa adanya agar state TIDAK berubah
+      // bila delete final gagal.
+      if (hasFinal) {
+        const finalResponse = await fetch(
+          "/api/store/activity?mode=final-delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ tanggal, row }),
           },
-          body: JSON.stringify({ tanggal, row }),
-        }),
-      )
-      .then(async (response) => {
-        const data = await response.json()
-        if (!response.ok || !data.success) {
-          throw new Error(data?.message ?? "Gagal menghapus draft kegiatan.")
+        )
+        const finalData = await finalResponse.json()
+        if (!finalResponse.ok || !finalData.success) {
+          throw new Error(finalData?.message ?? "Gagal menghapus kegiatan final.")
+        }
+        setSavedActivityFinals((current) =>
+          current.filter((activity) => !(activity.tanggal === tanggal && activity.row === row)),
+        )
+      }
+
+      // Jadwal Kegiatan DRAFT (schedule_activity_drafts) —
+      // flow existing, tidak diubah.
+      if (hasSavedDraft) {
+        const draftResponse = await fetch(
+          "/api/store/activity?mode=delete",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ tanggal, row }),
+          },
+        )
+        const draftData = await draftResponse.json()
+        if (!draftResponse.ok || !draftData.success) {
+          throw new Error(draftData?.message ?? "Gagal menghapus draft kegiatan.")
         }
         setSavedActivityDrafts((current) =>
           current.filter((activity) => !(activity.tanggal === tanggal && activity.row === row)),
         )
-        applyLocalDelete()
-      })
-      .catch((deleteError) => {
-        console.error("Failed to delete activity draft:", deleteError)
-        setActionError(deleteError instanceof Error ? deleteError.message : "Gagal menghapus draft kegiatan.")
-      })
-      .finally(() => {
-        setSaving(false)
-      })
+      }
+
+      applyLocalDelete()
+    } catch (deleteError) {
+      console.error("Failed to delete activity:", deleteError)
+      setActionError(
+        deleteError instanceof Error ? deleteError.message : "Gagal menghapus kegiatan.",
+      )
+      setMessage("")
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ============================================================
@@ -1410,17 +1474,39 @@ export function BuatJadwalPage() {
     }
   }
 
-  async function finishSchedule() {
-    if (!user) return
-    const hasEmptyCell = employees.some((employee) =>
+  // ============================================================
+  // TRIGGER "SELESAI"
+  //
+  // Kelengkapan shift TIDAK lagi menjadi blocker. Validasi
+  // existing (hasEmptyCell) kini hanya menentukan apakah
+  // konfirmasi perlu ditampilkan:
+  //
+  //   - ada sel kosong  -> tampilkan modal. Batal = tidak ada
+  //     API call sama sekali; Lanjutkan = finishSchedule().
+  //   - tidak ada       -> finishSchedule() langsung, tanpa
+  //     modal tambahan.
+  //
+  // Flow finalisasi di dalam finishSchedule TIDAK diubah.
+  // saveDraft tidak tersentuh — "Simpan Draft" memang tidak
+  // pernah punya validasi kelengkapan.
+  // ============================================================
+
+  function hasEmptyShiftCell() {
+    return employees.some((employee) =>
       days.some((day) => !getCellValue(employee.id, getDateKey(period.year, period.month, day))),
     )
-    if (hasEmptyCell) {
-      setActionError("")
-      setMessage("Jadwal belum lengkap.")
+  }
+
+  function handleSelesaiClick() {
+    if (hasEmptyShiftCell()) {
+      setShowBelumLengkapConfirm(true)
       return
     }
+    finishSchedule()
+  }
 
+  async function finishSchedule() {
+    if (!user) return
     setSaving(true)
     setMessage("")
     setActionError("")
@@ -1601,7 +1687,7 @@ export function BuatJadwalPage() {
                 <Button variant="outline" onClick={saveDraft} disabled={saving}>
                   {saving ? "Menyimpan..." : "Simpan Draft"}
                 </Button>
-                <Button onClick={finishSchedule} disabled={saving}>
+                <Button onClick={handleSelesaiClick} disabled={saving}>
                   {saving ? "Memproses..." : "Selesai"}
                 </Button>
               </>
@@ -1744,6 +1830,34 @@ export function BuatJadwalPage() {
                     const teks = getActivityCellValue(row, tanggal)
                     const isTarget = activityTarget?.row === row && activityTarget.tanggal === tanggal
 
+                    // Jadwal Kegiatan pada jadwal yang sudah SELESAI
+                    // tetap dapat dibuka, tetapi HANYA untuk DELETE.
+                    // Sel yang kosong tetap non-interaktif sehingga
+                    // tidak ada Capabilities CREATE di fase Selesai,
+                    // dan capability edit shift lain tetap terkunci.
+                    if (isLocked && teks.length > 0) {
+                      return (
+                        <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
+                          <button
+                            type="button"
+                            title={teks}
+                            aria-label={`Jadwal Kegiatan, ${tanggal}: ${teks}`}
+                            onClick={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              setActivityTarget({ row, tanggal, x: rect.left, y: rect.bottom })
+                            }}
+                            className={cn(
+                              "mx-auto flex min-h-6 items-center justify-center rounded px-1 py-0.5 text-center text-[0.6rem] font-medium ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-7 md:min-w-12",
+                              "bg-amber-100 text-amber-900 ring-amber-400",
+                              isTarget && "ring-2 ring-ring",
+                            )}
+                          >
+                            <span className="line-clamp-2 break-words leading-tight">{teks}</span>
+                          </button>
+                        </td>
+                      )
+                    }
+
                     if (isLocked) {
                       return (
                         <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
@@ -1865,7 +1979,7 @@ export function BuatJadwalPage() {
         />
       )}
 
-      {activityTarget && canEditCells && (
+      {activityTarget && (
         <ActivityPopover
           x={activityTarget.x}
           y={activityTarget.y}
@@ -1873,6 +1987,7 @@ export function BuatJadwalPage() {
           onSave={(teks) => applyActivity(getActivityKey(activityTarget.row, activityTarget.tanggal), teks)}
           onDelete={handleActivityDelete}
           onClose={() => setActivityTarget(null)}
+          deleteOnly={isLocked}
         />
       )}
 
@@ -1916,6 +2031,29 @@ export function BuatJadwalPage() {
             </Button>
             <Button variant="destructive" onClick={handleKosongkanJadwal}>
               Ya, Kosongkan Jadwal
+            </Button>
+          </>
+        }
+      />
+
+      {/* DIALOG KONFIRMASI JADWAL BELUM LENGKAP */}
+      <Modal
+        open={showBelumLengkapConfirm}
+        onClose={() => setShowBelumLengkapConfirm(false)}
+        title="JADWAL BELUM LENGKAP"
+        description="Masih ada shift yang belum diisi. Apakah Anda yakin ingin menyelesaikan jadwal?"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowBelumLengkapConfirm(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                setShowBelumLengkapConfirm(false)
+                finishSchedule()
+              }}
+            >
+              Ya, Selesaikan
             </Button>
           </>
         }
