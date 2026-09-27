@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   HandCoins,
+  Layers,
   Package,
   PenLine,
   Plus,
@@ -29,10 +31,9 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
-import { getFirestoreEmployees, getFirestoreStores } from "@/lib/firestore-data"
+import { getFirestoreEmployees } from "@/lib/firestore-data"
 import type {
   FirestoreEmployee,
-  FirestoreStore,
 } from "@/lib/firestore-data"
 
 // ============================================================
@@ -226,9 +227,83 @@ type AddSellData = {
 type AddSellGetResponse = {
   success?: boolean
   periode?: string
+  mode?: string
+  scope?: AddSellAggregateScope
+  stores?: AddSellAggregateStore[]
   transactions?: AddSellTransaction[]
   targets?: AddSellTarget[]
   summary?: AddSellSummary
+}
+
+// ============================================================
+// MODE REKAP CENTRAL (shape dari server, read-only)
+//
+// Seluruh angka di bawah ini SUDAH dihitung di server. Frontend
+// TIDAK menghitung ulang dari transaksi mentah, dan TIDAK
+// melakukan query Firestore untuk daftar toko.
+//
+// hasTarget adalah pembeda antara "TARGET BELUM DIBUAT" dan
+// "TARGET ADA DENGAN NILAI 0". Ketika hasTarget = false,
+// angka target/achievement TIDAK BOLEH ditampilkan seolah-olah
+// bernilai 0.
+// ============================================================
+
+type AddSellAggregateScope = {
+  role: string
+  level: string
+  cabangId: string
+  totalStores: number
+}
+
+type AddSellAggregateJenis = {
+  hasTarget: boolean
+  totalTarget: number
+  totalAchievement: number
+  progress: number
+}
+
+type AddSellAggregateJenisSummary =
+  AddSellAggregateJenis & {
+    totalStores: number
+    storesWithTarget: number
+    storesWithoutTarget: number
+  }
+
+type AddSellAggregateStore = {
+  storeId: string
+  storeName: string
+  hasTarget: boolean
+  totalEmployees: number
+  employeesWithoutTarget: number
+  byJenis: Partial<
+    Record<PenjualanJenis, AddSellAggregateJenis>
+  >
+}
+
+type AddSellAggregateData = {
+  periode: string
+  scope: AddSellAggregateScope
+  stores: AddSellAggregateStore[]
+  summary: {
+    byJenis: Partial<
+      Record<PenjualanJenis, AddSellAggregateJenisSummary>
+    >
+  }
+}
+
+// Bentuk aggregate dibaca berdampingan dengan bentuk detail pada
+// satu response, lalu dipisahkan oleh result.mode. Tipe
+// per-jenis digabung agar kedua bentuk bisa dibaca tanpa cast
+// yang bisa salah.
+type AddSellAggregateRead = {
+  summary?: {
+    byJenis: Partial<
+      Record<
+        PenjualanJenis,
+        AddSellJenisSummary & AddSellAggregateJenisSummary
+      >
+    >
+  }
 }
 
 type TabKey = "dashboard" | "history"
@@ -278,6 +353,23 @@ function formatTanggal(tanggal: string): string {
     return tanggal
   }
   return tanggalFormatter.format(new Date(year, month - 1, day))
+}
+
+// "2026-01" -> "Januari 2026". Memakai formatter yang sama dengan
+// navigator periode sehingga label selalu konsisten.
+function formatPeriodeLabel(periode: string): string {
+  const [year, month] = periode.split("-").map(Number)
+  if (!year || !month) {
+    return periode
+  }
+  return monthFormatter.format(new Date(year, month - 1, 1))
+}
+
+// Lebar bar dibatasi 100% untuk tampilan, sedangkan ANGKA progress
+// yang ditampilkan tetap nilai apa adanya dari server (tidak
+// dicap), sama seperti dashboard detail toko.
+function barWidth(progress: number): string {
+  return `${Math.min(100, Math.max(0, progress))}%`
 }
 
 function toDigitsOnly(value: string, max = 12): string {
@@ -348,71 +440,97 @@ function formatNominalInput(
 }
 
 // ============================================================
-// CENTRAL STORE PICKER (pola lokal, sama dengan Monitoring
-// Error; sengaja tidak diekstrak agar Monitoring Error tidak
-// ikut berubah)
+// CENTRAL PUSAT — PEMILIHAN CABANG
+//
+// Sumber data tetap response /api/admin/branches yang sudah dipakai
+// flow Central Pusat sebelumnya, sehingga server tetap yang menentukan
+// cabang mana yang boleh diakses. Tidak ada query Firestore dari
+// browser, tidak ada API baru, dan tidak ada mapping kode ke nama
+// (kode yang tampil apa adanya seperti BGR-1 / CJR-1). Nama cabang
+// hanya ditampilkan bila sudah ikut dikirim response tersebut.
 // ============================================================
 
-function CentralStorePicker({
-  stores,
+function BranchPicker({
+  branches,
+  loading,
   onSelect,
 }: {
-  stores: FirestoreStore[]
-  onSelect: (storeId: string) => void
+  branches: { cabangId: string; nama: string }[]
+  loading: boolean
+  onSelect: (cabangId: string) => void
 }) {
-  if (stores.length === 0) {
+  if (loading) {
+    return <LoadingState label="Memuat daftar cabang..." />
+  }
+
+  if (branches.length === 0) {
     return (
       <EmptyState
-        title="Belum ada toko"
-        description="Tidak ada toko yang tersedia pada cabang ini."
+        title="Belum ada cabang"
+        description="Belum ada cabang yang dapat dipilih. Hubungi admin."
         icon={Store}
       />
     )
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {stores.map((store) => (
-        <button
-          key={store.id}
-          type="button"
-          onClick={() => onSelect(store.id)}
-          className={cn(
-            "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
-            "transition-all duration-300",
-            "hover:border-primary/40 hover:shadow-md",
-            "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-          )}
-        >
-          <span
-            aria-hidden
-            className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
-          />
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold tracking-tight">
+          Pilih Cabang
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Pilih satu cabang untuk melihat rekap target penjualan
+          seluruh toko pada cabang tersebut.
+        </p>
+      </div>
 
-          <span
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {branches.map((branch) => (
+          <button
+            key={branch.cabangId}
+            type="button"
+            onClick={() => onSelect(branch.cabangId)}
             className={cn(
-              "flex size-12 shrink-0 items-center justify-center rounded-lg",
-              "bg-primary/10 text-primary",
-              "ring-1 ring-inset ring-primary/25",
-              "shadow-[0_0_18px_-8px] shadow-primary/50",
+              "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
+              "transition-all duration-300",
+              "hover:border-primary/50 hover:bg-primary/5 hover:shadow-md",
+              "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
             )}
           >
-            <Store className="size-5" />
-          </span>
+            <span
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
+            />
 
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-foreground">
-              {store.nama}
+            <span
+              className={cn(
+                "flex size-12 shrink-0 items-center justify-center rounded-lg",
+                "bg-primary/10 text-primary",
+                "ring-1 ring-inset ring-primary/25",
+                "shadow-[0_0_18px_-8px] shadow-primary/50",
+                "transition-transform duration-300 group-hover:scale-105",
+              )}
+            >
+              <Store className="size-5" />
             </span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Target Penjualan
-            </span>
-          </span>
 
-          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </button>
-      ))}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-foreground">
+                {branch.nama || branch.cabangId}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {branch.nama
+                  ? branch.cabangId
+                  : "Klik untuk melihat rekap"}
+              </span>
+            </span>
+
+            <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -464,7 +582,10 @@ export function AdditionalSellingPage() {
   // ----------------------------------------------------------
 
   const [cabangFilter, setCabangFilter] = React.useState("")
-  const [branchOptions, setBranchOptions] = React.useState<string[]>([])
+  const [branchOptions, setBranchOptions] = React.useState<
+    { cabangId: string; nama: string }[]
+  >([])
+  const [branchesLoading, setBranchesLoading] = React.useState(false)
 
   React.useEffect(() => {
     if (!isCentralPusat || !user) {
@@ -473,6 +594,8 @@ export function AdditionalSellingPage() {
 
     const authedUser = user
     let cancelled = false
+
+    setBranchesLoading(true)
 
     async function loadBranches() {
       try {
@@ -492,14 +615,25 @@ export function AdditionalSellingPage() {
 
         if (cancelled || !result.success) return
 
+        // Sumber data tetap response /api/admin/branches milik flow
+        // Central Pusat yang sudah ada. Tidak ada query Firestore dari
+        // browser dan tidak ada API baru. Nama ditampilkan apa adanya
+        // dari response tersebut; bila kosong, yang dipakai cabangId.
         const list = (result.branches ?? [])
-          .map((b) => String(b.cabangId ?? "").trim().toUpperCase())
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
+          .map((b) => ({
+            cabangId: String(b.cabangId ?? "").trim().toUpperCase(),
+            nama: String(b.nama ?? "").trim(),
+          }))
+          .filter((b) => b.cabangId)
+          .sort((a, b) => a.cabangId.localeCompare(b.cabangId))
 
         setBranchOptions(list)
       } catch (error) {
         console.error("Gagal memuat daftar cabang:", error)
+      } finally {
+        if (!cancelled) {
+          setBranchesLoading(false)
+        }
       }
     }
 
@@ -511,63 +645,71 @@ export function AdditionalSellingPage() {
   }, [isCentralPusat, user])
 
   // ----------------------------------------------------------
-  // CENTRAL — pilih SATU toko (dashboard per toko, tanpa
-  // agregat seluruh cabang)
+  // CENTRAL — pilih SATU toko
   // ----------------------------------------------------------
 
-  const [storeOptions, setStoreOptions] = React.useState<FirestoreStore[]>([])
   const [storeFilter, setStoreFilter] = React.useState("")
 
-  const storeScopeCabang = isCentralPusat
-    ? cabangFilter
-    : isCentralCabang
-      ? (profile?.cabangId ?? "")
-      : ""
+  // ----------------------------------------------------------
+  // CENTRAL — NAMA TOKO UNTUK JUDUL DASHBOARD DETAIL
+  //
+  // Response mode detail hanya berisi transaksi, target, dan
+  // summary: tidak ada nama toko. Nama diambil dari daftar toko
+  // pada response aggregate (data yang sudah ada di halaman ini)
+  // tepat saat toko dipilih lewat "Lihat Dashboard Toko", lalu
+  // disimpan agar tetap tampil selama mode detail.
+  // ----------------------------------------------------------
 
-  React.useEffect(() => {
-    if (!isCentral || !storeScopeCabang) {
-      setStoreOptions([])
-      return
-    }
+  const [detailStoreName, setDetailStoreName] = React.useState("")
 
-    let cancelled = false
+  // ----------------------------------------------------------
+  // CENTRAL — DAFTAR TOKO DARI RESPONSE API
+  //
+  // Toko untuk Central TIDAK lagi diambil lewat query browser.
+  // Daftar toko pada mode rekap berasal dari response aggregate
+  // API, sehingga scope cabang ditentukan server dan tidak ada
+  // toko luar scope yang pernah muncul di pilihan.
+  // ----------------------------------------------------------
 
-    getFirestoreStores(
-      isCentralPusat ? "central_pusat" : "central_cabang",
-      undefined,
-      storeScopeCabang,
-    )
-      .then((list) => {
-        if (cancelled) return
+  const [aggregate, setAggregate] =
+    React.useState<AddSellAggregateData | null>(null)
 
-        // Central Pusat memuat seluruh toko, jadi cabang terpilih
-        // tetap disaring di sisi klien.
-        const scope = storeScopeCabang.toUpperCase()
+  // ----------------------------------------------------------
+  // CENTRAL — REKAP YANG SUDAH DIMUAT
+  //
+  // Saat detail toko dibuka, state "aggregate" sengaja dikosongkan
+  // supaya halaman detail tidak ikut menampilkan rekap. Data rekap
+  // yang sama tetap disimpan di ref ini, sehingga saat user menekan
+  // "Kembali ke Semua Toko" rekap langsung dipakai lagi tanpa
+  // memanggil API/Firestore aggregate untuk kedua kalinya.
+  //
+  // Ref (bukan state) dipilih karena penyimpanannya tidak boleh
+  // memicu render ulang dan tidak boleh mengubah apa pun yang
+  // tampil di layar. Kunci cache mencakup periode dan cabang,
+  // sehingga ganti periode atau ganti cabang tetap memuat ulang
+  // dari server.
+  // ----------------------------------------------------------
 
-        const sorted = list
-          .filter((store) =>
-            isCentralPusat
-              ? String(store.cabangId ?? "")
-                  .trim()
-                  .toUpperCase() === scope
-              : true,
-          )
-          .sort((a, b) =>
-            a.nama.localeCompare(b.nama, "id", {
-              sensitivity: "base",
-            }),
-          )
-        setStoreOptions(sorted)
-      })
-      .catch((error) => {
-        console.error("Gagal memuat daftar toko:", error)
-        if (!cancelled) setStoreOptions([])
-      })
+  const aggregateCacheKey = isCentral
+    ? `${periode}|${isCentralPusat ? "pusat" : "cabang"}|${cabangFilter}`
+    : ""
 
-    return () => {
-      cancelled = true
-    }
-  }, [isCentral, storeScopeCabang])
+  const aggregateCacheRef = React.useRef<{
+    key: string
+    data: AddSellAggregateData
+  } | null>(null)
+
+  const storeOptions = React.useMemo(
+    () =>
+      [...(aggregate?.stores ?? [])].sort((a, b) =>
+        (a.storeName || a.storeId).localeCompare(
+          b.storeName || b.storeId,
+          "id",
+          { sensitivity: "base" },
+        ),
+      ),
+    [aggregate],
+  )
 
   // ----------------------------------------------------------
   // DATA (GET /api/additional-selling)
@@ -578,9 +720,14 @@ export function AdditionalSellingPage() {
   const [error, setError] = React.useState("")
   const [reloadKey, setReloadKey] = React.useState(0)
   const requestSeqRef = React.useRef(0)
+  // Muat ulang manual (setReloadKey) harus selalu benar-benar
+  // meminta data terbaru, sehingga cache rekap dilewati begitu
+  // nilainya berubah.
+  const handledReloadKeyRef = React.useRef(reloadKey)
 
   const pusatLocked = isCentralPusat && !cabangFilter
-  // Central belum memilih toko.
+  // Central belum memilih toko -> sedang menampilkan dashboard
+  // rekap seluruh toko dalam scope (mode aggregate).
   const storeLocked = isCentral && !storeFilter
   const locked = pusatLocked || storeLocked
 
@@ -590,10 +737,36 @@ export function AdditionalSellingPage() {
       return
     }
 
-    if (pusatLocked || storeLocked) {
+    // Central Pusat belum memilih cabang: tidak ada request sama
+    // sekali, sehingga tidak pernah membaca seluruh cabang.
+    if (pusatLocked) {
       setLoading(false)
       setData(null)
+      setAggregate(null)
       return
+    }
+
+    // Kembali dari detail toko ke rekap: rekap sebelumnya masih
+    // tersimpan di halaman ini dan masih berlaku untuk periode +
+    // cabang yang sama, sehingga dipakai langsung tanpa fetch lagi.
+    const forceReload =
+      reloadKey !== handledReloadKeyRef.current
+    handledReloadKeyRef.current = reloadKey
+
+    if (isCentral && !storeFilter) {
+      const cached = aggregateCacheRef.current
+
+      if (
+        !forceReload &&
+        cached &&
+        cached.key === aggregateCacheKey
+      ) {
+        setError("")
+        setData(null)
+        setAggregate(cached.data)
+        setLoading(false)
+        return
+      }
     }
 
     const authedUser = user
@@ -616,6 +789,10 @@ export function AdditionalSellingPage() {
           params.set("cabang", cabangFilter)
         }
 
+        // Central yang sudah memilih toko -> mode DETAIL toko.
+        // Central yang belum memilih toko -> param "store" TIDAK
+        // dikirim, sehingga server memakai mode REKAP untuk seluruh
+        // toko dalam scope cabangnya.
         // Untuk role Store parameter store TIDAK dikirim: server
         // selalu memakai user.storeId.
         if (isCentral && storeFilter) {
@@ -635,10 +812,39 @@ export function AdditionalSellingPage() {
           throw new Error("Data penjualan tidak dapat dimuat.")
         }
 
-        const result = (await response.json()) as AddSellGetResponse
+        const result = (await response.json()) as
+          AddSellGetResponse & AddSellAggregateRead
 
         if (cancelled || seq !== requestSeqRef.current) return
 
+        // Bentuk aggregate dan bentuk detail TIDAK pernah dipakai
+        // bergantian: mode dari server yang menentukan.
+        if (result.mode === "aggregate") {
+          const nextAggregate: AddSellAggregateData = {
+            periode: String(result.periode ?? periode),
+            scope: result.scope ?? {
+              role,
+              level: "",
+              cabangId: "",
+              totalStores: 0,
+            },
+            stores: Array.isArray(result.stores)
+              ? result.stores
+              : [],
+            summary: result.summary ?? { byJenis: {} },
+          }
+
+          aggregateCacheRef.current = {
+            key: aggregateCacheKey,
+            data: nextAggregate,
+          }
+
+          setAggregate(nextAggregate)
+          setData(null)
+          return
+        }
+
+        setAggregate(null)
         setData({
           periode: String(result.periode ?? periode),
           transactions: Array.isArray(result.transactions)
@@ -1362,16 +1568,26 @@ export function AdditionalSellingPage() {
   // ----------------------------------------------------------
 
   // Untuk Store tetap nama tokonya sendiri. Untuk Central memakai
-  // nama toko yang dipilih (bukan lagi label agregat cabang).
+  // nama toko dari response API; saat masih di mode rekap, label
+  // menampilkan cabang scope-nya.
   const selectedStoreName = isCentral
-    ? (storeOptions.find((s) => s.id === storeFilter)?.nama ?? "")
+    ? (storeOptions.find((s) => s.storeId === storeFilter)
+        ?.storeName ?? "")
     : ""
 
   const storeName =
     profile?.namaStore ||
     profile?.storeId ||
     selectedStoreName ||
-    "CABANG"
+    (isCentral ? (aggregate?.scope.cabangId || "Semua Toko") : "CABANG")
+
+  // Judul dashboard detail untuk Central (cabang & pusat): "Target
+  // Penjualan Toko {NAMA TOKO}". Nama diambil apa adanya dari data
+  // existing; storeId SENGAJA tidak pernah dipakai, dan bila nama
+  // tidak tersedia judul tetap "Target Penjualan" tanpa storeId.
+  // Role Store tidak terpengaruh sama sekali.
+  const detailTitleSuffix =
+    isCentral && storeFilter ? detailStoreName.trim() : ""
 
   return (
     <div className="space-y-5">
@@ -1397,6 +1613,9 @@ export function AdditionalSellingPage() {
               <div>
                 <h1 className="text-xl font-semibold tracking-tight">
                   Target Penjualan
+                  {detailTitleSuffix
+                    ? ` Toko ${detailTitleSuffix}`
+                    : ""}
                 </h1>
                 <p className="text-xs text-muted-foreground">
                   Program Kerja · {storeName}
@@ -1470,83 +1689,133 @@ export function AdditionalSellingPage() {
           </div>
         </div>
 
-        {/* FILTER CABANG + TOKO + TAB */}
+        {/* TOMBOL KEMBALI PILIH CABANG + TOKO + TAB */}
         <div className="flex flex-wrap items-center gap-3">
-          {isCentralPusat && (
-            <div className="min-w-[200px]">
-              <SelectField
-                value={cabangFilter}
-                onChange={(value) => {
-                  setCabangFilter(value)
-                  // Ganti cabang → pilihan toko direset.
-                  setStoreFilter("")
-                }}
-                options={[
-                  { value: "", label: "Pilih Cabang" },
-                  ...branchOptions.map((cabangId) => ({
-                    value: cabangId,
-                    label: cabangId,
-                  })),
-                ]}
-              />
-            </div>
+          {isCentralPusat && cabangFilter && !storeFilter && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Kembali ke daftar cabang: reset cabang DAN toko, serta
+                // buang data aggregate cabang sebelumnya supaya tidak
+                // ada data cabang lama yang masih tampil.
+                setCabangFilter("")
+                setStoreFilter("")
+                setDetailStoreName("")
+                setAggregate(null)
+              }}
+              className={cn(
+                "gap-1.5",
+                "ring-1 ring-inset ring-primary/30",
+                "shadow-[0_0_16px_-8px] shadow-primary/45",
+                "transition-all duration-200",
+                "hover:ring-primary/60",
+              )}
+            >
+              <ArrowLeft className="size-4" />
+              Kembali Pilih Cabang
+            </Button>
           )}
 
           {isCentral && storeFilter && (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={() => setStoreFilter("")}
+              onClick={() => {
+                setStoreFilter("")
+                // Nama toko hanya relevan di mode detail.
+                setDetailStoreName("")
+              }}
+              className={cn(
+                "gap-1.5",
+                "ring-1 ring-inset ring-primary/30",
+                "shadow-[0_0_16px_-8px] shadow-primary/45",
+                "transition-all duration-200",
+                "hover:ring-primary/60",
+              )}
             >
-              Ganti Toko
+              <ArrowLeft className="size-4" />
+              Kembali ke Semua Toko
             </Button>
           )}
 
-          <Segmented
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "dashboard", label: "Dashboard Program" },
-              { value: "history", label: "History" },
-            ]}
-          />
+          {/* Tab Dashboard Program / History hanya bermakna pada
+              mode detail toko. Mode rekap Central memakai seluruh
+              halaman untuk dashboard rekap, dan History memang
+              tidak tersedia karena response rekap tidak mengirim
+              daftar transaksi. */}
+          {!storeLocked && (
+            <Segmented
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "dashboard", label: "Dashboard Program" },
+                { value: "history", label: "History" },
+              ]}
+            />
+          )}
         </div>
       </div>
 
       {/* ============================================ */}
-      {/* CENTRAL PUSAT — CABANG BELUM DIPILIH        */}
+      {/* CENTRAL PUSAT — PILIH CABANG                */}
       {/* ============================================ */}
 
       {pusatLocked && (
-        <EmptyState
-          title="Pilih cabang terlebih dahulu"
-          description="Central Pusat wajib memilih satu cabang sebelum melihat data target penjualan."
+        <BranchPicker
+          branches={branchOptions}
+          loading={branchesLoading}
+          onSelect={(cabangId) => {
+            setCabangFilter(cabangId)
+            // Ganti cabang → pilihan toko direset.
+            setStoreFilter("")
+            setDetailStoreName("")
+          }}
         />
       )}
 
       {/* ============================================ */}
-      {/* CENTRAL — TOKO BELUM DIPILIH                 */}
+      {/* CENTRAL — MODE REKAP SELURUH TOKO CABANG    */}
       {/* ============================================ */}
 
       {!pusatLocked && isCentral && storeLocked && (
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold">Pilih Toko</h2>
-            <p className="text-sm text-muted-foreground">
-              {storeOptions.length} toko
-              {storeScopeCabang
-                ? ` pada cabang ${storeScopeCabang}`
-                : ""}
-              . Klik satu toko untuk melihat dashboard program
-              dan history toko tersebut.
-            </p>
-          </div>
+        <div className="space-y-5">
+          {loading && (
+            <LoadingState label="Memuat rekap toko..." />
+          )}
 
-          <CentralStorePicker
-            stores={storeOptions}
-            onSelect={setStoreFilter}
-          />
+          {!loading && error && (
+            <EmptyState
+              title={error}
+              description="Silakan muat ulang halaman."
+            />
+          )}
+
+          {!loading && !error && aggregate && (
+            <AggregateDashboard
+              data={aggregate}
+              onSelectStore={(storeId) => {
+                // Nama toko diambil dari daftar toko response aggregate
+                // (data existing) sebelum masuk mode detail, karena
+                // response detail tidak memuat nama toko.
+                setDetailStoreName(
+                  aggregate.stores.find((s) => s.storeId === storeId)
+                    ?.storeName ?? "",
+                )
+                setStoreFilter(storeId)
+              }}
+            />
+          )}
+
+          {!loading && !error && !aggregate && (
+            <EmptyState
+              title="Rekap belum tersedia"
+              description="Silakan muat ulang halaman."
+              icon={Layers}
+            />
+          )}
         </div>
       )}
 
@@ -2317,6 +2586,578 @@ export function AdditionalSellingPage() {
 // ============================================================
 // DASHBOARD PER JENIS
 // ============================================================
+
+// ============================================================
+// DASHBOARD REKAP CENTRAL (mode aggregate server)
+//
+// SELURUH angka berasal dari response aggregate API. Komponen ini
+// tidak menghitung ulang dari transaksi mentah dan tidak melakukan
+// query Firestore.
+//
+// Aturan "TARGET BELUM DIBUAT" (hasTarget = false) dijaga di sini:
+// angka 0 TIDAK pernah ditampilkan seolah-olah target sudah dibuat.
+// ============================================================
+
+// Badge "TARGET BELUM DIBUAT". Dipakai konsisten di seluruh
+// dashboard rekap, baik pada level jenis, level toko, maupun
+// per toko per jenis.
+function TargetBelumDibuatBadge({ className }: { className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "border-dashed text-muted-foreground",
+        className,
+      )}
+    >
+      Target belum dibuat
+    </Badge>
+  )
+}
+
+function AggregateKpiCard({
+  label,
+  value,
+  hint,
+  tone,
+  icon: Icon,
+  accent = false,
+}: {
+  label: string
+  value: string
+  hint?: string
+  tone: Tone
+  icon: React.ComponentType<{ className?: string }>
+  accent?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-card p-3",
+        tone.card,
+        accent && tone.barGlow,
+      )}
+    >
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={cn("size-3.5", tone.text)} />
+        {label}
+      </div>
+      <p className="mt-1.5 truncate text-xl font-semibold tabular-nums">
+        {value}
+      </p>
+      {hint && (
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {hint}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------
+// CHART — TARGET VS ACHIEVEMENT
+//
+// Tanpa library chart: bar HTML/CSS memakai token warna yang
+// sudah dipakai modul ini. Skala mengikuti nilai terbesar antara
+// target dan realisasi, sehingga realisasi yang melampaui target
+// tetap terlihat penuh.
+// ------------------------------------------------------------
+function TargetVsAchievementChart({
+  jenis,
+  cell,
+}: {
+  jenis: PenjualanJenis
+  cell: AddSellAggregateJenisSummary | undefined
+}) {
+  const tone = TONE[jenis]
+
+  if (!cell || !cell.hasTarget) {
+    return (
+      <div className="space-y-2 rounded-xl border border-dashed border-border bg-muted/30 p-4">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <TrendingUp className="size-3.5" />
+          Target vs Realisasi
+        </div>
+        <TargetBelumDibuatBadge />
+        <p className="text-xs text-muted-foreground">
+          Belum ada target untuk {JENIS_LABEL[jenis]} pada
+          periode ini, sehingga capaian belum dapat dihitung.
+        </p>
+      </div>
+    )
+  }
+
+  const totalTarget = cell.totalTarget
+  const totalAchievement = cell.totalAchievement
+  const skala = Math.max(totalTarget, totalAchievement, 1)
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-background p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <TrendingUp className={cn("size-3.5", tone.text)} />
+          Target vs Realisasi
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className={cn("size-2 rounded-full", tone.dot)} />
+          {cell.progress}%
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Target</span>
+            <span className="font-semibold tabular-nums">
+              {formatNilai(jenis, totalTarget)}
+            </span>
+          </div>
+          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-muted-foreground/30 transition-[width] duration-500"
+              style={{ width: `${(totalTarget / skala) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Realisasi</span>
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                tone.text,
+              )}
+            >
+              {formatNilai(jenis, totalAchievement)}
+            </span>
+          </div>
+          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-500",
+                tone.track,
+                tone.barGlow,
+              )}
+              style={{
+                width: `${(totalAchievement / skala) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-500",
+            tone.track,
+          )}
+          style={{ width: barWidth(cell.progress) }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------
+// KPI + CHART per jenis target
+// ------------------------------------------------------------
+function AggregateJenisSection({
+  jenis,
+  cell,
+  totalStores,
+}: {
+  jenis: PenjualanJenis
+  cell: AddSellAggregateJenisSummary | undefined
+  totalStores: number
+}) {
+  const tone = TONE[jenis]
+  const Icon = JENIS_ICON[jenis]
+  const hasTarget = cell?.hasTarget === true
+
+  const storesWithTarget = cell?.storesWithTarget ?? 0
+  const storesWithoutTarget = cell?.storesWithoutTarget ?? 0
+
+  return (
+    <Card
+      className={cn(
+        "overflow-hidden",
+        tone.card,
+        "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+      )}
+    >
+      <div className="relative">
+        <div
+          className={cn("h-1 w-full", tone.bar, tone.barGlow)}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "grid size-10 place-items-center rounded-xl",
+                tone.soft,
+                tone.text,
+                tone.icon,
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">
+                {JENIS_LABEL[jenis]}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Satuan: {JENIS_UNIT[jenis]}
+              </p>
+            </div>
+          </div>
+
+          {!hasTarget && <TargetBelumDibuatBadge />}
+        </div>
+      </div>
+
+      <CardContent className="space-y-4 pt-0">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {hasTarget ? (
+            <>
+              <AggregateKpiCard
+                label="Total Target"
+                value={formatNilai(jenis, cell!.totalTarget)}
+                tone={tone}
+                icon={Target}
+              />
+              <AggregateKpiCard
+                label="Total Realisasi"
+                value={formatNilai(
+                  jenis,
+                  cell!.totalAchievement,
+                )}
+                tone={tone}
+                icon={TrendingUp}
+              />
+              <AggregateKpiCard
+                label="Progress"
+                value={`${cell!.progress}%`}
+                tone={tone}
+                icon={TrendingUp}
+                accent={cell!.progress > 0}
+              />
+            </>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 sm:col-span-2 lg:col-span-3">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Target className="size-3.5" />
+                Total Target · Total Realisasi · Progress
+              </div>
+              <div className="mt-2">
+                <TargetBelumDibuatBadge />
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Belum ada target {JENIS_LABEL[jenis]} pada periode
+                ini, sehingga target, realisasi, dan progress
+                belum dapat ditampilkan.
+              </p>
+            </div>
+          )}
+
+          <AggregateKpiCard
+            label="Toko dengan Target"
+            value={`${storesWithTarget} / ${totalStores}`}
+            hint={
+              storesWithoutTarget > 0
+                ? `${storesWithoutTarget} toko belum ada target`
+                : "Semua toko sudah ada target"
+            }
+            tone={tone}
+            icon={Store}
+          />
+        </div>
+
+        <TargetVsAchievementChart jenis={jenis} cell={cell} />
+      </CardContent>
+    </Card>
+  )
+}
+
+// ------------------------------------------------------------
+// REKAP PER TOKO
+//
+// Nama toko memakai storeName dari response API. Kartu bisa diklik
+// untuk masuk ke dashboard detail toko (tetap read-only).
+// ------------------------------------------------------------
+function AggregateStoreCard({
+  store,
+  onSelect,
+}: {
+  store: AddSellAggregateStore
+  onSelect: (storeId: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(store.storeId)}
+      className={cn(
+        "group relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card p-4 text-left",
+        "transition-all duration-300",
+        "hover:border-primary/40 hover:shadow-md",
+        "hover:shadow-[0_0_28px_-16px] hover:shadow-primary/50",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+      )}
+    >
+      <span
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
+      />
+
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "grid size-10 shrink-0 place-items-center rounded-lg",
+            "bg-primary/10 text-primary",
+            "ring-1 ring-inset ring-primary/25",
+            "shadow-[0_0_18px_-8px] shadow-primary/50",
+          )}
+        >
+          <Store className="size-4" />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {store.storeName || store.storeId}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {store.totalEmployees} karyawan
+            {store.employeesWithoutTarget > 0
+              ? ` · ${store.employeesWithoutTarget} belum ada target`
+              : ""}
+          </p>
+        </div>
+
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </div>
+
+      {!store.hasTarget ? (
+        <TargetBelumDibuatBadge className="self-start" />
+      ) : (
+        <div className="space-y-2.5">
+          {JENIS_LIST.map((jenis) => {
+            const tone = TONE[jenis]
+            const cell = store.byJenis[jenis]
+
+            if (!cell?.hasTarget) {
+              return (
+                <div
+                  key={jenis}
+                  className="flex flex-wrap items-center justify-between gap-2"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {JENIS_PLURAL[jenis]}
+                  </span>
+                  <TargetBelumDibuatBadge />
+                </div>
+              )
+            }
+
+            return (
+              <div key={jenis}>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate text-muted-foreground">
+                    {JENIS_PLURAL[jenis]}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 font-semibold tabular-nums",
+                      cell.progress > 0
+                        ? tone.text
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {cell.progress}%
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width] duration-500",
+                      tone.track,
+                    )}
+                    style={{ width: barWidth(cell.progress) }}
+                  />
+                </div>
+                <p className="mt-1 truncate text-[11px] text-muted-foreground tabular-nums">
+                  {formatNilai(jenis, cell.totalAchievement)}
+                  {" / "}
+                  {formatNilai(jenis, cell.totalTarget)}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mt-auto flex items-center gap-1.5 border-t border-border/60 pt-3 text-xs font-medium text-primary">
+        Lihat Dashboard Toko
+        <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+      </div>
+    </button>
+  )
+}
+
+// ------------------------------------------------------------
+// DASHBOARD REKAP CABANG
+//
+// Daftar toko hanya ada SATU: bagian "Rekap per Toko". Memilih
+// detail toko dilakukan lewat tombol "Lihat Dashboard Toko" pada
+// setiap card, jadi tidak ada panel/daftar toko kedua.
+// ------------------------------------------------------------
+function AggregateDashboard({
+  data,
+  onSelectStore,
+}: {
+  data: AddSellAggregateData
+  onSelectStore: (storeId: string) => void
+}) {
+  const { scope, stores, summary } = data
+  const tone = TONE.SELLING_EKSKLUSIF_PERFUME
+
+  const totalStores = scope.totalStores || stores.length
+  const storesWithAnyTarget = stores.filter(
+    (s) => s.hasTarget,
+  ).length
+  const storesWithoutAnyTarget = Math.max(
+    0,
+    totalStores - storesWithAnyTarget,
+  )
+
+  return (
+    <div className="space-y-5">
+      {/* HEADER DASHBOARD REKAP */}
+      <Card
+        className={cn(
+          "overflow-hidden",
+          tone.card,
+          "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+        )}
+      >
+        <div
+          className={cn("h-1 w-full", tone.bar, tone.barGlow)}
+        />
+        <CardContent className="space-y-4 pt-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span
+                className={cn(
+                  "grid size-10 place-items-center rounded-xl",
+                  tone.soft,
+                  tone.text,
+                  tone.icon,
+                )}
+              >
+                <Layers className="size-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">
+                  Rekap Seluruh Toko
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {scope.cabangId
+                    ? `Cabang ${scope.cabangId}`
+                    : "Seluruh toko dalam cakupan akun"}
+                  {" · "}
+                  Periode {formatPeriodeLabel(data.periode)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI RINGKASAN CABANG */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <AggregateKpiCard
+              label="Total Toko"
+              value={String(totalStores)}
+              hint="Toko dalam cakupan"
+              tone={tone}
+              icon={Store}
+            />
+            <AggregateKpiCard
+              label="Toko Sudah Ada Target"
+              value={String(storesWithAnyTarget)}
+              tone={tone}
+              icon={Target}
+            />
+            <AggregateKpiCard
+              label="Toko Belum Ada Target"
+              value={String(storesWithoutAnyTarget)}
+              tone={tone}
+              icon={Target}
+            />
+            <AggregateKpiCard
+              label="Periode"
+              value={formatPeriodeLabel(data.periode)}
+              tone={tone}
+              icon={TrendingUp}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* KPI + CHART PER JENIS TARGET */}
+      {JENIS_LIST.map((jenis) => (
+        <AggregateJenisSection
+          key={jenis}
+          jenis={jenis}
+          cell={summary.byJenis[jenis]}
+          totalStores={totalStores}
+        />
+      ))}
+
+      {/* REKAP PER TOKO */}
+      <Card
+        className={cn(
+          "overflow-hidden",
+          tone.card,
+          "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+        )}
+      >
+        <div
+          className={cn("h-1 w-full", tone.bar, tone.barGlow)}
+        />
+        <CardContent className="space-y-4 pt-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold tracking-tight">
+              Rekap per Toko
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {stores.length} toko
+              {scope.cabangId ? ` pada cabang ${scope.cabangId}` : ""}
+              . Klik satu toko untuk melihat dashboard detail toko
+              tersebut.
+            </p>
+          </div>
+
+          {stores.length === 0 ? (
+            <EmptyState
+              title="Belum ada toko"
+              description="Cabang ini belum memiliki toko. Hubungi admin untuk menambahkan toko."
+              icon={Store}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+              {stores.map((store) => (
+                <AggregateStoreCard
+                  key={store.storeId}
+                  store={store}
+                  onSelect={onSelectStore}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 function JenisSection({
   jenis,

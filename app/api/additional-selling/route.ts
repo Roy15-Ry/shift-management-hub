@@ -32,6 +32,32 @@ import {
 //   CENTRAL PUSAT  -> wajib memilih SATU cabang (param "cabang"),
 //                     tidak ada fallback "Semua Cabang".
 //
+// ============================================================
+// DUA MODE READ
+// ============================================================
+//
+// MODE 1 — DETAIL TOKO (mode existing, tidak berubah bentuk
+// responsnya). Dipakai ketika "store" dikirim, atau untuk role
+// STORE yang parameter "store"-nya diabaikan.
+//   GET ?year=&month=&store=BINAMARGA
+//   -> { success, periode, transactions, targets, summary }
+//
+// MODE 2 — REKAP CENTRAL (mode baru, agregasi di server).
+// Dipakai ketika "store" TIDAK dikirim oleh Central.
+//   Central Cabang -> scope = seluruh toko pada user.cabangId
+//   Central Pusat  -> scope = seluruh toko pada param "cabang"
+//   GET ?year=&month=[&cabang=BINAMARGA]
+//   -> { success, periode, mode, scope, stores, summary }
+//
+// Pada MODE 2 server TIDAK mengirim daftar transaksi maupun daftar
+// target semua toko ke browser. Yang dikirim hanya rekap per toko
+// (storeId, storeName, total target/realisasi/progress per jenis)
+// sehingga frontend tidak perlu menghitung ulang.
+//
+// "TARGET BELUM DIBUAT" dibedakan dari "TARGET ADA DENGAN NILAI 0"
+// melalui flag hasTarget pada setiap jenis — murni informasi
+// response, tanpa menambah field ke Firestore.
+//
 // Parameter year/month hanya menjadi FILTER periode setelah
 // scope otorisasi diterapkan.
 //
@@ -262,17 +288,37 @@ function buildPeriod(
 // dengan kueri (storeId + rentang tanggal) — memakai index
 // composite (storeId, tanggal) yang sudah aktif untuk kueri
 // bulanan existing, sehingga TIDAK membutuhkan index baru.
+//
+// Dua mode read dihasilkan di sini:
+//   mode "detail"    -> tepat satu toko dalam scope
+//   mode "aggregate" -> seluruh toko pada satu cabang (Central)
+//
+// Toko yang diminta client di luar scope akun/cabang DITOLAK
+// (invalidStore), bukan diganti dengan data kosong.
 // ============================================================
 
-async function getAllStoresByCabang(): Promise<
-  Map<string, string>
+// storeId -> { cabangId, namaStore } dari master "stores".
+async function getAllStoresByCabang(
+  cabangId: string,
+): Promise<
+  Map<string, { cabangId: string; namaStore: string }>
 > {
+  // Nilai query dinormalisasi (trim + uppercase) memakai helper
+  // normalize() yang sama, sehingga cocok dengan perbandingan
+  // in-memory di bawah dan konsisten dengan data "stores" yang
+  // ditulis melalui jalur create-store (juga uppercase).
+  const normalizedCabangId = normalize(cabangId)
+
   const snapshot =
     await adminDb
       .collection("stores")
+      .where("cabangId", "==", normalizedCabangId)
       .get()
 
-  const map = new Map<string, string>()
+  const map = new Map<
+    string,
+    { cabangId: string; namaStore: string }
+  >()
 
   snapshot.docs.forEach((doc) => {
     const data = doc.data()
@@ -282,93 +328,184 @@ async function getAllStoresByCabang(): Promise<
     if (!storeId) {
       return
     }
-    map.set(
-      storeId,
-      normalize(data?.cabangId ?? ""),
-    )
+    map.set(storeId, {
+      cabangId: normalize(data?.cabangId ?? ""),
+      namaStore: cleanString(
+        data?.namaStore ?? data?.nama ?? "",
+        120,
+      ),
+    })
   })
 
   return map
+}
+
+type AccessScope = {
+  scope: "store" | "cabang" | "pusat"
+  mode: "detail" | "aggregate"
+  storeIds: string[]
+  storeNames: Map<string, string>
+  cabangId: string
+  invalidStore?: boolean
 }
 
 async function scopeForRole(
   user: AddSellUser,
   cabangParam: string,
   storeParam: string,
-): Promise<{
-  scope: "store" | "cabang" | "pusat"
-  storeIds: string[]
-  invalidStore?: boolean
-}> {
+): Promise<AccessScope> {
   const role = user.role.toLowerCase()
 
   // STORE: parameter store dari client DIABAIKAN. Scope tetap
   // user.storeId agar client tidak dapat membaca toko lain.
+  // Toko TIDAK pernah memperoleh akses aggregate Central.
   if (role === "store") {
+    const ownCabang = normalize(user.cabangId)
+
     if (!user.storeId) {
-      return { scope: "store", storeIds: [] }
+      return {
+        scope: "store",
+        mode: "detail",
+        storeIds: [],
+        storeNames: new Map(),
+        cabangId: ownCabang,
+      }
     }
-    return { scope: "store", storeIds: [user.storeId] }
+    return {
+      scope: "store",
+      mode: "detail",
+      storeIds: [user.storeId],
+      storeNames: new Map(),
+      cabangId: ownCabang,
+    }
   }
 
-  const storesByCabang = await getAllStoresByCabang()
+  // Sumber cabang tetap otoritatif yang sudah ada: akun untuk
+  // central_cabang, dan param yang sudah divalidasi server untuk
+  // central_pusat. Role store sudah return di atas, sehingga tidak
+  // pernah menyentuh query "stores" di sini.
+  const scopeCabangId =
+    role === "central_cabang"
+      ? normalize(user.cabangId)
+      : cabangParam
+
+  const storesByCabang =
+    await getAllStoresByCabang(scopeCabangId)
+
+  // Nama toko dari master "stores" untuk sekumpulan toko. Kosong
+  // berarti nama tidak diketahui dari master, sehingga Mode Rekap
+  // memakai fallback dari snapshot storeName pada transaksi.
+  function pickStoreNames(
+    storeIds: string[],
+  ): Map<string, string> {
+    const names = new Map<string, string>()
+
+    for (const storeId of storeIds) {
+      names.set(
+        storeId,
+        storesByCabang.get(storeId)
+          ?.namaStore ?? "",
+      )
+    }
+
+    return names
+  }
 
   // Untuk Central, dashboard WAJIB per toko. Toko yang diminta
   // diverifikasi di server terhadap cabang yang berwenang:
   //   central_cabang -> cabang dari users/{uid}
   //   central_pusat  -> cabang dari cabangParam
-  // Toko di luar scope DITOLAK, bukan diganti dengan data kosong.
   if (role === "central_cabang") {
     if (!user.cabangId) {
       return {
         scope: "cabang",
+        mode: "aggregate",
         storeIds: [],
+        storeNames: new Map(),
+        cabangId: "",
         invalidStore: true,
       }
     }
 
+    // Cabang SELALU dari akun. cabangId dari client tidak pernah
+    // dipercaya, sehingga Central Cabang tidak dapat membaca
+    // toko cabang lain.
     const cabang = normalize(user.cabangId)
 
     const allowed = Array.from(
       storesByCabang.entries(),
     )
-      .filter(([, cabangId]) => cabangId === cabang)
+      .filter(([, master]) => master.cabangId === cabang)
       .map(([storeId]) => storeId)
 
+    // Tanpa "store" -> REKAP seluruh toko pada cabang akun.
     if (!storeParam) {
-      return { scope: "cabang", storeIds: [] }
+      return {
+        scope: "cabang",
+        mode: "aggregate",
+        storeIds: allowed,
+        storeNames: pickStoreNames(allowed),
+        cabangId: cabang,
+      }
     }
 
     if (!allowed.includes(storeParam)) {
       return {
         scope: "cabang",
+        mode: "detail",
         storeIds: [],
+        storeNames: new Map(),
+        cabangId: cabang,
         invalidStore: true,
       }
     }
 
-    return { scope: "cabang", storeIds: [storeParam] }
+    return {
+      scope: "cabang",
+      mode: "detail",
+      storeIds: [storeParam],
+      storeNames: pickStoreNames([storeParam]),
+      cabangId: cabang,
+    }
   }
 
+  // CENTRAL PUSAT: cabang WAJIB ada, tidak kosong, dan tidak
+  // boleh "ALL" — sudah divalidasi oleh GET sebelum fungsi ini
+  // dipanggil. Tidak ada jalur "semua cabang".
   const allowed = Array.from(
     storesByCabang.entries(),
   )
-    .filter(([, cabangId]) => cabangId === cabangParam)
+    .filter(([, master]) => master.cabangId === cabangParam)
     .map(([storeId]) => storeId)
 
   if (!storeParam) {
-    return { scope: "pusat", storeIds: [] }
+    return {
+      scope: "pusat",
+      mode: "aggregate",
+      storeIds: allowed,
+      storeNames: pickStoreNames(allowed),
+      cabangId: cabangParam,
+    }
   }
 
   if (!allowed.includes(storeParam)) {
     return {
       scope: "pusat",
+      mode: "detail",
       storeIds: [],
+      storeNames: new Map(),
+      cabangId: cabangParam,
       invalidStore: true,
     }
   }
 
-  return { scope: "pusat", storeIds: [storeParam] }
+  return {
+    scope: "pusat",
+    mode: "detail",
+    storeIds: [storeParam],
+    storeNames: pickStoreNames([storeParam]),
+    cabangId: cabangParam,
+  }
 }
 
 // ============================================================
@@ -687,6 +824,324 @@ function errorResponse(error: unknown) {
 }
 
 // ============================================================
+// PEMBACAAN PER TOKO
+// ============================================================
+//
+// Dipakai oleh KEDUA mode read agar perilaku baca dan urutan
+// data dijamin identik.
+//
+// Realisasi memakai kueri per toko (storeId + rentang tanggal),
+// persis seperti sebelumnya, sehingga tetap didukung composite
+// index (storeId, tanggal) yang sudah aktif.
+// Target juga dibaca per toko, sekarang dengan saringan periode
+// langsung di kueri (storeId + periode) sehingga hanya dokumen
+// pada periode yang diminta yang dibaca.
+
+async function readStoreTransactions(
+  storeId: string,
+  start: string,
+  end: string,
+): Promise<Record<string, unknown>[]> {
+  const snapshot = await adminDb
+    .collection("additional_selling")
+    .where("storeId", "==", storeId)
+    .where("tanggal", ">=", start)
+    .where("tanggal", "<", end)
+    .get()
+
+  const rows: Record<string, unknown>[] = []
+
+  snapshot.docs.forEach((doc) => {
+    const data = doc.data()
+    const jenis = resolveJenis(data?.jenis)
+
+    rows.push({
+      id: doc.id,
+      storeId: cleanString(data?.storeId, 100),
+      cabangId: cleanString(data?.cabangId, 100),
+      storeName: cleanString(data?.storeName, 120),
+      employeeId: cleanString(data?.employeeId, 200),
+      employeeName: cleanString(data?.employeeName, 150),
+      tanggal: cleanString(data?.tanggal, 20),
+      jenis,
+      nominal:
+        jenis === "ADDITIONAL_SELLING"
+          ? typeof data?.nominal === "number"
+            ? data.nominal
+            : 0
+          : 0,
+      pcs:
+        jenis === "ADDITIONAL_SELLING"
+          ? 0
+          : typeof data?.pcs === "number"
+            ? data.pcs
+            : 0,
+      ukuranBotol: cleanString(
+        data?.ukuranBotol,
+        20,
+      ),
+      produk: cleanString(data?.produk, 40),
+      namaProdukLain: cleanString(
+        data?.namaProdukLain,
+        150,
+      ),
+      keterangan: cleanString(data?.keterangan, 500),
+      createdAt:
+        data?.createdAt && typeof data.createdAt.toDate === "function"
+          ? data.createdAt.toDate().toISOString()
+          : null,
+      updatedAt:
+        data?.updatedAt && typeof data.updatedAt.toDate === "function"
+          ? data.updatedAt.toDate().toISOString()
+          : null,
+    })
+  })
+
+  return rows
+}
+
+async function readStoreTargets(
+  storeId: string,
+  periode: string,
+): Promise<Record<string, unknown>[]> {
+  const snapshot = await adminDb
+    .collection("additional_selling_targets")
+    .where("storeId", "==", storeId)
+    .where("periode", "==", periode)
+    .get()
+
+  const rows: Record<string, unknown>[] = []
+
+  snapshot.docs.forEach((doc) => {
+    const data = doc.data()
+    const jenis = resolveJenis(data?.jenis)
+
+    rows.push({
+      id: doc.id,
+      storeId: cleanString(data?.storeId, 100),
+      cabangId: cleanString(data?.cabangId, 100),
+      employeeId: cleanString(data?.employeeId, 200),
+      employeeName: cleanString(data?.employeeName, 150),
+      periode: cleanString(data?.periode, 20),
+      jenis,
+      targetNominal:
+        jenis === "ADDITIONAL_SELLING"
+          ? typeof data?.targetNominal === "number"
+            ? data.targetNominal
+            : 0
+          : 0,
+      targetPcs:
+        jenis === "ADDITIONAL_SELLING"
+          ? 0
+          : typeof data?.targetPcs === "number"
+            ? data.targetPcs
+            : 0,
+    })
+  })
+
+  return rows
+}
+
+// ============================================================
+// AGREGASI PER (KARYAWAN + JENIS)
+// ============================================================
+//
+// Aturan ini DIPAKAI OLEH KEDUA MODE read supaya perhitungan,
+// pembulatan, dan pembedaan "target belum dibuat" tidak mungkin
+// berbeda antara Mode Detail Toko dan Mode Rekap Central.
+//
+// Seluruh perhitungan dilakukan per (karyawan + jenis target):
+//   - Pencapaian = total realisasi pada employee + jenis +
+//     periode berjalan. Realisasi yang dibuat SEBELUM target
+//     ada tetap ikut terhitung karena agregasi membaca
+//     seluruh transaksi pada periode tersebut.
+//   - "Target belum dibuat" dibedakan dari "target 0".
+//     Bila target belum ada, hasTarget = false dan
+//     pencapaian maupun progress tidak ditampilkan.
+//   - Progress TIDAK dibatasi 100%. Pencapaian yang melebihi
+//     target menghasilkan progress di atas 100%.
+//   - Pembulatan memakai Math.round, sama seperti modul ini
+//     sebelumnya.
+
+function aggregateByJenis(
+  transactions: Record<string, unknown>[],
+  targets: Record<string, unknown>[],
+): Record<string, Record<string, unknown>> {
+  const nameByEmployee =
+    new Map<string, string>()
+  const achievementByKey =
+    new Map<string, number>()
+  const targetByKey =
+    new Map<string, number>()
+
+  // Nama karyawan diambil dari target bila tersedia. Karyawan
+  // yang belum punya target tetap harus tampil, sehingga nama
+  // dari realisasi dipakai sebagai cadangan.
+  for (const target of targets) {
+    const employeeId =
+      String(target.employeeId ?? "")
+
+    if (!employeeId) {
+      continue
+    }
+
+    if (!nameByEmployee.has(employeeId)) {
+      nameByEmployee.set(
+        employeeId,
+        String(target.employeeName ?? "-"),
+      )
+    }
+
+    targetByKey.set(
+      `${employeeId}|${String(target.jenis)}`,
+      target.jenis === "ADDITIONAL_SELLING"
+        ? typeof target.targetNominal ===
+            "number"
+          ? target.targetNominal
+          : 0
+        : typeof target.targetPcs === "number"
+          ? target.targetPcs
+          : 0,
+    )
+  }
+
+  for (const txn of transactions) {
+    const employeeId =
+      String(txn.employeeId ?? "")
+
+    if (!employeeId) {
+      continue
+    }
+
+    const jenis = String(txn.jenis)
+
+    const achievement =
+      jenis === "ADDITIONAL_SELLING"
+        ? typeof txn.nominal === "number"
+          ? txn.nominal
+          : 0
+        : typeof txn.pcs === "number"
+          ? txn.pcs
+          : 0
+
+    const key = `${employeeId}|${jenis}`
+
+    achievementByKey.set(
+      key,
+      (achievementByKey.get(key) ?? 0) +
+        achievement,
+    )
+
+    if (!nameByEmployee.has(employeeId)) {
+      nameByEmployee.set(
+        employeeId,
+        String(txn.employeeName ?? "-"),
+      )
+    }
+  }
+
+  // Universe karyawan: seluruh karyawan yang punya target ATAU
+  // punya realisasi pada periode ini, tanpa memandang jenis.
+  // Karyawan tanpa target untuk suatu jenis TIDAK menghilangkan
+  // data target karyawan lain pada jenis yang sama.
+  const employeeIds = new Set<string>()
+
+  for (const target of targets) {
+    const employeeId =
+      String(target.employeeId ?? "")
+    if (employeeId) {
+      employeeIds.add(employeeId)
+    }
+  }
+
+  for (const txn of transactions) {
+    const employeeId =
+      String(txn.employeeId ?? "")
+    if (employeeId) {
+      employeeIds.add(employeeId)
+    }
+  }
+
+  const byJenis: Record<
+    string,
+    Record<string, unknown>
+  > = {}
+
+  for (const jenis of JENIS_LIST) {
+    const perEmployee = Array.from(employeeIds)
+      .map((employeeId) => {
+        const key = `${employeeId}|${jenis}`
+
+        const hasTarget = targetByKey.has(key)
+        const target = targetByKey.get(key) ?? 0
+        const achievement =
+          achievementByKey.get(key) ?? 0
+
+        const progress =
+          hasTarget && target > 0
+            ? Math.round(
+                (achievement / target) * 100,
+              )
+            : 0
+
+        return {
+          employeeId,
+          employeeName:
+            nameByEmployee.get(employeeId) ?? "-",
+          hasTarget,
+          target,
+          achievement,
+          progress,
+        }
+      })
+      .sort((a, b) =>
+        a.employeeName.localeCompare(
+          b.employeeName,
+          "id",
+          { sensitivity: "base" },
+        ),
+      )
+
+    // Total hanya menghitung karyawan yang targetnya sudah
+    // dibuat, konsisten dengan aturan bahwa realisasi tanpa
+    // target tidak menampilkan capaian.
+    const withTarget = perEmployee.filter(
+      (row) => row.hasTarget,
+    )
+
+    const totalTarget = withTarget.reduce(
+      (total, row) => total + row.target,
+      0,
+    )
+
+    const totalAchievement =
+      withTarget.reduce(
+        (total, row) => total + row.achievement,
+        0,
+      )
+
+    const progress =
+      totalTarget > 0
+        ? Math.round(
+            (totalAchievement / totalTarget) * 100,
+          )
+        : 0
+
+    byJenis[jenis] = {
+      totalTarget,
+      totalAchievement,
+      progress,
+      totalEmployees: perEmployee.length,
+      employeesWithoutTarget:
+        perEmployee.length - withTarget.length,
+      perEmployee,
+    }
+  }
+
+  return byJenis
+}
+
+// ============================================================
 // GET — DASHBOARD + REALISASI + TARGET
 // ============================================================
 
@@ -779,7 +1234,216 @@ export async function GET(request: Request) {
       )
     }
 
-    const { storeIds } = scope
+    const {
+      scope: scopeLevel,
+      mode,
+      storeIds,
+      storeNames,
+      cabangId: scopeCabangId,
+    } = scope
+
+    // =====================================================
+    // MODE REKAP CENTRAL (aggregate, tanpa store)
+    // =====================================================
+    //
+    // Dipakai hanya oleh Central (Central Cabang tanpa store,
+    // Central Pusat dengan cabang valid tanpa store). Agregasi
+    // dihitung per toko lalu digabung, dan yang dikirim ke
+    // browser HANYA rekap per toko — bukan daftar transaksi
+    // dan bukan daftar target semua toko.
+    //
+    // Scope SELALU satu cabang:
+    //   central_cabang -> user.cabangId
+    //   central_pusat  -> param "cabang"
+    // Tidak pernah membaca seluruh cabang / seluruh perusahaan.
+
+    if (mode === "aggregate") {
+      const stores: Record<string, unknown>[] = []
+
+      const totals = new Map<
+        PenjualanJenis,
+        {
+          storesWithTarget: number
+          totalTarget: number
+          totalAchievement: number
+        }
+      >()
+
+      for (const jenis of JENIS_LIST) {
+        totals.set(jenis, {
+          storesWithTarget: 0,
+          totalTarget: 0,
+          totalAchievement: 0,
+        })
+      }
+
+      for (const storeId of storeIds) {
+        const storeTransactions =
+          await readStoreTransactions(
+            storeId,
+            start,
+            end,
+          )
+
+        const storeTargets =
+          await readStoreTargets(storeId, periode)
+
+        // Aturan agregasi IDENTIK dengan mode detail.
+        const storeByJenis = aggregateByJenis(
+          storeTransactions,
+          storeTargets,
+        )
+
+        const row: {
+          storeId: string
+          storeName: string
+          hasTarget: boolean
+          totalEmployees: number
+          employeesWithoutTarget: number
+          byJenis: Record<string, Record<string, unknown>>
+        } = {
+          storeId,
+          // Nama toko dari master "stores"; fallback ke snapshot
+          // storeName pada transaksi, lalu ke storeId. Tidak ada
+          // field baru di Firestore untuk ini.
+          storeName:
+            storeNames.get(storeId) ||
+            cleanString(
+              storeTransactions[0]?.storeName,
+              120,
+            ) ||
+            storeId,
+          // true bila toko sudah mempunyai target untuk
+          // setidaknya satu jenis pada periode ini.
+          hasTarget: false,
+          totalEmployees: 0,
+          employeesWithoutTarget: 0,
+          byJenis: {},
+        }
+
+        for (const jenis of JENIS_LIST) {
+          const cell = storeByJenis[jenis] ?? {}
+
+          // "Target belum dibuat" pada tingkat TOKO + JENIS
+          // berarti tidak ada satu pun karyawan toko ini yang
+          // mempunyai target untuk jenis tersebut. Target yang
+          // ADA tetapi bernilai 0 tetap menghasilkan
+          // hasTarget = true.
+          const perEmployee = Array.isArray(
+            cell.perEmployee,
+          )
+            ? (cell.perEmployee as Record<
+                string,
+                unknown
+              >[])
+            : []
+
+          const hasTarget = perEmployee.some(
+            (row) => row.hasTarget === true,
+          )
+
+          const totalTarget =
+            typeof cell.totalTarget === "number"
+              ? cell.totalTarget
+              : 0
+          const totalAchievement =
+            typeof cell.totalAchievement === "number"
+              ? cell.totalAchievement
+              : 0
+          const progress =
+            typeof cell.progress === "number"
+              ? cell.progress
+              : 0
+
+          row.byJenis[jenis] = {
+            hasTarget,
+            totalTarget,
+            totalAchievement,
+            progress,
+          }
+
+          if (jenis === JENIS_LIST[0]) {
+            row.totalEmployees =
+              typeof cell.totalEmployees === "number"
+                ? cell.totalEmployees
+                : 0
+            row.employeesWithoutTarget =
+              typeof cell.employeesWithoutTarget ===
+                "number"
+                ? cell.employeesWithoutTarget
+                : 0
+          }
+
+          if (hasTarget) {
+            row.hasTarget = true
+
+            const bucket = totals.get(jenis)
+            if (bucket) {
+              bucket.storesWithTarget += 1
+              bucket.totalTarget += totalTarget
+              bucket.totalAchievement += totalAchievement
+            }
+          }
+        }
+
+        stores.push(row)
+      }
+
+      const summaryByJenis: Record<
+        string,
+        Record<string, unknown>
+      > = {}
+
+      for (const jenis of JENIS_LIST) {
+        const bucket = totals.get(jenis)
+
+        const totalTarget = bucket?.totalTarget ?? 0
+        const totalAchievement =
+          bucket?.totalAchievement ?? 0
+        const storesWithTarget =
+          bucket?.storesWithTarget ?? 0
+
+        summaryByJenis[jenis] = {
+          // true bila ADA toko dalam scope yang sudah
+          // mempunyai target jenis ini.
+          hasTarget: storesWithTarget > 0,
+          totalTarget,
+          totalAchievement,
+          progress:
+            totalTarget > 0
+              ? Math.round(
+                  (totalAchievement / totalTarget) * 100,
+                )
+              : 0,
+          totalStores: storeIds.length,
+          storesWithTarget,
+          // Toko dalam scope yang belum mempunyai target jenis
+          // ini — berbeda dari toko yang punya target bernilai 0.
+          storesWithoutTarget:
+            storeIds.length - storesWithTarget,
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        periode,
+        mode: "aggregate",
+        scope: {
+          role,
+          level: scopeLevel,
+          cabangId: scopeCabangId,
+          totalStores: storeIds.length,
+        },
+        stores,
+        summary: {
+          byJenis: summaryByJenis,
+        },
+      })
+    }
+
+    // =====================================================
+    // MODE DETAIL TOKO — bentuk response tidak berubah
+    // =====================================================
 
     if (storeIds.length === 0) {
       return NextResponse.json({
@@ -793,300 +1457,31 @@ export async function GET(request: Request) {
       })
     }
 
-    // =====================================================
-    // REALISASI per toko (reuse index storeId+tanggal)
-    // =====================================================
-
     const transactions: Record<string, unknown>[] = []
 
     for (const storeId of storeIds) {
-      const snapshot = await adminDb
-        .collection("additional_selling")
-        .where("storeId", "==", storeId)
-        .where("tanggal", ">=", start)
-        .where("tanggal", "<", end)
-        .get()
-
-      snapshot.docs.forEach((doc) => {
-        const data = doc.data()
-        const jenis = resolveJenis(data?.jenis)
-
-        transactions.push({
-          id: doc.id,
-          storeId: cleanString(data?.storeId, 100),
-          cabangId: cleanString(data?.cabangId, 100),
-          storeName: cleanString(data?.storeName, 120),
-          employeeId: cleanString(data?.employeeId, 200),
-          employeeName: cleanString(data?.employeeName, 150),
-          tanggal: cleanString(data?.tanggal, 20),
-          jenis,
-          nominal:
-            jenis === "ADDITIONAL_SELLING"
-              ? typeof data?.nominal === "number"
-                ? data.nominal
-                : 0
-              : 0,
-          pcs:
-            jenis === "ADDITIONAL_SELLING"
-              ? 0
-              : typeof data?.pcs === "number"
-                ? data.pcs
-                : 0,
-          ukuranBotol: cleanString(
-            data?.ukuranBotol,
-            20,
-          ),
-          produk: cleanString(data?.produk, 40),
-          namaProdukLain: cleanString(
-            data?.namaProdukLain,
-            150,
-          ),
-          keterangan: cleanString(data?.keterangan, 500),
-          createdAt:
-            data?.createdAt && typeof data.createdAt.toDate === "function"
-              ? data.createdAt.toDate().toISOString()
-              : null,
-          updatedAt:
-            data?.updatedAt && typeof data.updatedAt.toDate === "function"
-              ? data.updatedAt.toDate().toISOString()
-              : null,
-        })
-      })
+      transactions.push(
+        ...(await readStoreTransactions(
+          storeId,
+          start,
+          end,
+        )),
+      )
     }
-
-    // =====================================================
-    // TARGET bulanan per employee pada scope
-    // =====================================================
 
     const targets: Record<string, unknown>[] = []
 
     for (const storeId of storeIds) {
-      const snapshot = await adminDb
-        .collection("additional_selling_targets")
-        .where("storeId", "==", storeId)
-        .get()
-
-      snapshot.docs.forEach((doc) => {
-        const data = doc.data()
-        if (String(data?.periode ?? "") !== periode) {
-          return
-        }
-
-        const jenis = resolveJenis(data?.jenis)
-
-        targets.push({
-          id: doc.id,
-          storeId: cleanString(data?.storeId, 100),
-          cabangId: cleanString(data?.cabangId, 100),
-          employeeId: cleanString(data?.employeeId, 200),
-          employeeName: cleanString(data?.employeeName, 150),
-          periode: cleanString(data?.periode, 20),
-          jenis,
-          targetNominal:
-            jenis === "ADDITIONAL_SELLING"
-              ? typeof data?.targetNominal === "number"
-                ? data.targetNominal
-                : 0
-              : 0,
-          targetPcs:
-            jenis === "ADDITIONAL_SELLING"
-              ? 0
-              : typeof data?.targetPcs === "number"
-                ? data.targetPcs
-                : 0,
-        })
-      })
+      targets.push(
+        ...(await readStoreTargets(storeId, periode)),
+      )
     }
 
-    // =====================================================
     // SUMMARY (agregasi di server)
-    // =====================================================
-    //
-    // Seluruh perhitungan dilakukan per (karyawan + jenis
-    // target):
-    //   - Pencapaian = total realisasi pada employee + jenis +
-    //     periode berjalan. Realisasi yang dibuat SEBELUM target
-    //     ada tetap ikut terhitung karena agregasi membaca
-    //     seluruh transaksi pada periode tersebut.
-    //   - "Target belum dibuat" dibedakan dari "target 0".
-    //     Bila target belum ada, hasTarget = false dan
-    //     pencapaian maupun progress tidak ditampilkan.
-    //   - Progress TIDAK dibatasi 100%. Pencapaian yang melebihi
-    //     target menghasilkan progress di atas 100%.
-    //   - Pembulatan memakai Math.round, sama seperti modul ini
-    //     sebelumnya.
-
-    const nameByEmployee =
-      new Map<string, string>()
-    const achievementByKey =
-      new Map<string, number>()
-    const targetByKey =
-      new Map<string, number>()
-
-    // Nama karyawan diambil dari target bila tersedia. Karyawan
-    // yang belum punya target tetap harus tampil, sehingga nama
-    // dari realisasi dipakai sebagai cadangan.
-    for (const target of targets) {
-      const employeeId =
-        String(target.employeeId ?? "")
-
-      if (!employeeId) {
-        continue
-      }
-
-      if (!nameByEmployee.has(employeeId)) {
-        nameByEmployee.set(
-          employeeId,
-          String(target.employeeName ?? "-"),
-        )
-      }
-
-      targetByKey.set(
-        `${employeeId}|${String(target.jenis)}`,
-        target.jenis === "ADDITIONAL_SELLING"
-          ? typeof target.targetNominal ===
-              "number"
-            ? target.targetNominal
-            : 0
-          : typeof target.targetPcs === "number"
-            ? target.targetPcs
-            : 0,
-      )
-    }
-
-    for (const txn of transactions) {
-      const employeeId =
-        String(txn.employeeId ?? "")
-
-      if (!employeeId) {
-        continue
-      }
-
-      const jenis = String(txn.jenis)
-
-      const achievement =
-        jenis === "ADDITIONAL_SELLING"
-          ? typeof txn.nominal === "number"
-            ? txn.nominal
-            : 0
-          : typeof txn.pcs === "number"
-            ? txn.pcs
-            : 0
-
-      const key = `${employeeId}|${jenis}`
-
-      achievementByKey.set(
-        key,
-        (achievementByKey.get(key) ?? 0) +
-          achievement,
-      )
-
-      if (!nameByEmployee.has(employeeId)) {
-        nameByEmployee.set(
-          employeeId,
-          String(txn.employeeName ?? "-"),
-        )
-      }
-    }
-
-    // Universe karyawan: seluruh karyawan yang punya target ATAU
-    // punya realisasi pada periode ini, tanpa memandang jenis.
-    // Karyawan tanpa target untuk suatu jenis TIDAK menghilangkan
-    // data target karyawan lain pada jenis yang sama.
-    const employeeIds = new Set<string>()
-
-    for (const target of targets) {
-      const employeeId =
-        String(target.employeeId ?? "")
-      if (employeeId) {
-        employeeIds.add(employeeId)
-      }
-    }
-
-    for (const txn of transactions) {
-      const employeeId =
-        String(txn.employeeId ?? "")
-      if (employeeId) {
-        employeeIds.add(employeeId)
-      }
-    }
-
-    const byJenis: Record<
-      string,
-      Record<string, unknown>
-    > = {}
-
-    for (const jenis of JENIS_LIST) {
-      const perEmployee = Array.from(employeeIds)
-        .map((employeeId) => {
-          const key = `${employeeId}|${jenis}`
-
-          const hasTarget = targetByKey.has(key)
-          const target =
-            targetByKey.get(key) ?? 0
-          const achievement =
-            achievementByKey.get(key) ?? 0
-
-          const progress =
-            hasTarget && target > 0
-              ? Math.round(
-                  (achievement / target) * 100,
-                )
-              : 0
-
-          return {
-            employeeId,
-            employeeName:
-              nameByEmployee.get(employeeId) ?? "-",
-            hasTarget,
-            target,
-            achievement,
-            progress,
-          }
-        })
-        .sort((a, b) =>
-          a.employeeName.localeCompare(
-            b.employeeName,
-            "id",
-            { sensitivity: "base" },
-          ),
-        )
-
-      // Total hanya menghitung karyawan yang targetnya sudah
-      // dibuat, konsisten dengan aturan bahwa realisasi tanpa
-      // target tidak menampilkan capaian.
-      const withTarget = perEmployee.filter(
-        (row) => row.hasTarget,
-      )
-
-      const totalTarget = withTarget.reduce(
-        (total, row) => total + row.target,
-        0,
-      )
-
-      const totalAchievement =
-        withTarget.reduce(
-          (total, row) => total + row.achievement,
-          0,
-        )
-
-      const progress =
-        totalTarget > 0
-          ? Math.round(
-              (totalAchievement / totalTarget) * 100,
-            )
-          : 0
-
-      byJenis[jenis] = {
-        totalTarget,
-        totalAchievement,
-        progress,
-        totalEmployees: perEmployee.length,
-        employeesWithoutTarget:
-          perEmployee.length - withTarget.length,
-        perEmployee,
-      }
-    }
+    const byJenis = aggregateByJenis(
+      transactions,
+      targets,
+    )
 
     transactions.sort((a, b) => {
       const ta = String(a.tanggal ?? "")
