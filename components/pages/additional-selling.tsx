@@ -3,6 +3,8 @@
 import * as React from "react"
 import {
   ArrowLeft,
+  BarChart3,
+  ChartPie,
   ChevronLeft,
   ChevronRight,
   HandCoins,
@@ -112,6 +114,11 @@ const JENIS_ICON: Record<
 // lewat ring tipis, glow lembut, dan transisi hover.
 // ============================================================
 
+// "fill" dipakai untuk bar DATA (nilai target/realisasi/progress)
+// sehingga isinya memakai gradient, sementara "track" dipakai untuk
+// bar kecil yang lebih baik tetap solid supaya tidak ramai.
+// Dua slot dipisahkan supaya setiap jenis tidak memakai warna yang
+// sama untuk dua dimensi yang berbeda.
 type Tone = {
   chip: string
   text: string
@@ -122,6 +129,7 @@ type Tone = {
   icon: string
   track: string
   dot: string
+  fill: string
 }
 
 const TONE: Record<PenjualanJenis, Tone> = {
@@ -135,6 +143,7 @@ const TONE: Record<PenjualanJenis, Tone> = {
     icon: "ring-1 ring-inset ring-status-pagi/25 shadow-[0_0_20px_-6px] shadow-status-pagi/50",
     track: "bg-status-pagi",
     dot: "bg-status-pagi",
+    fill: "bg-gradient-to-r from-status-pagi to-green-400",
   },
   UPSIZE_BOTOL: {
     chip: "bg-status-siang-bg text-status-siang ring-1 ring-inset ring-status-siang/25",
@@ -146,17 +155,39 @@ const TONE: Record<PenjualanJenis, Tone> = {
     icon: "ring-1 ring-inset ring-status-siang/25 shadow-[0_0_20px_-6px] shadow-status-siang/50",
     track: "bg-status-siang",
     dot: "bg-status-siang",
+    fill: "bg-gradient-to-r from-status-siang to-blue-400",
   },
+
+  // ------------------------------------------------------------
+  // TONE KHUSUS SELLING EKSKLUSIF PERFUME
+  //
+  // Audit Phase 3 menemukan tone jenis ini memakai token
+  // "primary". Pada dark mode token primary berubah menjadi
+  // putih, sehingga identitas warna jenis ketiga ikut hilang
+  // menjadi putih.
+  //
+  // Perbaikan dilakukan SECARA LOKAL di file ini saja:
+  //   - globals.css TIDAK disentuh
+  //   - token global TIDAK ditambah / diubah
+  //   - tidak memakai varian "dark:" karena aplikasi bisa juga
+  //     gelap lewat prefers-color-scheme tanpa kelas .dark
+  //
+  // Warna memakai palette bawaan Tailwind (fuchsia) yang nilainya
+  // sama pada light dan dark, sehingga tone ini tetap hidup di
+  // kedua tema. Magenta dipilih karena jaraknya jauh dari hijau
+  // (ADDITIONAL SELLING) dan biru (UPSIZE BOTOL).
+  // ------------------------------------------------------------
   SELLING_EKSKLUSIF_PERFUME: {
-    chip: "bg-primary/10 text-primary ring-1 ring-inset ring-primary/25",
-    text: "text-primary",
-    soft: "bg-primary/10",
-    bar: "bg-gradient-to-r from-primary via-primary/45 to-transparent",
-    barGlow: "shadow-[0_0_16px_-2px] shadow-primary/40",
-    card: "ring-1 ring-inset ring-primary/20 transition-all duration-200 hover:ring-primary/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-primary/40",
-    icon: "ring-1 ring-inset ring-primary/25 shadow-[0_0_20px_-6px] shadow-primary/45",
-    track: "bg-primary",
-    dot: "bg-primary",
+    chip: "bg-fuchsia-500/10 text-fuchsia-600 ring-1 ring-inset ring-fuchsia-500/25",
+    text: "text-fuchsia-600",
+    soft: "bg-fuchsia-500/10",
+    bar: "bg-gradient-to-r from-fuchsia-500 via-fuchsia-500/45 to-transparent",
+    barGlow: "shadow-[0_0_16px_-2px] shadow-fuchsia-500/45",
+    card: "ring-1 ring-inset ring-fuchsia-500/20 transition-all duration-200 hover:ring-fuchsia-500/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-fuchsia-500/45",
+    icon: "ring-1 ring-inset ring-fuchsia-500/25 shadow-[0_0_20px_-6px] shadow-fuchsia-500/50",
+    track: "bg-fuchsia-500",
+    dot: "bg-fuchsia-500",
+    fill: "bg-gradient-to-r from-fuchsia-600 to-fuchsia-400",
   },
 }
 
@@ -2633,22 +2664,140 @@ function AggregateKpiCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card p-3",
+        "group relative overflow-hidden rounded-xl border border-border bg-card p-3",
+        "transition-[transform,box-shadow] duration-200",
+        "hover:-translate-y-0.5",
         tone.card,
         accent && tone.barGlow,
       )}
     >
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className={cn("size-3.5", tone.text)} />
-        {label}
+      {/* Hairline neon tipis di tepi atas. Murni visual. */}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+          tone.bar,
+        )}
+      />
+
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icon className={cn("size-3.5 shrink-0", tone.text)} />
+        <span className="truncate">{label}</span>
       </div>
-      <p className="mt-1.5 truncate text-xl font-semibold tabular-nums">
+      <p className="mt-1.5 truncate text-2xl font-semibold leading-none tracking-tight tabular-nums">
         {value}
       </p>
       {hint && (
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">
           {hint}
         </p>
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------
+// CAKUPAN TARGET
+//
+// Visual kecil untuk membandingkan berapa toko yang SUDAH punya
+// target pada satu jenis dengan berapa toko yang belum.
+//
+// Angka TIDAK dihitung ulang dari daftar toko: semuanya diambil
+// apa adanya dari response aggregate
+// (summary.byJenis[jenis].storesWithTarget / storesWithoutTarget
+//  / totalStores).
+//
+// "Target belum dibuat" tetap dibedakan dari "0 dari N toko":
+// ketika hasTarget = false, panel menampilkan badge dan BUKAN
+// bar 0%.
+// ------------------------------------------------------------
+function CoverageTarget({
+  jenis,
+  cell,
+  totalStores,
+}: {
+  jenis: PenjualanJenis
+  cell: AddSellAggregateJenisSummary | undefined
+  totalStores: number
+}) {
+  const tone = TONE[jenis]
+  const hasTarget = cell?.hasTarget === true
+
+  const storesWithTarget = cell?.storesWithTarget ?? 0
+  const storesWithoutTarget =
+    cell?.storesWithoutTarget ?? 0
+
+  // Persentase hanya untuk lebar bar. Angka "x dari y" tetap
+  // bentuk aslinya supaya tidak pernah menampilkan "0%" untuk
+  // toko yang target-nya memang belum dibuat.
+  const coverage =
+    totalStores > 0
+      ? (storesWithTarget / totalStores) * 100
+      : 0
+
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-xl border border-border bg-card p-3",
+        "transition-[transform,box-shadow] duration-200",
+        "hover:-translate-y-0.5",
+        tone.card,
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+          tone.bar,
+        )}
+      />
+
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Layers className="size-3.5 shrink-0" />
+        <span className="truncate">Cakupan Target</span>
+      </div>
+
+      {hasTarget ? (
+        <>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <p className="text-2xl font-semibold leading-none tracking-tight tabular-nums">
+              {storesWithTarget}
+            </p>
+            <p className="truncate text-sm font-medium text-muted-foreground tabular-nums">
+              dari {totalStores} toko
+            </p>
+          </div>
+
+          <div
+            className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70"
+            role="img"
+            aria-label={`${storesWithTarget} dari ${totalStores} toko sudah memiliki target ${JENIS_LABEL[jenis]}`}
+          >
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-[600ms] ease-out",
+                tone.fill,
+                tone.barGlow,
+              )}
+              style={{ width: barWidth(coverage) }}
+            />
+          </div>
+
+          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
+            {storesWithoutTarget > 0
+              ? `${storesWithoutTarget} toko belum ada target`
+              : "Semua toko sudah ada target"}
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="mt-1.5">
+            <TargetBelumDibuatBadge />
+          </div>
+          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
+            0 dari {totalStores} toko punya target {JENIS_LABEL[jenis]}
+          </p>
+        </>
       )}
     </div>
   )
@@ -2661,6 +2810,14 @@ function AggregateKpiCard({
 // sudah dipakai modul ini. Skala mengikuti nilai terbesar antara
 // target dan realisasi, sehingga realisasi yang melampaui target
 // tetap terlihat penuh.
+//
+// Phase 3 hanya MEMPOLISH tampilan. Konsep, angka, dan rumus
+// TIDAK diubah:
+//   - Target   = cell.totalTarget      (dari server)
+//   - Realisasi= cell.totalAchievement (dari server)
+//   - Progress = cell.progress         (dari server, TIDAK di-cap)
+// Lebar bar memakai barWidth() sehingga visual tetap aman pada
+// progress > 100% tanpa mengubah angka yang ditampilkan.
 // ------------------------------------------------------------
 function TargetVsAchievementChart({
   jenis,
@@ -2673,8 +2830,8 @@ function TargetVsAchievementChart({
 
   if (!cell || !cell.hasTarget) {
     return (
-      <div className="space-y-2 rounded-xl border border-dashed border-border bg-muted/30 p-4">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="space-y-2.5 rounded-xl border border-dashed border-border bg-muted/30 p-4">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <TrendingUp className="size-3.5" />
           Target vs Realisasi
         </div>
@@ -2692,36 +2849,42 @@ function TargetVsAchievementChart({
   const skala = Math.max(totalTarget, totalAchievement, 1)
 
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-background p-4">
+    <div
+      className="space-y-3.5 rounded-xl border border-border bg-background p-4 transition-shadow duration-200 hover:shadow-[0_14px_34px_-26px]"
+      role="img"
+      aria-label={`Target versus realisasi ${JENIS_LABEL[jenis]}. Target ${formatNilai(jenis, totalTarget)}, realisasi ${formatNilai(jenis, totalAchievement)}, progress ${cell.progress} persen.`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <TrendingUp className={cn("size-3.5", tone.text)} />
           Target vs Realisasi
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className={cn("size-2 rounded-full", tone.dot)} />
-          {cell.progress}%
+          <span className="font-semibold tabular-nums">
+            {cell.progress}%
+          </span>
         </div>
       </div>
 
-      <div className="space-y-2.5">
+      <div className="space-y-3">
         <div>
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Target</span>
             <span className="font-semibold tabular-nums">
               {formatNilai(jenis, totalTarget)}
             </span>
           </div>
-          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
             <div
-              className="h-full rounded-full bg-muted-foreground/30 transition-[width] duration-500"
-              style={{ width: `${(totalTarget / skala) * 100}%` }}
+              className="h-full rounded-full bg-gradient-to-r from-muted-foreground/45 to-muted-foreground/15 transition-[width] duration-[600ms] ease-out"
+              style={{ width: barWidth((totalTarget / skala) * 100) }}
             />
           </div>
         </div>
 
         <div>
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between gap-2 text-xs">
             <span className="text-muted-foreground">Realisasi</span>
             <span
               className={cn(
@@ -2732,29 +2895,37 @@ function TargetVsAchievementChart({
               {formatNilai(jenis, totalAchievement)}
             </span>
           </div>
-          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
             <div
               className={cn(
-                "h-full rounded-full transition-[width] duration-500",
-                tone.track,
+                "h-full rounded-full transition-[width] duration-[600ms] ease-out",
+                tone.fill,
                 tone.barGlow,
               )}
               style={{
-                width: `${(totalAchievement / skala) * 100}%`,
+                width: barWidth((totalAchievement / skala) * 100),
               }}
             />
           </div>
         </div>
       </div>
 
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full transition-[width] duration-500",
-            tone.track,
-          )}
-          style={{ width: barWidth(cell.progress) }}
-        />
+      <div className="space-y-1.5 border-t border-border/60 pt-3">
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>Progress Keseluruhan</span>
+          <span className="font-semibold text-foreground tabular-nums">
+            {cell.progress}%
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
+          <div
+            className={cn(
+              "h-full rounded-full transition-[width] duration-[600ms] ease-out",
+              tone.fill,
+            )}
+            style={{ width: barWidth(cell.progress) }}
+          />
+        </div>
       </div>
     </div>
   )
@@ -2775,9 +2946,6 @@ function AggregateJenisSection({
   const tone = TONE[jenis]
   const Icon = JENIS_ICON[jenis]
   const hasTarget = cell?.hasTarget === true
-
-  const storesWithTarget = cell?.storesWithTarget ?? 0
-  const storesWithoutTarget = cell?.storesWithoutTarget ?? 0
 
   return (
     <Card
@@ -2861,16 +3029,13 @@ function AggregateJenisSection({
             </div>
           )}
 
-          <AggregateKpiCard
-            label="Toko dengan Target"
-            value={`${storesWithTarget} / ${totalStores}`}
-            hint={
-              storesWithoutTarget > 0
-                ? `${storesWithoutTarget} toko belum ada target`
-                : "Semua toko sudah ada target"
-            }
-            tone={tone}
-            icon={Store}
+          {/* Cakupan Target menggantikan KPI angka polos agar
+              informasi yang sama tidak tampil dua kali, sekaligus
+              menambah bar visual. Angkanya tetap dari server. */}
+          <CoverageTarget
+            jenis={jenis}
+            cell={cell}
+            totalStores={totalStores}
           />
         </div>
 
@@ -2893,30 +3058,38 @@ function AggregateStoreCard({
   store: AddSellAggregateStore
   onSelect: (storeId: string) => void
 }) {
+  // Aksen rekap memakai tone jenis ketiga, sama dengan header
+  // "Rekap Seluruh Toko" di atas, sehingga satu blok dashboard
+  // punya satu warna aksen. Tidak ada warna hardcoded ulang.
+  const accent = TONE.SELLING_EKSKLUSIF_PERFUME
+
   return (
     <button
       type="button"
       onClick={() => onSelect(store.storeId)}
       className={cn(
         "group relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card p-4 text-left",
-        "transition-all duration-300",
-        "hover:border-primary/40 hover:shadow-md",
-        "hover:shadow-[0_0_28px_-16px] hover:shadow-primary/50",
+        accent.card,
+        "transition-all duration-200 hover:-translate-y-0.5",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
       )}
     >
       <span
         aria-hidden
-        className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
+        className={cn(
+          "absolute inset-x-0 top-0 h-px opacity-50 transition-opacity duration-300 group-hover:opacity-100",
+          accent.bar,
+        )}
       />
 
       <div className="flex items-start gap-3">
         <span
           className={cn(
             "grid size-10 shrink-0 place-items-center rounded-lg",
-            "bg-primary/10 text-primary",
-            "ring-1 ring-inset ring-primary/25",
-            "shadow-[0_0_18px_-8px] shadow-primary/50",
+            accent.soft,
+            accent.text,
+            accent.icon,
+            "transition-transform duration-300 group-hover:scale-105",
           )}
         >
           <Store className="size-4" />
@@ -2926,7 +3099,7 @@ function AggregateStoreCard({
           <p className="truncate text-sm font-semibold text-foreground">
             {store.storeName || store.storeId}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {store.totalEmployees} karyawan
             {store.employeesWithoutTarget > 0
               ? ` · ${store.employeesWithoutTarget} belum ada target`
@@ -2940,7 +3113,7 @@ function AggregateStoreCard({
       {!store.hasTarget ? (
         <TargetBelumDibuatBadge className="self-start" />
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {JENIS_LIST.map((jenis) => {
             const tone = TONE[jenis]
             const cell = store.byJenis[jenis]
@@ -2976,11 +3149,12 @@ function AggregateStoreCard({
                     {cell.progress}%
                   </span>
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
                   <div
                     className={cn(
-                      "h-full rounded-full transition-[width] duration-500",
+                      "h-full rounded-full transition-[width] duration-[600ms] ease-out",
                       tone.track,
+                      tone.barGlow,
                     )}
                     style={{ width: barWidth(cell.progress) }}
                   />
@@ -2996,11 +3170,607 @@ function AggregateStoreCard({
         </div>
       )}
 
-      <div className="mt-auto flex items-center gap-1.5 border-t border-border/60 pt-3 text-xs font-medium text-primary">
+      <div
+        className={cn(
+          "mt-auto flex items-center gap-1.5 border-t border-border/60 pt-3 text-xs font-medium",
+          accent.text,
+        )}
+      >
         Lihat Dashboard Toko
         <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
       </div>
     </button>
+  )
+}
+
+// ------------------------------------------------------------
+// CHART — GRAFIK PENCAPAIAN PER PROGRAM
+//
+// Grouped VERTICAL bar: satu kolom per toko, tiga batang
+// berdampingan per toko (bukan stacked, bukan horizontal).
+//
+//   X = nama toko
+//   Y = progress (%)
+//   SERIES = 3 jenis target, dibedakan lewat LEGEND
+//
+// DATA — hanya progress dari server:
+//   stores[].storeName
+//   stores[].byJenis[jenis].hasTarget
+//   stores[].byJenis[jenis].progress
+//
+// totalTarget dan totalAchievement SENGAJA TIDAK dipakai karena
+// satuannya berbeda antara jenis (Rupiah vs PCS). Progress (%)
+// adalah satuan yang kompatibel sehingga ketiga program bisa
+// dibandingkan pada satu sumbu. Progress TIDAK dihitung ulang:
+// nilai yang diplot adalah nilai response API apa adanya.
+//
+// TIDAK ADA selector jenis. Ketiga program tampil bersamaan.
+//
+// "Target belum dibuat" (hasTarget = false) TIDAK dirender
+// sebagai batang 0%: slot-nya kosong dengan placeholder putus-
+// putus ringan, karena 0% akan terbaca sebagai pencapaian nol.
+//
+// Komponen ini murni presentation: tidak ada fetch, query,
+// cache, navigasi, maupun handler yang mengubah filter halaman.
+// Batang bukan button — interaksi hanya hover.
+// ------------------------------------------------------------
+
+// Skala Y untuk Grafik Pencapaian Per Program.
+// Batas atas TIDAK di-hardcode 100: bila ada progress > 100%
+// (mis. 180%), batas atas dan tick ikut menyesuaikan sehingga
+// batang tetap muat. Bila semua nilai <= 100%, skala 0-100%
+// dipakai.
+function programChartYAxis(maxProgress: number): {
+  max: number
+  ticks: number[]
+} {
+  const rawMax = Math.max(100, maxProgress)
+  const step =
+    rawMax <= 100
+      ? 20
+      : rawMax <= 200
+        ? 25
+        : rawMax <= 500
+          ? 50
+          : rawMax <= 1000
+            ? 100
+            : Math.ceil(rawMax / 5 / 100) * 100
+
+  const max = Math.ceil(rawMax / step) * step
+  const ticks: number[] = []
+
+  for (let value = step; value <= max; value += step) {
+    ticks.push(value)
+  }
+
+  return { max, ticks }
+}
+
+function PerformaStoreChart({
+  stores,
+}: {
+  stores: AddSellAggregateStore[]
+}) {
+  // Baris chart diturunkan PURELY dari response aggregate.
+  // Urutan toko mengikuti urutan response, sama dengan urutan
+  // "Rekap per Toko" di bawah, sehingga chart dan daftar toko
+  // selalu urut sama. Tidak ada sampling dan tidak ada top-N.
+  const rows = React.useMemo(() => {
+    return stores.map((store) => ({
+      storeId: store.storeId,
+      storeName: store.storeName || store.storeId,
+      series: JENIS_LIST.map((jenis) => {
+        const cell = store.byJenis[jenis]
+
+        return {
+          jenis,
+          // Otoritas "target sudah dibuat" untuk program ini
+          // adalah byJenis[jenis].hasTarget dari server.
+          hasTarget: cell?.hasTarget === true,
+          // Progress hanya dibaca ketika hasTarget true. Nilai
+          // 0 TIDAK dipakai sebagai pengganti "belum ada
+          // target", sehingga batang palsu 0% tidak pernah
+          // muncul.
+          progress:
+            cell?.hasTarget === true ? (cell?.progress ?? 0) : null,
+        }
+      }),
+    }))
+  }, [stores])
+
+  // Batas atas sumbu Y mengikuti progress TERBESAR yang benar-benar
+  // ada, sehingga nilai > 100% tetap terplot utuh.
+  const yAxis = React.useMemo(() => {
+    let maxProgress = 0
+
+    for (const row of rows) {
+      for (const item of row.series) {
+        if (item.progress !== null) {
+          maxProgress = Math.max(maxProgress, item.progress)
+        }
+      }
+    }
+
+    return programChartYAxis(maxProgress)
+  }, [rows])
+
+  const programTerisi = rows.reduce(
+    (total, row) =>
+      total + row.series.filter((item) => item.hasTarget).length,
+    0,
+  )
+  const programTotal = rows.length * JENIS_LIST.length
+
+  return (
+    <Card className="overflow-hidden bg-card ring-1 ring-inset ring-border/70">
+      {/* HAIRLINE TIGA WARNA — satu aksen untuk tiga program */}
+      <div className="h-1 w-full bg-gradient-to-r from-status-pagi via-status-siang to-fuchsia-500" />
+
+      <CardContent className="space-y-4 pt-4">
+        {/* HEADER */}
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-foreground ring-1 ring-inset ring-border/70">
+            <BarChart3 className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight">
+              Grafik Pencapaian Per Program
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Progres pencapaian target per program, antar toko
+            </p>
+          </div>
+        </div>
+
+        {/* LEGEND — pembeda ketiga program */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {JENIS_LIST.map((jenis) => (
+            <span
+              key={jenis}
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2.5 w-2.5 shrink-0 rounded-[3px]",
+                  TONE[jenis].fill,
+                )}
+              />
+              {JENIS_LABEL[jenis]}
+            </span>
+          ))}
+        </div>
+
+        {/* RINGKASAN SKALA */}
+        {rows.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            {programTerisi} dari {programTotal} program sudah punya
+            target · sumbu Y 0–{yAxis.max}%
+          </p>
+        )}
+
+        {/* CHART */}
+        {rows.length === 0 ? (
+          <EmptyState
+            title="Belum ada toko"
+            description="Cabang ini belum memiliki toko. Hubungi admin untuk menambahkan toko."
+            icon={Store}
+          />
+        ) : (
+          <div className="flex gap-2 rounded-xl border border-border/70 bg-background/60 p-3">
+            {/* SUMBU Y — label persen, tidak ikut scroll */}
+            <div className="relative h-56 w-9 shrink-0">
+              {yAxis.ticks.map((tick) => (
+                <span
+                  key={tick}
+                  className="absolute right-0 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
+                  style={{ bottom: `${(tick / yAxis.max) * 100}%` }}
+                >
+                  {tick}%
+                </span>
+              ))}
+            </div>
+
+            {/* AREA PLOT — scroll horizontal DIBATAS di sini,
+                halaman tidak pernah overflow horizontal. */}
+            <div className="w-full min-w-0 overflow-x-auto">
+              <div className="min-w-max">
+                {/* Batang + grid */}
+                <div className="relative flex h-56 items-stretch gap-3">
+                  {/* Gridline mengikuti tick sumbu Y */}
+                  {yAxis.ticks.map((tick) => (
+                    <div
+                      key={tick}
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border/60"
+                      style={{ bottom: `${(tick / yAxis.max) * 100}%` }}
+                    />
+                  ))}
+                  {/* Garis dasar 0% */}
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-border"
+                  />
+
+                  {rows.map((row) => (
+                    <div
+                      key={row.storeId}
+                      className="group/store relative flex w-[72px] shrink-0 flex-col justify-end"
+                    >
+                      <div
+                        className="pointer-events-none absolute inset-0 rounded-lg bg-transparent transition-colors duration-200 group-hover/store:bg-muted/40"
+                        aria-hidden
+                      />
+                      <div className="absolute inset-0 flex items-end justify-center gap-1 px-1">
+                        {row.series.map((item) => {
+                          const itemTone = TONE[item.jenis]
+
+                          if (!item.hasTarget) {
+                            // Target belum dibuat untuk program ini
+                            // pada toko ini. Slot dikosongkan dengan
+                            // placeholder putus-putus ringan —
+                            // BUKAN batang 0%.
+                            return (
+                              <div
+                                key={item.jenis}
+                                className="h-1.5 w-full max-w-[18px] shrink-0 rounded-[3px] border border-dashed border-border"
+                                title={`${row.storeName} · ${JENIS_LABEL[item.jenis]}: Target belum dibuat`}
+                              >
+                                <span className="sr-only">
+                                  {JENIS_LABEL[item.jenis]} — Target
+                                  belum dibuat
+                                </span>
+                              </div>
+                            )
+                          }
+
+                          // 1.5% dipakai sebagai tinggi minimum
+                          // supaya progress 0% yang sah tetap
+                          // terlihat sebagai batang tipis di
+                          // baseline, dan tidak tertukar dengan
+                          // "target belum dibuat" yang memakai
+                          // placeholder putus-putus.
+                          const tinggi = Math.max(
+                            1.5,
+                            Math.min(
+                              100,
+                              Math.max(
+                                0,
+                                ((item.progress ?? 0) / yAxis.max) *
+                                  100,
+                              ),
+                            ),
+                          )
+
+                          return (
+                            <div
+                              key={item.jenis}
+                              className="w-full max-w-[18px] shrink-0"
+                              style={{ height: `${tinggi}%` }}
+                              title={`${row.storeName} · ${JENIS_LABEL[item.jenis]}: ${item.progress}%`}
+                            >
+                              <div
+                                className={cn(
+                                  "h-full w-full rounded-t-[4px]",
+                                  "transition-[filter] duration-200",
+                                  "group-hover/store:brightness-110",
+                                  itemTone.fill,
+                                  itemTone.barGlow,
+                                )}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* SUMBU X — nama toko, lebar kolom sama dengan
+                    batang di atas sehingga selalu rata. */}
+                <div className="mt-1.5 flex gap-3">
+                  {rows.map((row) => (
+                    <p
+                      key={row.storeId}
+                      className="w-[72px] shrink-0 truncate text-center text-[10px] text-muted-foreground"
+                      title={row.storeName}
+                    >
+                      {row.storeName}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ------------------------------------------------------------
+// DONUT — TOTAL PENCAPAIAN (SEMUA TOKO)
+//
+// RINGKASAN TIGA PROGRESSION INDEPENDEN, BUKAN PART-TO-WHOLE.
+//
+// PENTING soal makna data: 82% + 77% + 64% TIDAK boleh
+// digambar sebagai tiga potong dari total 223% (arti "bagian dari
+// satu kesatuan"). Ketiganya adalah progress yang berdiri sendiri.
+// Karena itu bentuk yang dipakai adalah TIGA RING BERSUSUN
+// (multi-ring), bukan satu pie/segmented arc.
+//
+//   - setiap ring milik SATU program
+//   - lingkaran penuh pada ring berarti 100%
+//   - busur nilai panjangnya sebanding dengan progress program itu
+//   - progress > 100% tetap digambar PENUH sebagai lingkaran penuh
+//     yang bersih, tanpa marker atau titik tambahan apa pun;
+//     nilai aslinya hanya dibaca pada legend
+//
+// MAKNA DATA (> bentuk donut) menjadi prioritas.
+//
+// SKALA VISUAL ring TIDAK dinamis. Semua ring memakai skala 0-100%
+// supaya nilai ekstrem (200%, 261%) tetap tampil penuh dan rapi:
+//
+//   progressVisual = min(max(progress, 0), 100)
+//
+// Clamp ini HANYA berlaku pada panjang busur. ANGKA ASLI tidak
+// pernah diubah: legend tetap menampilkan nilai server apa adanya
+// (mis. 261%), dan rata-rata tengah tetap memakai nilai asli
+// tanpa clamp.
+//
+// DATA — semuanya dari response aggregate yang sudah ada:
+//   summary.byJenis[jenis].hasTarget
+//   summary.byJenis[jenis].progress
+//
+// totalTarget, totalAchievement, Rupiah, dan PCS SENGAJA TIDAK
+// dipakai. Progress (%) TIDAK dihitung ulang.
+//
+// Rata-rata tengah memakai HANYA jenis yang benar-benar punya
+// target (hasTarget true), dan TIDAK dicap ke 100%.
+//
+// Komponen ini murni presentation: tanpa fetch, query, cache,
+// navigasi, atau handler filter. Tidak ada interaksi klik.
+// ------------------------------------------------------------
+
+function TotalPencapaianDonut({
+  summary,
+}: {
+  summary: AddSellAggregateData["summary"]
+}) {
+  const tone = TONE.SELLING_EKSKLUSIF_PERFUME
+
+  // Data ring diturunkan dari summary aggregate yang sudah ada.
+  // Tidak ada request tambahan.
+  const series = React.useMemo(() => {
+    return JENIS_LIST.map((jenis) => {
+      const cell = summary.byJenis[jenis]
+
+      return {
+        jenis,
+        // hasTarget = false berarti target belum dibuat. Nilai ini
+        // TIDAK masuk ke perhitungan rata-rata dan TIDAK digambar
+        // sebagai 0%.
+        hasTarget: cell?.hasTarget === true,
+        progress: cell?.hasTarget === true ? (cell?.progress ?? 0) : 0,
+      }
+    })
+  }, [summary])
+
+  // Rata-rata hanya dari program yang punya target. Contoh:
+  // 80% + (belum ada target) + 60% = (80 + 60) / 2 = 70%.
+  // Bukan (80 + 0 + 60) / 3.
+  const terisi = series.filter((item) => item.hasTarget)
+  const rataRata = terisi.length
+    ? Math.round(
+        terisi.reduce((total, item) => total + item.progress, 0) /
+          terisi.length,
+      )
+    : null
+
+  // Radii ring: luar ke dalam mengikuti urutan JENIS_LIST
+  // (Additional Selling, Upsize Botol, Selling Eksklusif Perfume).
+  // Selisih 12 unit dengan stroke 6 menyisakan celah 6 unit, jadi
+  // ketiga ring tidak pernah bertabrakan.
+  const radii = [56, 44, 32] as const
+  const stroke = 6
+
+  return (
+    <Card className="overflow-hidden bg-card ring-1 ring-inset ring-border/70">
+      {/* Hairline tiga warna — sama dengan chart per program */}
+      <div className="h-1 w-full bg-gradient-to-r from-status-pagi via-status-siang to-fuchsia-500" />
+
+      <CardContent className="space-y-5 pt-5">
+        {/* HEADER */}
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "grid size-10 shrink-0 place-items-center rounded-xl",
+              tone.soft,
+              tone.text,
+              tone.icon,
+            )}
+          >
+            <ChartPie className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight">
+              Total Pencapaian
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Rata-rata progress semua toko
+            </p>
+          </div>
+        </div>
+
+        {/* DONUT MULTI-RING */}
+        <div className="relative mx-auto size-40">
+          <svg
+            viewBox="0 0 120 120"
+            className="size-40 -rotate-90"
+            role="img"
+            aria-label={
+              rataRata === null
+                ? "Belum ada target penjualan pada cakupan ini."
+                : `Rata-rata Pencapaian ${rataRata} persen. ${series
+                    .map(
+                      (item) =>
+                        `${JENIS_LABEL[item.jenis]} ${
+                          item.hasTarget
+                            ? `${item.progress} persen`
+                            : "target belum dibuat"
+                        }`,
+                    )
+                    .join(". ")}.`
+            }
+          >
+            {series.map((item, index) => {
+              const r = radii[index]
+              const keliling = 2 * Math.PI * r
+
+              // Clamp HANYA untuk panjang busur. Angka yang
+              // ditampilkan dan rata-rata tetap nilai asli.
+              const progressVisual = item.hasTarget
+                ? Math.min(Math.max(item.progress, 0), 100)
+                : 0
+
+              // Panjang busur minimal sepanjang stroke supaya
+              // progress 1-3% tetap terlihat sebagai busur sangat
+              // kecil, tanpa terlihat seperti 10% atau lebih.
+              const panjangArc = item.hasTarget
+                ? Math.max(
+                    (progressVisual / 100) * keliling,
+                    stroke,
+                  )
+                : 0
+
+              return (
+                <g key={item.jenis}>
+                  {/* Track: lingkaran penuh = 100% */}
+                  <circle
+                    cx={60}
+                    cy={60}
+                    r={r}
+                    fill="none"
+                    strokeWidth={stroke}
+                    stroke="currentColor"
+                    className="text-muted-foreground/20"
+                  />
+
+                  {/* Halo tipis di belakang busur sebagai glow */}
+                  {item.hasTarget ? (
+                    <circle
+                      cx={60}
+                      cy={60}
+                      r={r}
+                      fill="none"
+                      strokeWidth={stroke + 5}
+                      stroke="currentColor"
+                      strokeOpacity={0.16}
+                      strokeLinecap="round"
+                      className={cn(
+                        "transition-[stroke-dashoffset] duration-700 ease-out",
+                        TONE[item.jenis].text,
+                      )}
+                      strokeDasharray={keliling}
+                      strokeDashoffset={keliling - panjangArc}
+                    />
+                  ) : null}
+
+                  {/* Busur nilai */}
+                  {item.hasTarget ? (
+                    <circle
+                      cx={60}
+                      cy={60}
+                      r={r}
+                      fill="none"
+                      strokeWidth={stroke}
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      className={cn(
+                        "transition-[stroke-dashoffset] duration-700 ease-out",
+                        TONE[item.jenis].text,
+                      )}
+                      strokeDasharray={keliling}
+                      strokeDashoffset={keliling - panjangArc}
+                    />
+                  ) : null}
+                </g>
+              )
+            })}
+          </svg>
+
+          {/* ANGKA TENGAH — hanya rata-rata, tetap di tengah donut.
+              Label "Rata-rata n program" SENGAJA tidak dipaksakan
+              di dalam hole: hole hanya ~77px sedangkan teks label
+              jauh lebih lebar, sehingga posisi tengah dipakai
+              bersih untuk angka saja. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">
+              {rataRata === null ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                <span className={tone.text}>{rataRata}%</span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* LABEL RATA-RATA — di bawah donut dengan jarak yang sama
+            seperti jarak antar bagian card lainnya, jadi tidak
+            menempel donut maupun legend. */}
+        <p className="px-2 text-center text-[9px] font-medium uppercase leading-tight tracking-[0.12em] text-muted-foreground">
+          {terisi.length > 0
+            ? `Rata-rata ${terisi.length} program`
+            : "Belum ada target"}
+        </p>
+
+        {/* LEGEND — nilai asli tiap program */}
+        <div className="divide-y divide-border/50">
+          {series.map((item) => (
+            <div
+              key={item.jenis}
+              className="flex items-center gap-2.5 py-2"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2.5 shrink-0 rounded-[3px]",
+                  item.hasTarget
+                    ? TONE[item.jenis].fill
+                    : "border border-dashed border-border bg-transparent",
+                )}
+              />
+              <span
+                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                title={JENIS_LABEL[item.jenis]}
+              >
+                {JENIS_LABEL[item.jenis]}
+              </span>
+              {item.hasTarget ? (
+                <span
+                  className={cn(
+                    "shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums",
+                    TONE[item.jenis].text,
+                  )}
+                >
+                  {item.progress}%
+                </span>
+              ) : (
+                <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                  Target belum dibuat
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* CATATAN MAKNA */}
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          Ringkas penuh berarti 100%. Setiap ring adalah progress
+          terpisah, bukan bagian dari satu total.
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -3111,6 +3881,15 @@ function AggregateDashboard({
           totalStores={totalStores}
         />
       ))}
+
+      {/* CHART PERFORMA TOKO + DONUT TOTAL PENCAPAIAN
+          Chart tetap di kiri, donut di kanan. Di bawah xl keduanya
+          ditumpuk vertikal. Wrapper ini HANYA mengatur layout —
+          isi dan perilaku PerformaStoreChart tidak diubah. */}
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        <PerformaStoreChart stores={stores} />
+        <TotalPencapaianDonut summary={summary} />
+      </div>
 
       {/* REKAP PER TOKO */}
       <Card
@@ -3228,49 +4007,68 @@ function JenisSection({
 
           <div
             className={cn(
-              "rounded-xl border border-border bg-background p-3",
+              "relative overflow-hidden rounded-xl border border-border bg-background p-3",
+              "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5",
               tone.card,
             )}
           >
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <TrendingUp className={cn("size-3.5", tone.text)} />
+            <span
+              aria-hidden
+              className={cn(
+              "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+              tone.bar,
+              )}
+            />
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <TrendingUp
+                className={cn("size-3.5 shrink-0", tone.text)}
+              />
               Progress Keseluruhan
             </div>
             <p
               className={cn(
-                "mt-1.5 text-xl font-semibold tabular-nums",
+                "mt-1.5 text-2xl font-semibold leading-none tracking-tight tabular-nums",
                 summary.progress > 0 ? tone.text : "text-muted-foreground",
               )}
             >
               {summary.totalTarget > 0 ? `${summary.progress}%` : "-"}
             </p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
               <div
                 className={cn(
-                  "h-full rounded-full transition-[width] duration-500",
-                  tone.track,
+                  "h-full rounded-full transition-[width] duration-[600ms] ease-out",
+                  tone.fill,
+                  tone.barGlow,
                 )}
-                style={{
-                  width: `${Math.min(100, Math.max(0, summary.progress))}%`,
-                }}
+                style={{ width: barWidth(summary.progress) }}
               />
             </div>
           </div>
 
           <div
             className={cn(
-              "rounded-xl border border-border bg-background p-3",
+              "relative overflow-hidden rounded-xl border border-border bg-background p-3",
+              "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5",
               tone.card,
             )}
           >
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={cn("size-2 rounded-full", tone.dot)} />
+            <span
+              aria-hidden
+              className={cn(
+              "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+              tone.bar,
+              )}
+            />
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <span
+                className={cn("size-2 shrink-0 rounded-full", tone.dot)}
+              />
               Karyawan
             </div>
-            <p className="mt-1.5 text-xl font-semibold tabular-nums">
+            <p className="mt-1.5 text-2xl font-semibold leading-none tracking-tight tabular-nums">
               {summary.totalEmployees}
             </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">
               {summary.employeesWithoutTarget > 0
                 ? `${summary.employeesWithoutTarget} belum ada target`
                 : "Semua sudah ada target"}
@@ -3335,17 +4133,15 @@ function JenisSection({
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-end gap-2">
-                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                              <div className="h-2 w-20 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border/70">
                                 <div
                                   className={cn(
-                                    "h-full rounded-full transition-[width] duration-500",
-                                    tone.track,
+                                    "h-full rounded-full transition-[width] duration-[600ms] ease-out",
+                                    tone.fill,
+                                    tone.barGlow,
                                   )}
                                   style={{
-                                    width: `${Math.min(
-                                      100,
-                                      Math.max(0, row.progress),
-                                    )}%`,
+                                    width: barWidth(row.progress),
                                   }}
                                 />
                               </div>
@@ -3389,15 +4185,23 @@ function StatCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-background p-3",
+        "relative overflow-hidden rounded-xl border border-border bg-background p-3",
+        "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5",
         tone.card,
       )}
     >
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className={cn("size-3.5", tone.text)} />
-        {label}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+          tone.bar,
+        )}
+      />
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icon className={cn("size-3.5 shrink-0", tone.text)} />
+        <span className="truncate">{label}</span>
       </div>
-      <p className="mt-1.5 truncate text-xl font-semibold tabular-nums">
+      <p className="mt-1.5 truncate text-2xl font-semibold leading-none tracking-tight tabular-nums">
         {value}
       </p>
     </div>
