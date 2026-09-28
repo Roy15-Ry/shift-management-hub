@@ -192,6 +192,29 @@ const TONE: Record<PenjualanJenis, Tone> = {
 }
 
 // ============================================================
+// ACCENT UTAMA DASHBOARD (merah cabai)
+//
+// Aksen generik blok Rekap (bukan identitas program): header,
+// KPI, dan card toko memakai satu aksen seragam. Sebelumnya
+// meminjam TONE.SELLING_EKSKLUSIF_PERFUME sehingga ruas fuchsia
+// muncul sebagai aksen dashboard umum. Aksen ini dilokalkan di
+// sini (hex merah cabai #EF3340, neon #FF3B4D) supaya globals.css
+// TIDAK disentuh. Identitas ketiga program tetap di TONE.
+// ============================================================
+const ACCENT_UTAMA: Tone = {
+  chip: "bg-[#EF3340]/10 text-[#EF3340] ring-1 ring-inset ring-[#EF3340]/25",
+  text: "text-[#EF3340]",
+  soft: "bg-[#EF3340]/10",
+  bar: "bg-gradient-to-r from-[#EF3340] via-[#EF3340]/45 to-transparent",
+  barGlow: "shadow-[0_0_16px_-2px] shadow-[#FF3B4D]/45",
+  card: "ring-1 ring-inset ring-[#EF3340]/20 transition-all duration-200 hover:ring-[#EF3340]/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-[#FF3B4D]/45",
+  icon: "ring-1 ring-inset ring-[#EF3340]/25 shadow-[0_0_20px_-6px] shadow-[#FF3B4D]/50",
+  track: "bg-[#EF3340]",
+  dot: "bg-[#EF3340]",
+  fill: "bg-gradient-to-r from-[#EF3340] to-[#FF3B4D]",
+}
+
+// ============================================================
 // TYPES
 // ============================================================
 
@@ -3058,10 +3081,10 @@ function AggregateStoreCard({
   store: AddSellAggregateStore
   onSelect: (storeId: string) => void
 }) {
-  // Aksen rekap memakai tone jenis ketiga, sama dengan header
-  // "Rekap Seluruh Toko" di atas, sehingga satu blok dashboard
-  // punya satu warna aksen. Tidak ada warna hardcoded ulang.
-  const accent = TONE.SELLING_EKSKLUSIF_PERFUME
+  // Aksen rekap memakai ACCENT_UTAMA (merah cabai) sehingga satu
+  // blok dashboard punya satu warna aksen. Tidak ada warna
+  // hardcoded ulang di luar ACCENT_UTAMA.
+  const accent = ACCENT_UTAMA
 
   return (
     <button
@@ -3537,7 +3560,7 @@ function TotalPencapaianDonut({
 }: {
   summary: AddSellAggregateData["summary"]
 }) {
-  const tone = TONE.SELLING_EKSKLUSIF_PERFUME
+  const tone = ACCENT_UTAMA
 
   // Data ring diturunkan dari summary aggregate yang sudah ada.
   // Tidak ada request tambahan.
@@ -3789,7 +3812,7 @@ function AggregateDashboard({
   onSelectStore: (storeId: string) => void
 }) {
   const { scope, stores, summary } = data
-  const tone = TONE.SELLING_EKSKLUSIF_PERFUME
+  const tone = ACCENT_UTAMA
 
   const totalStores = scope.totalStores || stores.length
   const storesWithAnyTarget = stores.filter(
