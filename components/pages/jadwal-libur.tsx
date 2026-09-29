@@ -417,8 +417,12 @@ export function JadwalLiburPage() {
   const [cabangFilter, setCabangFilter] =
     React.useState("")
   // Daftar cabang untuk dropdown CENTRAL PUSAT.
+  // cabangId tetap dipakai sebagai nilai (value) dropdown dan
+  // seluruh logic. nama hanya untuk teks label.
   const [branchOptions, setBranchOptions] =
-    React.useState<string[]>([])
+    React.useState<
+      { cabangId: string; nama: string }[]
+    >([])
 
   const [data, setData] =
     React.useState<JadwalLiburData | null>(null)
@@ -497,9 +501,16 @@ export function JadwalLiburPage() {
         if (cancelled || !result.success) return
 
         const list = (result.branches ?? [])
-          .map((b) => String(b.cabangId ?? "").trim().toUpperCase())
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
+          .map((b) => ({
+            cabangId: String(b.cabangId ?? "")
+              .trim()
+              .toUpperCase(),
+            nama: String(b.nama ?? "").trim(),
+          }))
+          .filter((b) => b.cabangId)
+          .sort((a, b) =>
+            a.cabangId.localeCompare(b.cabangId),
+          )
 
         setBranchOptions(list)
       } catch (branchError) {
@@ -753,12 +764,10 @@ export function JadwalLiburPage() {
                     value: "",
                     label: "Pilih Cabang",
                   },
-                  ...branchOptions.map(
-                    (cabangId) => ({
-                      value: cabangId,
-                      label: cabangId,
-                    }),
-                  ),
+                  ...branchOptions.map((branch) => ({
+                    value: branch.cabangId,
+                    label: branch.nama || branch.cabangId,
+                  })),
                 ]}
               />
             </div>
@@ -1277,12 +1286,10 @@ export function JadwalLiburPage() {
                     value: "",
                     label: "Pilih Cabang",
                   },
-                  ...branchOptions.map(
-                    (cabangId) => ({
-                      value: cabangId,
-                      label: cabangId,
-                    }),
-                  ),
+                  ...branchOptions.map((branch) => ({
+                    value: branch.cabangId,
+                    label: branch.nama || branch.cabangId,
+                  })),
                 ]}
               />
             </div>
@@ -1333,12 +1340,10 @@ export function JadwalLiburPage() {
                   value: "",
                   label: "Pilih Cabang",
                 },
-                ...branchOptions.map(
-                  (cabangId) => ({
-                    value: cabangId,
-                    label: cabangId,
-                  }),
-                ),
+                ...branchOptions.map((branch) => ({
+                  value: branch.cabangId,
+                  label: branch.nama || branch.cabangId,
+                })),
               ]}
             />
           </div>

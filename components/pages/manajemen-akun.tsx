@@ -1421,8 +1421,33 @@ export function ManajemenAkunPage() {
                       {/* CABANG */}
 
                       <td className="px-4 py-3">
-                        {account.cabangId ||
-                          "-"}
+                        {account.cabangId ? (
+                          <>
+                            {account.cabangId}
+                            {(() => {
+                              // Hanya teks tampilan nama
+                              // cabang. account.cabangId (ID)
+                              // tetap dipakai untuk seluruh
+                              // logic, filter, dan form.
+                              const branch = branches.find(
+                                (item) =>
+                                  item.cabangId ===
+                                  account.cabangId,
+                              )
+                              const branchName =
+                                branch?.nama ||
+                                branch?.namaCabang
+
+                              return branchName ? (
+                                <span className="block text-xs text-muted-foreground">
+                                  {branchName}
+                                </span>
+                              ) : null
+                            })()}
+                          </>
+                        ) : (
+                          "-"
+                        )}
                       </td>
 
                       {/* STATUS */}
@@ -1845,7 +1870,25 @@ export function ManajemenAkunPage() {
 
                     {confirmDialog.account.cabangId && (
                       <span className="rounded-full bg-background px-2 py-1 text-xs">
-                        {confirmDialog.account.cabangId}
+                        {(() => {
+                          // Hanya teks tampilan nama cabang.
+                          // account.cabangId (ID) tetap dipakai
+                          // untuk seluruh logic.
+                          const account =
+                            confirmDialog.account
+                          const cabangId =
+                            account?.cabangId ?? ""
+                          const branch = branches.find(
+                            (item) =>
+                              item.cabangId === cabangId,
+                          )
+
+                          return (
+                            branch?.nama ||
+                            branch?.namaCabang ||
+                            cabangId
+                          )
+                        })()}
                       </span>
                     )}
 

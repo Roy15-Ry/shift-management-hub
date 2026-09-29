@@ -215,6 +215,54 @@ const ACCENT_UTAMA: Tone = {
 }
 
 // ============================================================
+// RESOLVER NAMA CABANG - DISPLAY SAJA
+// ============================================================
+//
+// PENTING: fungsi ini HANYA menghasilkan string untuk teks yang
+// dirender ke user (judul "Rekap Seluruh Toko" dan "Rekap per
+// Toko" pada Aggregate Dashboard, serta label kartu pada Picker
+// cabang).
+//
+// Fungsi ini TIDAK BOLEH dipakai untuk:
+// - filter, state, cache key, comparison logic
+// - parameter API, query, atau request body
+// - authorization / akses
+// - operasi tulis ke Firestore
+//
+// Data Firestore (collection "branches") hanya menyimpan
+// nama tanpa wilayah, yaitu "CABANG BOGOR" dan "CABANG
+// CIANJUR". Nama lengkap yang dikehendaki untuk display hanya
+// ada di mapping lokal di bawah ini.
+//
+// cabangFilter, dropdown value, cache, dan parameter API
+// TIDAK PERNAH memakai fungsi ini - semuanya tetap memakai
+// cabangId ("BGR-1" / "CJR-01") apa adanya.
+//
+// ============================================================
+
+const CABANG_DISPLAY_NAME: Record<string, string> = {
+  "BGR-1": "CABANG BOGOR - BANTEN",
+  "CJR-01": "CABANG CIANJUR - CIPANAS",
+}
+
+function getCabangDisplayName(
+  cabangId: string | null | undefined,
+  namaFallback?: string | null,
+): string {
+  const normalized = String(cabangId ?? "")
+    .trim()
+    .toUpperCase()
+
+  if (!normalized) return ""
+
+  return (
+    CABANG_DISPLAY_NAME[normalized] ||
+    String(namaFallback ?? "").trim() ||
+    normalized
+  )
+}
+
+// ============================================================
 // TYPES
 // ============================================================
 
@@ -572,7 +620,10 @@ function BranchPicker({
 
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold text-foreground">
-                {branch.nama || branch.cabangId}
+                {getCabangDisplayName(
+                  branch.cabangId,
+                  branch.nama,
+                )}
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
                 {branch.nama
@@ -1629,11 +1680,25 @@ export function AdditionalSellingPage() {
         ?.storeName ?? "")
     : ""
 
+  // Hanya teks tampilan. scope.cabangId (ID) tetap dipakai untuk
+  // seluruh logic, cache, filter, dan parameter API. branchOptions
+  // hanya berisi nama dari data existing, jadi dipakai sebagai
+  // fallback tampilan saja.
+  const scopeCabangNama = getCabangDisplayName(
+    aggregate?.scope.cabangId,
+    branchOptions.find(
+      (branch) =>
+        branch.cabangId === aggregate?.scope.cabangId,
+    )?.nama,
+  )
+
   const storeName =
     profile?.namaStore ||
     profile?.storeId ||
     selectedStoreName ||
-    (isCentral ? (aggregate?.scope.cabangId || "Semua Toko") : "CABANG")
+    (isCentral
+      ? scopeCabangNama || "Semua Toko"
+      : "CABANG")
 
   // Judul dashboard detail untuk Central (cabang & pusat): "Target
   // Penjualan Toko {NAMA TOKO}". Nama diambil apa adanya dari data
@@ -1850,6 +1915,7 @@ export function AdditionalSellingPage() {
           {!loading && !error && aggregate && (
             <AggregateDashboard
               data={aggregate}
+              cabangNama={scopeCabangNama}
               onSelectStore={(storeId) => {
                 // Nama toko diambil dari daftar toko response aggregate
                 // (data existing) sebelum masuk mode detail, karena
@@ -3807,9 +3873,13 @@ function TotalPencapaianDonut({
 function AggregateDashboard({
   data,
   onSelectStore,
+  cabangNama,
 }: {
   data: AddSellAggregateData
   onSelectStore: (storeId: string) => void
+  // Hanya untuk teks tampilan. data.scope.cabangId (ID) tetap
+  // dipakai untuk seluruh logic.
+  cabangNama: string
 }) {
   const { scope, stores, summary } = data
   const tone = ACCENT_UTAMA
@@ -3855,7 +3925,9 @@ function AggregateDashboard({
                 </h2>
                 <p className="text-xs text-muted-foreground">
                   {scope.cabangId
-                    ? `Cabang ${scope.cabangId}`
+                    ? `Cabang ${
+                        cabangNama || scope.cabangId
+                      }`
                     : "Seluruh toko dalam cakupan akun"}
                   {" · "}
                   Periode {formatPeriodeLabel(data.periode)}
@@ -3932,7 +4004,11 @@ function AggregateDashboard({
             </h2>
             <p className="text-sm text-muted-foreground">
               {stores.length} toko
-              {scope.cabangId ? ` pada cabang ${scope.cabangId}` : ""}
+              {scope.cabangId
+                ? ` pada cabang ${
+                    cabangNama || scope.cabangId
+                  }`
+                : ""}
               . Klik satu toko untuk melihat dashboard detail toko
               tersebut.
             </p>

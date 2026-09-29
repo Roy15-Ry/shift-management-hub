@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   ChevronLeft,
   ChevronRight,
+  Eye,
   MapPin,
   PenLine,
   Plus,
@@ -163,6 +164,26 @@ function formatTanggal(tanggal: string): string {
 }
 
 // ============================================================
+// UKURAN AREA DAFTAR MODAL DETAIL
+// ============================================================
+//
+// Dipakai untuk membatasi tinggi area daftar sehingga maksimal
+// 6 card kejadian terlihat sekaligus, sesuai struktur card
+// existing. Angka dalam piksel mengikuti tinggi card yang
+// sekarang; card itu sendiri tidak diubah.
+
+// Jumlah card kejadian yang dituju untuk terlihat sekaligus.
+const DETAIL_ITEM_VISIBLE = 6
+// py-2 (16) + text-sm (20) + text-xs (16) + border (2).
+const DETAIL_ITEM_HEIGHT = 54
+// space-y-2 pada daftar item.
+const DETAIL_ITEM_GAP = 8
+// Judul kelompok jenis (h4 + badge jumlah).
+const DETAIL_GROUP_HEADER_HEIGHT = 24
+// space-y-4 antar kelompok jenis.
+const DETAIL_GROUP_GAP = 16
+
+// ============================================================
 // PEMILIHAN TOKO (CENTRAL CABANG & CENTRAL PUSAT)
 // ============================================================
 //
@@ -237,6 +258,127 @@ function CentralStorePicker({
 }
 
 // ============================================================
+// PEMILIHAN CABANG (CENTRAL PUSAT)
+// ============================================================
+//
+// Pola kartu mengikuti CentralStorePicker di atas dan BranchPicker
+// halaman Target Penjualan: grid kartu yang bisa diklik. Data yang
+// dipakai HANYA branchOptions dari /api/admin/branches — tidak ada
+// fetch, Firestore read, atau data Monitoring Error tambahan
+// sebelum kartu dipilih.
+
+// Resolver DISPLAY SAJA - menghasilkan teks untuk UI.
+//
+// cabangFilter, storeScopeCabang, parameter API, dan query TIDAK
+// PERNAH memakai fungsi ini. Semuanya tetap memakai cabangId
+// ("BGR-1" / "CJR-01") apa adanya.
+//
+// Firestore hanya menyimpan nama tanpa wilayah ("CABANG BOGOR",
+// "CABANG CIANJUR"), sehingga nama lengkap untuk display memakai
+// mapping lokal di bawah ini.
+
+const CABANG_DISPLAY_NAME: Record<string, string> = {
+  "BGR-1": "CABANG BOGOR - BANTEN",
+  "CJR-01": "CABANG CIANJUR - CIPANAS",
+}
+
+function getCabangDisplayName(
+  cabangId: string | null | undefined,
+  namaFallback?: string | null,
+): string {
+  const normalized = String(cabangId ?? "")
+    .trim()
+    .toUpperCase()
+
+  if (!normalized) return ""
+
+  return (
+    CABANG_DISPLAY_NAME[normalized] ||
+    String(namaFallback ?? "").trim() ||
+    normalized
+  )
+}
+
+function CentralBranchPicker({
+  branches,
+  onSelect,
+}: {
+  branches: { cabangId: string; nama: string }[]
+  onSelect: (cabangId: string) => void
+}) {
+  if (branches.length === 0) {
+    return (
+      <EmptyState
+        title="Belum ada cabang"
+        description="Tidak ada cabang yang dapat dipilih. Hubungi admin."
+        icon={Store}
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground">
+          Pilih Cabang
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Pilih satu cabang untuk melihat Monitoring Error pada
+          cabang tersebut.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {branches.map((branch) => (
+          <button
+            key={branch.cabangId}
+            type="button"
+            onClick={() => onSelect(branch.cabangId)}
+            className={cn(
+              "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
+              "transition-all duration-300",
+              "hover:border-primary/40 hover:shadow-md",
+              "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+            )}
+          >
+            <span
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
+            />
+
+            <span
+              className={cn(
+                "flex size-12 shrink-0 items-center justify-center rounded-lg",
+                "bg-primary/10 text-primary",
+                "ring-1 ring-inset ring-primary/25",
+                "shadow-[0_0_18px_-8px] shadow-primary/50",
+              )}
+            >
+              <Store className="size-5" />
+            </span>
+
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-foreground">
+                {getCabangDisplayName(
+                  branch.cabangId,
+                  branch.nama,
+                )}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {branch.cabangId}
+              </span>
+            </span>
+
+            <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // FORM
 // ============================================================
 
@@ -267,7 +409,11 @@ function emptyFormState(): FormState {
 type DetailState = {
   employeeId: string
   employeeName: string
-  jenis: MonitoringErrorJenis
+  // Terisi = drill-down per kategori jenis error (dipakai angka
+  // pada kolom kategori).
+  // Kosong = SEMUA jenis error milik karyawan (dipakai icon mata
+  // pada kolom DETAIL).
+  jenis?: MonitoringErrorJenis
 }
 
 // ============================================================
@@ -317,7 +463,9 @@ export function MonitoringErrorPage() {
   // ----------------------------------------------------------
 
   const [cabangFilter, setCabangFilter] = React.useState("")
-  const [branchOptions, setBranchOptions] = React.useState<string[]>([])
+  const [branchOptions, setBranchOptions] = React.useState<
+    { cabangId: string; nama: string }[]
+  >([])
 
   React.useEffect(() => {
     if (!isCentralPusat || !user) {
@@ -345,10 +493,15 @@ export function MonitoringErrorPage() {
 
         if (cancelled || !result.success) return
 
+        // cabangId tetap dipakai sebagai nilai (value) dropdown
+        // dan seluruh logic. nama hanya untuk teks label.
         const list = (result.branches ?? [])
-          .map((b) => String(b.cabangId ?? "").trim().toUpperCase())
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
+          .map((b) => ({
+            cabangId: String(b.cabangId ?? "").trim().toUpperCase(),
+            nama: String(b.nama ?? "").trim(),
+          }))
+          .filter((b) => b.cabangId)
+          .sort((a, b) => a.cabangId.localeCompare(b.cabangId))
 
         setBranchOptions(list)
       } catch (error) {
@@ -886,9 +1039,84 @@ export function MonitoringErrorPage() {
     return records.filter(
       (r) =>
         r.employeeId === detail.employeeId &&
-        r.jenisError === detail.jenis,
+        (detail.jenis === undefined ||
+          r.jenisError === detail.jenis),
     )
   }, [detail, records])
+
+  // Kelompok per jenis error untuk mode "semua jenis" (icon
+  // mata). Urutan memakai MONITORING_ERROR_JENIS_LIST supaya
+  // konsisten dengan urutan kolom pada tabel dashboard. Data
+  // diambil dari `records` yang SUDAH ada di memori — tidak ada
+  // request atau Firestore read tambahan.
+  const detailGroups = React.useMemo(() => {
+    return MONITORING_ERROR_JENIS_LIST.map(
+      (jenis) => ({
+        jenis,
+        records: detailRecords.filter(
+          (r) => r.jenisError === jenis,
+        ),
+      }),
+    ).filter((group) => group.records.length > 0)
+  }, [detailRecords])
+
+  // ----------------------------------------------------------
+  // BATAS AREA DAFTAR — maksimal 6 kejadian terlihat
+  // ----------------------------------------------------------
+  //
+  // Tinggi area daftar DIBATAS, bukan dipotong. Kejadian ke-7
+  // dan seterusnya tetap utuh dan hanya bisa dilihat lewat
+  // scroll vertikal pada area daftar. Header modal, nama
+  // karyawan, periode, total error, dan tombol Tutup berada
+  // di luar area ini sehingga tidak ikut bergerak dan halaman
+  // belakang tidak ikut bergeser.
+  //
+  // Angka 6 diturunkan dari struktur card existing, bukan dari
+  // perkiraan viewport:
+  //   - tinggi 1 card  = py-2 (16) + text-sm (20) + text-xs
+  //                      (16) + border (2)
+  //   - jarak 1 item  = space-y-2
+  //   - tinggi judul kelompok jenis (h4 + badge)
+  //   - jarak antar kelompok = space-y-4
+  //
+  // Card existing tidak dikecilkan dan tidak dikunci
+  // tingginya, sehingga keterangan panjang tetap terbaca
+  // utuh. Keterangan yang lebih tinggi dari rata-rata hanya
+  // membuat area daftar menampilkan lebih sedikit dari 6 item,
+  // dan sisanya tetap dapat di-scroll.
+  const detailListMaxHeight = React.useMemo(() => {
+    if (detailRecords.length === 0) {
+      return undefined
+    }
+
+    // 6 kejadian PERTAMA dihitung menurut urutan TAMPIL.
+    // Daftar dirender per kelompok jenis (detailGroups), jadi
+    // urutan yang dihitung HARUS ikut urutan kelompok — bukan
+    // urutan tanggal milik detailRecords. Kalau memakai urutan
+    // tanggal, jumlah judul kelompok bisa berbeda dari yang
+    // benar-benar tampil sebelum kejadian ke-6, sehingga area
+    // jadi terlalu tinggi dan lebih dari 6 item terlihat.
+    const firstItems = detailGroups
+      .flatMap((group) => group.records)
+      .slice(0, DETAIL_ITEM_VISIBLE)
+
+    // Hanya kelompok yang sudah menumpuk 6 kejadian pertama
+    // yang judulnya ikut terlihat. Kelompok berikutnya ikut
+    // ter-scroll bersama kejadiannya.
+    const headerCount = new Set(
+      firstItems.map((r) => r.jenisError),
+    ).size
+
+    const itemsHeight =
+      DETAIL_ITEM_VISIBLE * DETAIL_ITEM_HEIGHT +
+      (DETAIL_ITEM_VISIBLE - 1) * DETAIL_ITEM_GAP
+
+    const headersHeight =
+      headerCount * DETAIL_GROUP_HEADER_HEIGHT +
+      Math.max(0, headerCount - 1) * DETAIL_GROUP_GAP
+
+    return itemsHeight + headersHeight
+  }, [detailGroups, detailRecords])
 
   // ----------------------------------------------------------
   // FILTER HISTORY (lokal, hanya untuk tampilan)
@@ -1055,23 +1283,19 @@ export function MonitoringErrorPage() {
 
         {/* FILTER CABANG + TOKO + TAB */}
         <div className="flex flex-wrap items-center gap-3">
-          {isCentralPusat && (
-            <div className="min-w-[200px]">
-              <SelectField
-                value={cabangFilter}
-                onChange={(v) => {
-                  setCabangFilter(v)
-                  setStoreFilter("")
-                }}
-                options={[
-                  { value: "", label: "Pilih Cabang" },
-                  ...branchOptions.map((cabangId) => ({
-                    value: cabangId,
-                    label: cabangId,
-                  })),
-                ]}
-              />
-            </div>
+          {isCentralPusat && cabangFilter && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCabangFilter("")
+                setStoreFilter("")
+              }}
+              className="gap-1.5"
+            >
+              <ChevronLeft className="size-4" />
+              Ganti Cabang
+            </Button>
           )}
 
           {isCentral && !pusatLocked && storeFilter && (
@@ -1102,10 +1326,12 @@ export function MonitoringErrorPage() {
       {/* ============================================ */}
 
       {pusatLocked && (
-        <EmptyState
-          title="Pilih cabang terlebih dahulu"
-          description="Central Pusat wajib memilih satu cabang sebelum melihat data Monitoring Error."
-          icon={MapPin}
+        <CentralBranchPicker
+          branches={branchOptions}
+          onSelect={(cabangId) => {
+            setCabangFilter(cabangId)
+            setStoreFilter("")
+          }}
         />
       )}
 
@@ -1118,7 +1344,22 @@ export function MonitoringErrorPage() {
             <p className="mt-1 text-xs text-muted-foreground">
               {storeOptions.length} toko
               {storeScopeCabang
-                ? ` pada cabang ${storeScopeCabang}`
+                ? ` pada cabang ${
+                    isCentralPusat
+                      ? getCabangDisplayName(
+                          storeScopeCabang,
+                          branchOptions.find(
+                            (branch) =>
+                              branch.cabangId ===
+                              storeScopeCabang.toUpperCase(),
+                          )?.nama,
+                        )
+                      : branchOptions.find(
+                          (branch) =>
+                            branch.cabangId ===
+                            storeScopeCabang.toUpperCase(),
+                        )?.nama || storeScopeCabang
+                  }`
                 : ""}
               . Klik satu toko untuk melihat Monitoring Error
               toko tersebut.
@@ -1243,6 +1484,9 @@ export function MonitoringErrorPage() {
                           <th className="border-l border-border/80 bg-muted/40 px-4 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">
                             Total
                           </th>
+                          <th className="px-4 py-3.5 text-center text-[11px] font-bold uppercase tracking-wider text-foreground">
+                            Detail
+                          </th>
                         </tr>
                       </thead>
 
@@ -1307,6 +1551,37 @@ export function MonitoringErrorPage() {
                             <td className="whitespace-nowrap border-l border-border/80 bg-muted/30 px-4 py-3.5 text-right text-lg font-bold text-foreground tabular-nums">
                               {row.total}
                             </td>
+
+                            {/* KOLOM DETAIL — icon mata membuka
+                                modal seluruh error karyawan ini
+                                pada periode aktif. Data diambil
+                                dari `records` yang sudah dimuat;
+                                tidak ada request tambahan. */}
+                            <td className="px-4 py-3.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDetail({
+                                    employeeId:
+                                      row.employeeId,
+                                    employeeName:
+                                      row.employeeName,
+                                  })
+                                }
+                                disabled={row.total === 0}
+                                className={cn(
+                                  "inline-grid size-9 place-items-center rounded-lg transition-all duration-200",
+                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                                  row.total > 0
+                                    ? "text-muted-foreground hover:bg-primary/10 hover:text-primary hover:ring-1 hover:ring-inset hover:ring-primary/40"
+                                    : "cursor-default text-muted-foreground/30",
+                                )}
+                                aria-label={`Detail seluruh error ${row.employeeName}`}
+                                title={`Detail seluruh error ${row.employeeName}`}
+                              >
+                                <Eye className="size-4" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
 
@@ -1341,6 +1616,7 @@ export function MonitoringErrorPage() {
                           <td className="whitespace-nowrap border-l border-border/80 bg-muted/40 px-4 py-4 text-right text-xl font-bold text-foreground tabular-nums">
                             {totals.total ?? 0}
                           </td>
+                          <td className="px-4 py-4" />
                         </tr>
                       </tbody>
                     </table>
@@ -1669,18 +1945,86 @@ export function MonitoringErrorPage() {
         onClose={() => setDetail(null)}
         title={
           detail
-            ? `${MONITORING_ERROR_JENIS_LABEL[detail.jenis]} · ${detail.employeeName}`
+            ? detail.jenis === undefined
+              ? detail.employeeName
+              : `${MONITORING_ERROR_JENIS_LABEL[detail.jenis]} · ${detail.employeeName}`
             : "Detail"
         }
-        description={`Periode ${monthLabel}. ${detailRecords.length} kejadian.`}
+        description={`Periode ${monthLabel}. Total error: ${detailRecords.length} kejadian.`}
+        footer={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDetail(null)}
+          >
+            Tutup
+          </Button>
+        }
       >
         {detailRecords.length === 0 ? (
           <EmptyState
             title="Tidak ada kejadian"
             description="Belum ada kejadian pada kategori ini."
           />
+        ) : detail?.jenis === undefined ? (
+          // MODE SEMUA JENIS (kolom DETAIL) — dikelompokkan per
+          // jenis error, seluruh kejadian karyawan ditampilkan.
+          // Area daftar ini SATU-SATUNYA bagian yang boleh
+          // scroll; header, total, dan tombol Tutup tetap diam.
+          <div
+            className="-mr-1 space-y-4 overflow-y-auto pr-1"
+            style={{ maxHeight: detailListMaxHeight }}
+          >
+            {detailGroups.map((group) => (
+              <section
+                key={group.jenis}
+                className="space-y-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h4
+                    className={cn(
+                      "text-[11px] font-bold uppercase tracking-wider",
+                      TONE[group.jenis].text,
+                    )}
+                  >
+                    {MONITORING_ERROR_JENIS_LABEL[group.jenis]}
+                  </h4>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                      TONE[group.jenis].chip,
+                    )}
+                  >
+                    {group.records.length}
+                  </span>
+                </div>
+
+                <ul className="space-y-2">
+                  {group.records.map((r) => (
+                    <li
+                      key={r.id}
+                      className="rounded-lg border border-border bg-muted/40 px-3 py-2"
+                    >
+                      <p className="text-sm font-medium">
+                        {formatTanggal(r.tanggal)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Keterangan: {showKeterangan(r) || "-"}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
         ) : (
-          <ul className="space-y-2">
+          // MODE PER KATEGORI (klik angka pada kolom jenis) —
+          // isi daftar tetap sama, hanya area daftarnya yang
+          // dibatasi tinggi dan bisa scroll.
+          <ul
+            className="-mr-1 space-y-2 overflow-y-auto pr-1"
+            style={{ maxHeight: detailListMaxHeight }}
+          >
             {detailRecords.map((r) => (
               <li
                 key={r.id}
