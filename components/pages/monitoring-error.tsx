@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Eye,
+  Layers,
   MapPin,
   PenLine,
   Plus,
@@ -28,14 +30,8 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
-import {
-  getFirestoreEmployees,
-  getFirestoreStores,
-} from "@/lib/firestore-data"
-import type {
-  FirestoreEmployee,
-  FirestoreStore,
-} from "@/lib/firestore-data"
+import { getFirestoreEmployees } from "@/lib/firestore-data"
+import type { FirestoreEmployee } from "@/lib/firestore-data"
 import {
   MONITORING_ERROR_JENIS_LABEL,
   MONITORING_ERROR_JENIS_LIST,
@@ -131,6 +127,91 @@ const TONE: Record<MonitoringErrorJenis, Tone> = {
 }
 
 // ============================================================
+// AKSEN BLOK REKAP (merah cabai)
+//
+// TONE di atas adalah IDENTITAS tiap jenis error dan tetap
+// dipakai pada KPI jenis, chip History, dan judul kelompok
+// detail. Modul ini juga butuh satu aksen yang seragam untuk
+// BLOK REKAP (header rekap, KPI ringkasan, kartu toko) supaya
+// seluruh blok dibaca sebagai satu bagian, bukan lima warna.
+//
+// Aksen ini dilokalkan di file ini saja:
+//   - globals.css TIDAK disentuh
+//   - token global TIDAK ditambah / diubah
+//   - tidak memakai varian "dark:" karena aplikasi bisa juga
+//     gelap lewat prefers-color-scheme tanpa kelas .dark
+//
+// Nilai hex sengaja sama pada light dan dark. Token
+// "destructive" TETAP dipakai untuk aksi merusak (hapus),
+// state error, dan hover baris tabel — bukan untuk accents
+// dashboard.
+// ============================================================
+
+const ACCENT_UTAMA: {
+  chip: string
+  text: string
+  soft: string
+  bar: string
+  barGlow: string
+  card: string
+  icon: string
+} = {
+  chip: "bg-[#EF3340]/10 text-[#EF3340] ring-1 ring-inset ring-[#EF3340]/25",
+  text: "text-[#EF3340]",
+  soft: "bg-[#EF3340]/10",
+  bar: "bg-gradient-to-r from-[#EF3340] via-[#EF3340]/45 to-transparent",
+  barGlow: "shadow-[0_0_16px_-2px] shadow-[#FF3B4D]/45",
+  card: "ring-1 ring-inset ring-[#EF3340]/20 transition-all duration-200 hover:ring-[#EF3340]/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-[#FF3B4D]/45",
+  icon: "ring-1 ring-inset ring-[#EF3340]/25 shadow-[0_0_20px_-6px] shadow-[#FF3B4D]/50",
+}
+
+// ============================================================
+// TIPE RESPONSE GET /api/monitoring-error
+// ============================================================
+//
+// Response_detail dan response_aggregate TIDAK PERNAH dipakai
+// bergantian pada state yang sama. Bentuk detail TIDAK
+// diubah dari sebelum Phase 5; bentuk aggregate mengikuti
+// kontrak Phase 4.
+//
+// SEMUA angka aggregate (scope.totalStores, stores[].totals,
+// stores[].totalEmployees, summary.byJenis, summary.total)
+// dipakai APA ADANYA dari server. Client TIDAK pernah
+// menghitung ulang dari records.
+
+type MonitoringErrorScope = {
+  role: string
+  level: string
+  cabangId: string
+  totalStores: number
+}
+
+type MonitoringErrorAggregateTotals = {
+  [key: string]: number
+  total: number
+}
+
+type MonitoringErrorAggregateStore = {
+  storeId: string
+  storeName: string
+  cabangId: string
+  rows: MonitoringErrorEmployeeRow[]
+  totals: MonitoringErrorAggregateTotals
+  totalEmployees: number
+  records: MonitoringErrorRecord[]
+}
+
+type MonitoringErrorAggregate = {
+  periode: string
+  scope: MonitoringErrorScope
+  stores: MonitoringErrorAggregateStore[]
+  summary: {
+    byJenis: Record<string, number>
+    total: number
+  }
+}
+
+// ============================================================
 // UTILITAS
 // ============================================================
 
@@ -184,80 +265,6 @@ const DETAIL_GROUP_HEADER_HEIGHT = 24
 const DETAIL_GROUP_GAP = 16
 
 // ============================================================
-// PEMILIHAN TOKO (CENTRAL CABANG & CENTRAL PUSAT)
-// ============================================================
-//
-// Pola kartu mengikuti daftar toko pada halaman Revisi Absensi
-// (components/pages/revisi.tsx -> CentralStoreList): grid
-// kartu yang bisa diklik. Data yang dipakai HANYA daftar toko
-// dari collection "stores" — tidak ada data Monitoring Error
-// yang diambil sebelum kartu dipilih.
-
-function CentralStorePicker({
-  stores,
-  onSelect,
-}: {
-  stores: FirestoreStore[]
-  onSelect: (storeId: string) => void
-}) {
-  if (stores.length === 0) {
-    return (
-      <EmptyState
-        title="Belum ada toko"
-        description="Tidak ada toko yang tersedia pada cabang ini."
-        icon={Store}
-      />
-    )
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {stores.map((store) => (
-        <button
-          key={store.id}
-          type="button"
-          onClick={() => onSelect(store.id)}
-          className={cn(
-            "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
-            "transition-all duration-300",
-            "hover:border-primary/40 hover:shadow-md",
-            "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-          )}
-        >
-          <span
-            aria-hidden
-            className="absolute inset-x-0 top-0 h-px bg-border transition-colors duration-300 group-hover:bg-primary/60"
-          />
-
-          <span
-            className={cn(
-              "flex size-12 shrink-0 items-center justify-center rounded-lg",
-              "bg-primary/10 text-primary",
-              "ring-1 ring-inset ring-primary/25",
-              "shadow-[0_0_18px_-8px] shadow-primary/50",
-            )}
-          >
-            <Store className="size-5" />
-          </span>
-
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-foreground">
-              {store.nama}
-            </span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Monitoring Error
-            </span>
-          </span>
-
-          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// ============================================================
 // PEMILIHAN CABANG (CENTRAL PUSAT)
 // ============================================================
 //
@@ -301,11 +308,17 @@ function getCabangDisplayName(
 
 function CentralBranchPicker({
   branches,
+  loading,
   onSelect,
 }: {
   branches: { cabangId: string; nama: string }[]
+  loading: boolean
   onSelect: (cabangId: string) => void
 }) {
+  if (loading) {
+    return <LoadingState label="Memuat daftar cabang..." />
+  }
+
   if (branches.length === 0) {
     return (
       <EmptyState
@@ -319,12 +332,12 @@ function CentralBranchPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground">
+        <h2 className="text-base font-semibold tracking-tight">
           Pilih Cabang
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Pilih satu cabang untuk melihat Monitoring Error pada
-          cabang tersebut.
+        <p className="text-sm text-muted-foreground">
+          Pilih satu cabang untuk melihat rekap Monitoring Error
+          seluruh toko pada cabang tersebut.
         </p>
       </div>
 
@@ -337,7 +350,7 @@ function CentralBranchPicker({
             className={cn(
               "group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm",
               "transition-all duration-300",
-              "hover:border-primary/40 hover:shadow-md",
+              "hover:border-primary/50 hover:bg-primary/5 hover:shadow-md",
               "hover:shadow-[0_0_28px_-14px] hover:shadow-primary/50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
             )}
@@ -353,6 +366,7 @@ function CentralBranchPicker({
                 "bg-primary/10 text-primary",
                 "ring-1 ring-inset ring-primary/25",
                 "shadow-[0_0_18px_-8px] shadow-primary/50",
+                "transition-transform duration-300 group-hover:scale-105",
               )}
             >
               <Store className="size-5" />
@@ -366,7 +380,9 @@ function CentralBranchPicker({
                 )}
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                {branch.cabangId}
+                {branch.nama
+                  ? branch.cabangId
+                  : "Klik untuk melihat rekap"}
               </span>
             </span>
 
@@ -374,6 +390,344 @@ function CentralBranchPicker({
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// DASHBOARD REKAP (MODE AGGREGATE CABANG)
+// ============================================================
+//
+// Seluruh komponen di bawah HANYA untuk role Central dan
+// HANYA pada mode aggregate. Komponen ini murni presentation:
+// tidak ada fetch, query, cache, navigasi, maupun handler
+// yang mengubah filter halaman.
+//
+// ATURAN DATA — dikunci:
+//   - scope.totalStores, stores[].totals, stores[].totalEmployees,
+//     summary.byJenis, dan summary.total dipakai APA ADANYA dari
+//     server. Client TIDAK menghitung ulang dari records.
+//   - stores[].totalEmployees berarti "karyawan dengan minimal
+//     satu incident pada periode ini", BUKAN jumlah seluruh
+//     karyawan toko. Teks label memakai kalimat itu.
+//   - Lima jenis error tetap memakai TONE masing-masing sebagai
+//     identitas, sementara blok rekap memakai ACCENT_UTAMA.
+//   - Modul ini tetap murni pencatatan kejadian error. Tidak ada
+//     angkarencana, capaian, atau badge thereof di sini.
+//
+// Pola visual mengikuti bahasa desain halaman agregasi
+// penjualan: Card dengan h-1 gradient bar di atas, icon tile,
+// judul tracking-tight, KPI card kecil dengan hover lift, dan
+// grid kartu toko yang bisa diklik. Yang disalin hanya
+// estetika; konsep lain dari halaman tersebut tidak ikut
+// terbawa.
+
+// Komponen ini dipakai OLEH DUA blok: dashboard rekap (mode
+// aggregate) dan dashboard detail toko, sehingga keduanya
+// membaca sebagai satu sistem visual yang sama.
+function KpiCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = ACCENT_UTAMA,
+}: {
+  label: string
+  value: string
+  hint?: string
+  icon: React.ComponentType<{ className?: string }>
+  tone?: {
+    text: string
+    bar: string
+    card: string
+  }
+}) {
+  return (
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-xl border border-border bg-card p-3",
+        "transition-[transform,box-shadow] duration-200",
+        "hover:-translate-y-0.5",
+        tone.card,
+      )}
+    >
+      {/* Hairline tipis di tepi atas. Murni visual. */}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-px opacity-60",
+          tone.bar,
+        )}
+      />
+
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icon className={cn("size-3.5 shrink-0", tone.text)} />
+        <span className="truncate">{label}</span>
+      </div>
+      <p className="mt-1.5 truncate text-2xl font-semibold leading-none tracking-tight tabular-nums">
+        {value}
+      </p>
+      {hint && (
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+          {hint}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function AggregateStoreCard({
+  store,
+  onSelect,
+}: {
+  store: MonitoringErrorAggregateStore
+  onSelect: (storeId: string) => void
+}) {
+  const accent = ACCENT_UTAMA
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(store.storeId)}
+      className={cn(
+        "group relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card p-4 text-left",
+        accent.card,
+        "transition-all duration-200 hover:-translate-y-0.5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-x-0 top-0 h-px opacity-50 transition-opacity duration-300 group-hover:opacity-100",
+          accent.bar,
+        )}
+      />
+
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "grid size-10 shrink-0 place-items-center rounded-lg",
+            accent.soft,
+            accent.text,
+            accent.icon,
+            "transition-transform duration-300 group-hover:scale-105",
+          )}
+        >
+          <Store className="size-4" />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {store.storeName || store.storeId}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {/* totalEmployees = karyawan dengan minimal satu
+                incident pada periode ini, bukan seluruh
+                karyawan toko. */}
+            {store.totalEmployees} karyawan dengan incident
+          </p>
+        </div>
+
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </div>
+
+      {store.totals.total > 0 ? (
+        <div className="space-y-2">
+          {MONITORING_ERROR_JENIS_LIST.map((jenis) => {
+            const tone = TONE[jenis]
+            const value = store.totals[jenis] ?? 0
+
+            return (
+              <div
+                key={jenis}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <span className="flex items-center gap-1.5 truncate text-muted-foreground">
+                  {/* Titik warna memakai TONE jenis sebagai
+                      identitas. Tidak ada bar, gauge, atau
+                      meter di sini supaya tidak terbaca sebagai
+                      visualisation capaian. */}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      value > 0 ? tone.text : "bg-border",
+                    )}
+                  />
+                  {MONITORING_ERROR_JENIS_LABEL[jenis]}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 font-semibold tabular-nums",
+                    value > 0
+                      ? tone.text
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {value}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">
+            Belum ada kejadian human error pada periode ini.
+          </p>
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "mt-auto flex items-center gap-1.5 border-t border-border/60 pt-3 text-xs font-medium",
+          accent.text,
+        )}
+      >
+        Lihat Dashboard Toko
+        <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+      </div>
+    </button>
+  )
+}
+
+function AggregateDashboard({
+  data,
+  onSelectStore,
+  cabangNama,
+  monthLabel,
+}: {
+  data: MonitoringErrorAggregate
+  onSelectStore: (storeId: string) => void
+  // HANYA untuk teks tampilan. data.scope.cabangId (ID) tetap
+  // dipakai untuk seluruh logic dan parameter API.
+  cabangNama: string
+  monthLabel: string
+}) {
+  const { scope, stores, summary } = data
+  const accent = ACCENT_UTAMA
+
+  const totalStores =
+    typeof scope.totalStores === "number" && scope.totalStores > 0
+      ? scope.totalStores
+      : stores.length
+
+  return (
+    <div className="space-y-5">
+      {/* ======================================== */}
+      {/* HEADER REKAP                          */}
+      {/* ======================================== */}
+      <Card
+        className={cn(
+          "overflow-hidden",
+          accent.card,
+          "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+        )}
+      >
+        <div
+          className={cn("h-1 w-full", accent.bar, accent.barGlow)}
+        />
+        <div className="space-y-4 px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              className={cn(
+                "grid size-10 place-items-center rounded-xl",
+                accent.soft,
+                accent.text,
+                accent.icon,
+              )}
+            >
+              <Layers className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold tracking-tight">
+                Rekap Monitoring Error
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {scope.cabangId
+                  ? `${cabangNama || scope.cabangId} · Periode ${monthLabel}`
+                  : `Seluruh toko dalam cakupan akun · Periode ${monthLabel}`}
+              </p>
+            </div>
+          </div>
+
+          {/* KPI RINGKASAN — angka apa adanya dari server. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <KpiCard
+              label="Total Error"
+              value={String(summary.total)}
+              hint="Seluruh toko dalam cakupan"
+              icon={TriangleAlert}
+            />
+            {MONITORING_ERROR_JENIS_LIST.map((jenis) => (
+              <KpiCard
+                key={jenis}
+                label={MONITORING_ERROR_JENIS_LABEL[jenis]}
+                value={String(summary.byJenis[jenis] ?? 0)}
+                icon={ShieldAlert}
+                tone={{
+                  text: TONE[jenis].text,
+                  bar: TONE[jenis].soft,
+                  card: TONE[jenis].card,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* ======================================== */}
+      {/* REKAP PER TOKO                       */}
+      {/* ======================================== */}
+      <Card
+        className={cn(
+          "overflow-hidden",
+          accent.card,
+          "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+        )}
+      >
+        <div
+          className={cn("h-1 w-full", accent.bar, accent.barGlow)}
+        />
+        <div className="space-y-4 px-4 py-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold tracking-tight">
+              Rekap per Toko
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {/*Angka jumlah toko diambil dari server lewat
+                  scope.totalStores. stores.length hanya dipakai
+                  sebagai fallback tampilan bila server tidak
+                  mengirim nilai tersebut. */}
+              {totalStores} toko
+              {scope.cabangId
+                ? ` pada cabang ${cabangNama || scope.cabangId}`
+                : ""}
+              . Klik satu toko untuk melihat dashboard detail toko
+              tersebut.
+            </p>
+          </div>
+
+          {stores.length === 0 ? (
+            <EmptyState
+              title="Belum ada toko"
+              description="Cabang ini belum memiliki toko aktif. Hubungi admin untuk menambahkan toko."
+              icon={Store}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+              {stores.map((store) => (
+                <AggregateStoreCard
+                  key={store.storeId}
+                  store={store}
+                  onSelect={onSelectStore}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   )
 }
@@ -466,6 +820,8 @@ export function MonitoringErrorPage() {
   const [branchOptions, setBranchOptions] = React.useState<
     { cabangId: string; nama: string }[]
   >([])
+  const [branchesLoading, setBranchesLoading] =
+    React.useState(false)
 
   React.useEffect(() => {
     if (!isCentralPusat || !user) {
@@ -474,6 +830,7 @@ export function MonitoringErrorPage() {
 
     const authedUser = user
     let cancelled = false
+    setBranchesLoading(true)
 
     async function loadBranches() {
       try {
@@ -506,6 +863,10 @@ export function MonitoringErrorPage() {
         setBranchOptions(list)
       } catch (error) {
         console.error("Gagal memuat daftar cabang:", error)
+      } finally {
+        if (!cancelled) {
+          setBranchesLoading(false)
+        }
       }
     }
 
@@ -519,81 +880,92 @@ export function MonitoringErrorPage() {
   // ----------------------------------------------------------
   // PEMILIHAN TOKO
   //   STORE          -> tokonya sendiri (tanpa selector)
-  //   CENTRAL CABANG -> pilih toko pada cabang akun
-  //   CENTRAL PUSAT  -> pilih toko pada cabang yang dipilih
+  //   CENTRAL CABANG -> rekap seluruh toko aktif pada cabangnya,
+  //                     lalu klik satu toko untuk masuk detail
+  //   CENTRAL PUSAT  -> pilih cabang, lalu rekap seluruh toko
+  //                     aktif pada cabang itu
+  //
+  // Toko yang sedang dibaca pada mode DETAIL.
+  // Untuk role Store selalu tokonya sendiri dan TIDAK pernah
+  // kosong, sehingga role Store tidak pernah masuk mode
+  // aggregate.
   // ----------------------------------------------------------
 
-  const [storeOptions, setStoreOptions] = React.useState<FirestoreStore[]>([])
   const [storeFilter, setStoreFilter] = React.useState("")
 
-  const storeScopeCabang = isCentralPusat
-    ? cabangFilter
-    : isCentralCabang
-      ? (profile?.cabangId ?? "")
-      : ""
+  // Nama toko pada header mode detail. Diisi saat Central
+  // mengklik kartu toko pada rekap, dan dikuatkan lagi dari
+  // response detail. HANYA untuk teks tampilan.
+  const [detailStoreName, setDetailStoreName] =
+    React.useState("")
 
-  React.useEffect(() => {
-    if (!isCentral || !storeScopeCabang) {
-      setStoreOptions([])
-      return
-    }
+  // Penanda perubahan data yang memaksa fetch ulang (setelah
+  // simpan / ubah / hapus). Dipakai bersama cache rekap.
+  const [reloadKey, setReloadKey] = React.useState(0)
+  const requestSeqRef = React.useRef(0)
 
-    let cancelled = false
+  // ----------------------------------------------------------
+  // CACHE REKAP (IN-MEMORY SAJA)
+  //
+  // Dipakai hanya agar perpindahan detail toko -> rekap tidak
+  // memicu fetch ulang untuk cabang + periode yang sama. TIDAK
+  // ada localStorage, Firestore, collection, atau cache persisten.
+  // ----------------------------------------------------------
 
-    getFirestoreStores(
-      isCentralPusat ? "central_pusat" : "central_cabang",
-      undefined,
-      storeScopeCabang,
-    )
-      .then((list) => {
-        if (cancelled) return
+  // Kunci cache memuat identitas scope yang sebenarnya, BUKAN
+  // hanya role + cabang terpilih. Untuk Central Cabang
+  // `cabangFilter` memang selalu kosong (cabang berasal dari
+  // profile), jadi cabang profile WAJIB ikut masuk kunci.
+  // `user.uid` juga dimasukkan supaya data akun sebelumnya tidak
+  // pernah tampil bila component bertahan saat user berganti.
+  const aggregateCacheKey = [
+    role,
+    user?.uid ?? "-",
+    profile?.cabangId ?? "-",
+    profile?.storeId ?? "-",
+    cabangFilter,
+    periode,
+  ].join("::")
+  const aggregateCacheRef = React.useRef<{
+    key: string
+    data: MonitoringErrorAggregate
+  } | null>(null)
+  // Ditulis BERSAMAAN dengan setAggregate supaya render pertama
+  // sudah melihat rekap yang tersedia. Dipakai oleh detailLocked.
+  const aggregateReadyRef = React.useRef(false)
+  const handledReloadKeyRef = React.useRef(reloadKey)
 
-        // Central Pusat memuat seluruh toko, jadi cabang terpilih
-        // tetap disaring di sisi klien.
-        const scope = storeScopeCabang.toUpperCase()
-
-        const sorted = list
-          .filter((store) =>
-            isCentralPusat
-              ? String(store.cabangId ?? "")
-                  .trim()
-                  .toUpperCase() === scope
-              : true,
-          )
-          .sort((a, b) =>
-            a.nama.localeCompare(b.nama, "id", {
-              sensitivity: "base",
-            }),
-          )
-        setStoreOptions(sorted)
-      })
-      .catch((error) => {
-        console.error("Gagal memuat daftar toko:", error)
-        if (!cancelled) setStoreOptions([])
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [isCentral, storeScopeCabang])
-
-  // Toko yang sedang dibaca. Untuk Store selalu tokonya sendiri.
   const activeStoreId = isStore
     ? (profile?.storeId ?? "")
     : storeFilter
 
-  const storeName = isStore
-    ? (profile?.namaStore || profile?.storeId || "-")
-    : (storeOptions.find((s) => s.id === storeFilter)?.nama ?? "-")
-
   // Central Pusat belum memilih cabang.
   const pusatLocked = isCentralPusat && !cabangFilter
-  // Central belum memilih toko.
+  // Central belum memilih toko -> sedang menampilkan dashboard
+  // rekap seluruh toko aktif dalam scope cabangnya (mode
+  // aggregate). Central TIDAK lagi terjebak di pemilih toko.
   const storeLocked = isCentral && !storeFilter
-  const locked = pusatLocked || storeLocked
+  // Dashboard rekap (aggregate) dan dashboard detail toko HARUS
+  // saling terpisah:
+  //   - `storeLocked`    -> sedang mode aggregate, jadi blok
+  //     detail TIDAK boleh dirender sama sekali.
+  //   - `pusatLocked`    -> belum ada cabang, baru pemilih
+  //     cabang; belum ada rekap maupun detail.
+  //   - `!activeStoreId` -> scope toko belum pasti.
+  // Jika salah satu terpenuhi, blok detail disembunyikan.
+  const detailLocked =
+    pusatLocked || storeLocked || !activeStoreId
 
   // ----------------------------------------------------------
   // DATA (GET /api/monitoring-error)
+  //
+  // Dua mode dari server yang sama:
+  //   DETAIL    -> 1 toko, bentuk response tidak berubah
+  //   AGGREGATE -> seluruh toko AKTIF pada satu cabang
+  //
+  // State detail dan state aggregate SELALU terpisah dan tidak
+  // pernah dipakai bergantian. Angka aggregate tidak pernah
+  // dihitung ulang di client.
   // ----------------------------------------------------------
 
   const [records, setRecords] = React.useState<MonitoringErrorRecord[]>([])
@@ -602,10 +974,12 @@ export function MonitoringErrorPage() {
     ...emptyRowByJenis(),
     total: 0,
   }))
+
+  const [aggregate, setAggregate] =
+    React.useState<MonitoringErrorAggregate | null>(null)
+
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
-  const [reloadKey, setReloadKey] = React.useState(0)
-  const requestSeqRef = React.useRef(0)
 
   React.useEffect(() => {
     if (!profile || !user) {
@@ -613,12 +987,42 @@ export function MonitoringErrorPage() {
       return
     }
 
-    if (locked || !activeStoreId) {
+    // Central Pusat belum memilih cabang: TIDAK ada request apa
+    // pun, sehingga tidak pernah membaca seluruh cabang.
+    if (pusatLocked) {
       setLoading(false)
       setRecords([])
       setRows([])
       setTotals({ ...emptyRowByJenis(), total: 0 })
+      setAggregate(null)
+      aggregateReadyRef.current = false
       return
+    }
+
+    // Kembali dari detail toko ke rekap: rekap sebelumnya masih
+    // berlaku untuk cabang + periode yang sama, sehingga dipakai
+    // langsung tanpa fetch lagi.
+    const forceReload =
+      reloadKey !== handledReloadKeyRef.current
+    handledReloadKeyRef.current = reloadKey
+
+    if (storeLocked) {
+      const cached = aggregateCacheRef.current
+
+      if (
+        !forceReload &&
+        cached &&
+        cached.key === aggregateCacheKey
+      ) {
+        setError("")
+        setRecords([])
+        setRows([])
+        setTotals({ ...emptyRowByJenis(), total: 0 })
+        setAggregate(cached.data)
+        aggregateReadyRef.current = true
+        setLoading(false)
+        return
+      }
     }
 
     const authedUser = user
@@ -641,6 +1045,12 @@ export function MonitoringErrorPage() {
           params.set("cabang", cabangFilter)
         }
 
+        // Central yang sudah memilih toko -> mode DETAIL toko.
+        // Central yang belum memilih toko -> parameter "store"
+        // TIDAK dikirim, sehingga server memakai mode REKAP
+        // untuk seluruh toko aktif dalam scope cabangnya.
+        // Untuk role Store parameter store TIDAK dikirim: server
+        // selalu memakai user.storeId dan mode detail.
         if (isCentral && storeFilter) {
           params.set("store", storeFilter)
         }
@@ -657,9 +1067,17 @@ export function MonitoringErrorPage() {
         const result = (await response.json()) as {
           success?: boolean
           message?: string
+          mode?: string
+          storeName?: string
           records?: MonitoringErrorRecord[]
           rows?: MonitoringErrorEmployeeRow[]
           totals?: Record<string, number>
+          scope?: MonitoringErrorScope
+          stores?: MonitoringErrorAggregateStore[]
+          summary?: {
+            byJenis?: Record<string, number>
+            total?: number
+          }
         }
 
         if (!response.ok || !result.success) {
@@ -670,6 +1088,62 @@ export function MonitoringErrorPage() {
         }
 
         if (cancelled || seq !== requestSeqRef.current) return
+
+        // Bentuk aggregate dan bentuk detail TIDAK pernah dipakai
+        // bergantian: mode dari server yang menentukan.
+        if (result.mode === "aggregate") {
+          const byJenis: Record<string, number> = {}
+
+          for (const jenis of MONITORING_ERROR_JENIS_LIST) {
+            byJenis[jenis] = Number(
+              result.summary?.byJenis?.[jenis] ?? 0,
+            )
+          }
+
+          const nextAggregate: MonitoringErrorAggregate = {
+            periode: periode,
+            scope: result.scope ?? {
+              role,
+              level: "",
+              cabangId: "",
+              totalStores: 0,
+            },
+            stores: Array.isArray(result.stores)
+              ? result.stores
+              : [],
+            // summary dipakai APA ADANYA dari server. Nilai
+            // per-jenis dinormalisasi hanya agar tipenya konsisten,
+            // tidak dijumlah ulang dari records.
+            summary: {
+              byJenis,
+              total: Number(result.summary?.total ?? 0),
+            },
+          }
+
+          aggregateCacheRef.current = {
+            key: aggregateCacheKey,
+            data: nextAggregate,
+          }
+
+          setAggregate(nextAggregate)
+          aggregateReadyRef.current = true
+          setRecords([])
+          setRows([])
+          setTotals({ ...emptyRowByJenis(), total: 0 })
+          return
+        }
+
+        // MODE DETAIL. Bentuk response tidak diubah dari
+        // sebelum Phase 5.
+        setAggregate(null)
+        aggregateReadyRef.current = false
+
+        const responseStoreName = String(
+          result.storeName ?? "",
+        ).trim()
+        if (responseStoreName) {
+          setDetailStoreName(responseStoreName)
+        }
 
         setRecords(
           Array.isArray(result.records) ? result.records : [],
@@ -721,10 +1195,13 @@ export function MonitoringErrorPage() {
     period.month,
     cabangFilter,
     storeFilter,
-    activeStoreId,
-    locked,
     isCentralPusat,
+    pusatLocked,
+    storeLocked,
     isCentral,
+    periode,
+    role,
+    aggregateCacheKey,
     reloadKey,
   ])
 
@@ -1183,6 +1660,64 @@ export function MonitoringErrorPage() {
       ? r.keteranganManual
       : r.keterangan
 
+  // ----------------------------------------------------------
+  // NAMA CABANG UNTUK TAMPILAN SAJA
+  //
+  // Berlaku aturan yang sama seperti resolver display di atas:
+  // HANYA menghasilkan teks. Idleks cabangId, parameter API,
+  // query, dan seluruh logic TIDAK PERNAH memakai nilai ini.
+  // ----------------------------------------------------------
+
+  const aggregateScopeCabangId =
+    aggregate?.scope.cabangId ?? ""
+
+  const aggregateScopeNama = getCabangDisplayName(
+    aggregateScopeCabangId || cabangFilter,
+    branchOptions.find(
+      (b) =>
+        b.cabangId.toUpperCase() ===
+        (aggregateScopeCabangId || cabangFilter || "").toUpperCase(),
+    )?.nama,
+  )
+
+  // Nama toko pada header. Mode detail memakai nama dari
+  // response API; mode rekap memakai "Seluruh Toko" + cabang.
+  const headerSubtitle = isStore
+    ? profile?.namaStore || profile?.storeId || "-"
+    : storeLocked
+      ? aggregateScopeNama
+        ? `Seluruh Toko · ${aggregateScopeNama}`
+        : "Seluruh Toko"
+      : detailStoreName || activeStoreId || "-"
+
+  // Tombol kembali memakai aksen rekap yang sama dengan blok
+  // rekap, bukan warna link biasa.
+  const backButtonClass = cn(
+    "gap-1.5",
+    "ring-1 ring-inset ring-[#EF3340]/30",
+    "shadow-[0_0_16px_-8px] shadow-[#FF3B4D]/45",
+    "transition-all duration-200",
+    "hover:ring-[#EF3340]/60",
+  )
+
+  // Kembali dari detail toko ke rekap cabang. Rekap sebelumnya
+  // masih berlaku untuk cabang + periode yang sama.
+  function backToAggregate() {
+    setStoreFilter("")
+    setDetailStoreName("")
+  }
+
+  // Kembali ke pemilih cabang. Rekap cabang lama dibuang supaya
+  // data cabang sebelumnya tidak pernah ikut tampil.
+  function backToBranchPicker() {
+    setCabangFilter("")
+    setStoreFilter("")
+    setDetailStoreName("")
+    setAggregate(null)
+    aggregateReadyRef.current = false
+    aggregateCacheRef.current = null
+  }
+
   return (
     <div className="space-y-5">
       {/* ============================================ */}
@@ -1191,45 +1726,30 @@ export function MonitoringErrorPage() {
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3.5">
+          {/* Ikon sejajar dengan blok judul, mengikuti pola
+              header halaman lain. Aksen memakai ACCENT_UTAMA;
+              "destructive" tetap khusus untuk aksi merusak dan
+              state error. */}
+          <div className="flex items-center gap-3">
             <span
               className={cn(
-                "grid size-12 shrink-0 place-items-center rounded-2xl",
-                "bg-destructive/10 text-destructive",
-                "ring-1 ring-inset ring-destructive/25",
-                "shadow-[0_0_28px_-10px] shadow-destructive/55",
+                "grid size-9 shrink-0 place-items-center rounded-xl",
+                ACCENT_UTAMA.soft,
+                ACCENT_UTAMA.text,
+                "ring-1 ring-inset ring-[#EF3340]/30",
+                "shadow-[0_0_18px_-4px] shadow-[#FF3B4D]/45",
               )}
             >
-              <ShieldAlert className="size-6" />
+              <ShieldAlert className="size-5" />
             </span>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-3.5 w-1 shrink-0 rounded-full",
-                    "bg-destructive",
-                    "shadow-[0_0_10px_0] shadow-destructive/70",
-                  )}
-                />
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Program Kerja
-                </p>
-              </div>
-
-              <h1 className="mt-1 text-2xl font-bold uppercase tracking-tight text-foreground">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">
                 Monitoring Error
               </h1>
-
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1.5 rounded-md bg-card px-2 py-1 text-xs font-medium text-foreground/85 ring-1 ring-inset ring-border">
-                  <Store className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="max-w-[220px] truncate">
-                    {storeName}
-                  </span>
-                </span>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Program Kerja · {headerSubtitle}
+              </p>
             </div>
           </div>
 
@@ -1283,101 +1803,118 @@ export function MonitoringErrorPage() {
 
         {/* FILTER CABANG + TOKO + TAB */}
         <div className="flex flex-wrap items-center gap-3">
-          {isCentralPusat && cabangFilter && (
+          {isCentralPusat && cabangFilter && storeLocked && (
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setCabangFilter("")
-                setStoreFilter("")
-              }}
-              className="gap-1.5"
+              onClick={backToBranchPicker}
+              className={backButtonClass}
             >
-              <ChevronLeft className="size-4" />
-              Ganti Cabang
+              <ArrowLeft className="size-4" />
+              Kembali Pilih Cabang
             </Button>
           )}
 
-          {isCentral && !pusatLocked && storeFilter && (
+          {isCentral && storeFilter && (
             <Button
               type="button"
               variant="outline"
-              onClick={() => setStoreFilter("")}
-              className="gap-1.5"
+              onClick={backToAggregate}
+              className={backButtonClass}
             >
-              <ChevronLeft className="size-4" />
-              Ganti Toko
+              <ArrowLeft className="size-4" />
+              Kembali ke Semua Toko
             </Button>
           )}
 
-          <Segmented
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "dashboard", label: "Dashboard" },
-              { value: "history", label: "History" },
-            ]}
-          />
+          {/* Tab Dashboard / History hanya bermakna pada mode
+              DETAIL toko. Mode rekap memakai seluruh halaman
+              untuk dashboard rekap; History memakai state
+              `records` yang hanya terisi pada mode detail. */}
+          {!pusatLocked && !storeLocked && (
+            <Segmented
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: "dashboard", label: "Dashboard" },
+                { value: "history", label: "History" },
+              ]}
+            />
+          )}
         </div>
       </div>
 
       {/* ============================================ */}
-      {/* CENTRAL — BELUM MEMILIH TOKO                 */}
+      {/* CENTRAL PUSAT — BELUM MEMILIH CABANG          */}
       {/* ============================================ */}
 
       {pusatLocked && (
         <CentralBranchPicker
           branches={branchOptions}
+          loading={branchesLoading}
           onSelect={(cabangId) => {
             setCabangFilter(cabangId)
             setStoreFilter("")
+            setDetailStoreName("")
+            // Ganti cabang -> rekap cabang sebelumnya dibuang.
+            setAggregate(null)
+            aggregateReadyRef.current = false
+            aggregateCacheRef.current = null
           }}
         />
       )}
 
-      {!pusatLocked && storeLocked && isCentral && (
-        <div className="space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-foreground">
-              Pilih Toko
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {storeOptions.length} toko
-              {storeScopeCabang
-                ? ` pada cabang ${
-                    isCentralPusat
-                      ? getCabangDisplayName(
-                          storeScopeCabang,
-                          branchOptions.find(
-                            (branch) =>
-                              branch.cabangId ===
-                              storeScopeCabang.toUpperCase(),
-                          )?.nama,
-                        )
-                      : branchOptions.find(
-                          (branch) =>
-                            branch.cabangId ===
-                            storeScopeCabang.toUpperCase(),
-                        )?.nama || storeScopeCabang
-                  }`
-                : ""}
-              . Klik satu toko untuk melihat Monitoring Error
-              toko tersebut.
-            </p>
-          </div>
+      {/* ============================================ */}
+      {/* CENTRAL — MODE REKAP SELURUH TOKO CABANG     */}
+      {/* ============================================ */}
 
-          <CentralStorePicker
-            stores={storeOptions}
-            onSelect={setStoreFilter}
-          />
+      {!pusatLocked && isCentral && storeLocked && (
+        <div className="space-y-5">
+          {loading && <LoadingState label="Memuat rekap toko..." />}
+
+          {!loading && error && (
+            <EmptyState
+              title={error}
+              description="Silakan muat ulang halaman."
+              icon={TriangleAlert}
+            />
+          )}
+
+          {!loading && !error && aggregate && (
+            <AggregateDashboard
+              data={aggregate}
+              cabangNama={aggregateScopeNama}
+              monthLabel={monthLabel}
+              onSelectStore={(storeId) => {
+                // Nama toko diambil dari daftar toko pada response
+                // aggregate sebelum masuk mode detail, supaya
+                // header tidak berkedip sampai response detail
+                // selesai.
+                setDetailStoreName(
+                  aggregate.stores.find(
+                    (s) => s.storeId === storeId,
+                  )?.storeName ?? "",
+                )
+                setStoreFilter(storeId)
+              }}
+            />
+          )}
+
+          {!loading && !error && !aggregate && (
+            <EmptyState
+              title="Rekap belum tersedia"
+              description="Silakan muat ulang halaman."
+              icon={Layers}
+            />
+          )}
         </div>
       )}
 
       {/* ============================================ */}
-      {/* TAB: DASHBOARD                             */}
+      {/* TAB: DASHBOARD TOKO (MODE DETAIL)            */}
       {/* ============================================ */}
 
-      {!locked && tab === "dashboard" && (
+      {!detailLocked && tab === "dashboard" && (
         <>
           {loading && <LoadingState label="Memuat dashboard..." />}
 
@@ -1391,55 +1928,42 @@ export function MonitoringErrorPage() {
 
           {!loading && !error && (
             <div className="space-y-5">
-              {/* RINGKASAN PER JENIS */}
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {/* RINGKASAN PER JENIS
+                  Memakai komponen KpiCard yang sama dengan blok
+                  rekap supaya mode detail dan mode rekap terlihat
+                  sebagai satu sistem. Angka dibaca apa adanya dari
+                  `totals` hasil response server. */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <KpiCard
+                  label="Total Error"
+                  value={String(totals.total ?? 0)}
+                  hint={isStore ? "Seluruh periode aktif" : "Toko ini"}
+                  icon={TriangleAlert}
+                />
                 {MONITORING_ERROR_JENIS_LIST.map((jenis) => {
-                  const tone = TONE[jenis]
                   const value = totals[jenis] ?? 0
-                  const hasValue = value > 0
 
                   return (
-                    <Card
+                    <KpiCard
                       key={jenis}
-                      className={cn(
-                        "relative overflow-hidden p-4",
-                        "shadow-[0_12px_28px_-20px_rgba(0,0,0,0.45)]",
-                        "transition-all duration-300",
-                        tone.card,
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "absolute inset-x-0 top-0 h-px",
-                          hasValue
-                            ? tone.soft
-                            : "bg-border",
-                        )}
-                      />
-
-                      <p
-                        className={cn(
-                          "text-[11px] font-semibold uppercase leading-tight tracking-wider",
-                          hasValue
-                            ? tone.text
+                      label={MONITORING_ERROR_JENIS_LABEL[jenis]}
+                      value={String(value)}
+                      icon={ShieldAlert}
+                      tone={{
+                        text:
+                          value > 0
+                            ? TONE[jenis].text
                             : "text-muted-foreground",
-                        )}
-                      >
-                        {MONITORING_ERROR_JENIS_LABEL[jenis]}
-                      </p>
-
-                      <p
-                        className={cn(
-                          "mt-2 text-3xl font-bold leading-none tracking-tight tabular-nums",
-                          hasValue
-                            ? tone.text
-                            : "text-muted-foreground/40",
-                        )}
-                      >
-                        {value}
-                      </p>
-                    </Card>
+                        bar:
+                          value > 0
+                            ? TONE[jenis].soft
+                            : "bg-border",
+                        card:
+                          value > 0
+                            ? TONE[jenis].card
+                            : "",
+                      }}
+                    />
                   )
                 })}
               </div>
@@ -1456,12 +1980,12 @@ export function MonitoringErrorPage() {
                   icon={ShieldAlert}
                 />
               ) : (
-                <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_18px_40px_-28px_rgba(0,0,0,0.5)]">
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-sm">
                       <thead>
-                        <tr className="border-b-2 border-border/80 bg-muted/60">
-                          <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">
                             <span className="inline-flex items-center gap-1.5">
                               <UserRound className="size-3.5 shrink-0" />
                               Nama Karyawan
@@ -1471,7 +1995,7 @@ export function MonitoringErrorPage() {
                             (jenis) => (
                               <th
                                 key={jenis}
-                                className="px-4 py-3.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                                className="px-3 py-3 text-center font-medium"
                               >
                                 {
                                   MONITORING_ERROR_JENIS_LABEL[
@@ -1481,10 +2005,10 @@ export function MonitoringErrorPage() {
                               </th>
                             ),
                           )}
-                          <th className="border-l border-border/80 bg-muted/40 px-4 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-foreground">
+                          <th className="border-l border-border px-3 py-3 text-right font-medium text-foreground">
                             Total
                           </th>
-                          <th className="px-4 py-3.5 text-center text-[11px] font-bold uppercase tracking-wider text-foreground">
+                          <th className="px-3 py-3 text-center font-medium text-foreground">
                             Detail
                           </th>
                         </tr>
@@ -1494,13 +2018,13 @@ export function MonitoringErrorPage() {
                         {rows.map((row) => (
                           <tr
                             key={row.employeeId}
-                            className="border-b border-border/50 transition-colors duration-200 last:border-0 hover:bg-destructive/[0.05]"
+                            className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
                           >
                             <td
-                              className="max-w-[240px] px-4 py-3.5"
+                              className="max-w-[240px] px-3 py-3"
                               title={row.employeeName || "-"}
                             >
-                              <span className="block truncate text-[15px] font-semibold text-foreground">
+                              <span className="block truncate text-sm font-semibold text-foreground">
                                 {row.employeeName || "-"}
                               </span>
                             </td>
@@ -1513,7 +2037,7 @@ export function MonitoringErrorPage() {
                                 return (
                                   <td
                                     key={jenis}
-                                    className="px-4 py-3.5 text-center"
+                                    className="px-3 py-3 text-center"
                                   >
                                     <button
                                       type="button"
@@ -1528,7 +2052,7 @@ export function MonitoringErrorPage() {
                                       }
                                       disabled={value === 0}
                                       className={cn(
-                                        "inline-grid size-10 place-items-center rounded-xl text-base font-bold tabular-nums transition-all duration-200",
+                                        "inline-grid size-9 place-items-center rounded-lg text-sm font-bold tabular-nums transition-all duration-200",
                                         "disabled:cursor-default disabled:opacity-40",
                                         value > 0
                                           ? TONE[
@@ -1548,7 +2072,7 @@ export function MonitoringErrorPage() {
                               },
                             )}
 
-                            <td className="whitespace-nowrap border-l border-border/80 bg-muted/30 px-4 py-3.5 text-right text-lg font-bold text-foreground tabular-nums">
+                            <td className="whitespace-nowrap border-l border-border px-3 py-3 text-right text-base font-bold text-foreground tabular-nums">
                               {row.total}
                             </td>
 
@@ -1557,13 +2081,12 @@ export function MonitoringErrorPage() {
                                 pada periode aktif. Data diambil
                                 dari `records` yang sudah dimuat;
                                 tidak ada request tambahan. */}
-                            <td className="px-4 py-3.5 text-center">
+                            <td className="px-3 py-3 text-center">
                               <button
                                 type="button"
                                 onClick={() =>
                                   setDetail({
-                                    employeeId:
-                                      row.employeeId,
+                                    employeeId: row.employeeId,
                                     employeeName:
                                       row.employeeName,
                                   })
@@ -1586,8 +2109,8 @@ export function MonitoringErrorPage() {
                         ))}
 
                         {/* TOTAL KESELURUHAN */}
-                        <tr className="border-t-2 border-border bg-muted/60">
-                          <td className="px-4 py-4 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <tr className="border-t-2 border-border bg-muted/50">
+                          <td className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Total
                           </td>
                           {MONITORING_ERROR_JENIS_LIST.map(
@@ -1598,7 +2121,7 @@ export function MonitoringErrorPage() {
                               return (
                                 <td
                                   key={jenis}
-                                  className="px-4 py-4 text-center text-base font-bold tabular-nums"
+                                  className="px-3 py-3 text-center text-sm font-bold tabular-nums"
                                 >
                                   <span
                                     className={
@@ -1613,10 +2136,10 @@ export function MonitoringErrorPage() {
                               )
                             },
                           )}
-                          <td className="whitespace-nowrap border-l border-border/80 bg-muted/40 px-4 py-4 text-right text-xl font-bold text-foreground tabular-nums">
+                          <td className="whitespace-nowrap border-l border-border px-3 py-3 text-right text-lg font-bold text-foreground tabular-nums">
                             {totals.total ?? 0}
                           </td>
-                          <td className="px-4 py-4" />
+                          <td className="px-3 py-3" />
                         </tr>
                       </tbody>
                     </table>
@@ -1632,7 +2155,7 @@ export function MonitoringErrorPage() {
       {/* TAB: HISTORY (KHUSUS MODUL INI)             */}
       {/* ============================================ */}
 
-      {!locked && tab === "history" && (
+      {!detailLocked && tab === "history" && (
         <>
           {loading && <LoadingState label="Memuat history..." />}
 
@@ -1715,25 +2238,25 @@ export function MonitoringErrorPage() {
                   icon={ShieldAlert}
                 />
               ) : (
-                <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-[0_18px_40px_-28px_rgba(0,0,0,0.5)]">
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[860px] text-sm">
                       <thead>
-                        <tr className="border-b-2 border-border/80 bg-muted/60">
-                          <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">
                             Tanggal
                           </th>
-                          <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">
                             Karyawan
                           </th>
-                          <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">
                             Jenis Error
                           </th>
-                          <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <th className="px-3 py-3 font-medium">
                             Keterangan
                           </th>
                           {isStore && (
-                            <th className="px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            <th className="px-3 py-3 text-right font-medium">
                               Aksi
                             </th>
                           )}
@@ -1747,17 +2270,17 @@ export function MonitoringErrorPage() {
                           return (
                             <tr
                               key={r.id}
-                              className="border-b border-border/50 transition-colors duration-200 last:border-0 hover:bg-destructive/[0.05]"
+                              className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
                             >
-                              <td className="whitespace-nowrap px-4 py-3.5 text-muted-foreground">
+                              <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
                                 {formatTanggal(r.tanggal)}
                               </td>
-                              <td className="px-4 py-3.5">
-                                <span className="block text-[15px] font-semibold text-foreground">
+                              <td className="px-3 py-3">
+                                <span className="block text-sm font-semibold text-foreground">
                                   {r.employeeName || "-"}
                                 </span>
                               </td>
-                              <td className="px-4 py-3.5">
+                              <td className="px-3 py-3">
                                 <span
                                   className={cn(
                                     "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold",
@@ -1769,12 +2292,12 @@ export function MonitoringErrorPage() {
                                   ]}
                                 </span>
                               </td>
-                              <td className="px-4 py-3.5 text-muted-foreground">
+                              <td className="px-3 py-3 text-muted-foreground">
                                 {showKeterangan(r) || "-"}
                               </td>
 
                               {isStore && (
-                                <td className="px-4 py-3.5">
+                                <td className="px-3 py-3">
                                   <div className="flex items-center justify-end gap-1">
                                     <Button
                                       type="button"
