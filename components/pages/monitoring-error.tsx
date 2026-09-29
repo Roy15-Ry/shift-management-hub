@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   ArrowLeft,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -163,6 +164,116 @@ const ACCENT_UTAMA: {
   barGlow: "shadow-[0_0_16px_-2px] shadow-[#FF3B4D]/45",
   card: "ring-1 ring-inset ring-[#EF3340]/20 transition-all duration-200 hover:ring-[#EF3340]/45 hover:shadow-[0_14px_36px_-16px] hover:shadow-[#FF3B4D]/45",
   icon: "ring-1 ring-inset ring-[#EF3340]/25 shadow-[0_0_20px_-6px] shadow-[#FF3B4D]/50",
+}
+
+// ============================================================
+// WARNA SEGMENT CHART (khusus chart batang)
+//
+// Token HANYA dipakai oleh chart batang Monitoring Error.
+// TONE di atas TIDAK diubah dan tetap dipakai KPI, chip
+// History, dan detail. globals.css juga TIDAK disentuh.
+//
+// Dua alasan kenapa chart tidak memakai TONE apa adanya:
+//
+// 1. ERROR PERACIKAN memakai token "primary". Di globals.css
+//    --primary bernilai oklch(0.52 0.16 258) pada light tetapi
+//    oklch(0.922 0) pada dark, sehingga di dark mode batang
+//    jenis ini berubah menjadi nyaris putih dan identitasnya
+//    hilang. Chart memakai violet yang nilainya sama pada
+//    kedua tema.
+//
+// 2. --status-izin dan --status-cuti memiliki nilai yang
+//    PERSIS SAMA (oklch(0.577 0.245 27)). Kalau keduanya dipakai
+//    apa adanya, dua segmen bersebelahan pada batang stack akan
+//    berwarna identik dan tidak bisa dibedakan. ERROR
+//    OPERASIONAL memakai orange supaya lima segmen tetap
+//    terpisah.
+//
+// --status-pagi (hijau) dan --status-siang (biru) tetap dipakai
+// apa adanya karena keduanya stabil pada light dan dark.
+//
+// Skema warna: hijau - biru - violet - merah - orange, sehingga
+// lima batang selalu berbeda dan tidak ada dua warna hangat atau
+// dua warna dingin yang bersebelahan.
+//
+// Setiap entri punya dua bagian, mengikuti pola TONE modul Target
+// Penjualan: "fill" untuk warna batang dan "barGlow" untuk halo
+// tipis di belakang batang. Warna halo memakai palet Tailwind
+// yang nilainya sama pada light dan dark supaya glow tidak ikut
+// berubah-ikut tema.
+// ============================================================
+
+const CHART_SEGMENT: Record<
+  MonitoringErrorJenis,
+  { fill: string; barGlow: string }
+> = {
+  "HAPUS TRANSAKSI": {
+    fill: "bg-status-pagi",
+    barGlow: "shadow-[0_0_14px_-4px] shadow-emerald-500/45",
+  },
+  KOMPLAIN: {
+    fill: "bg-status-siang",
+    barGlow: "shadow-[0_0_14px_-4px] shadow-sky-500/45",
+  },
+  "ERROR PERACIKAN": {
+    fill: "bg-violet-500",
+    barGlow: "shadow-[0_0_14px_-4px] shadow-violet-500/45",
+  },
+  "ERROR KASIR": {
+    fill: "bg-status-izin",
+    barGlow: "shadow-[0_0_14px_-4px] shadow-red-500/45",
+  },
+  "ERROR OPERASIONAL": {
+    fill: "bg-orange-500",
+    barGlow: "shadow-[0_0_14px_-4px] shadow-orange-500/45",
+  },
+}
+
+// ============================================================
+// SKALA SUMBU Y — JUMLAH ERROR ABSOLUT
+//
+// Step "bulat" yang dipakai untuk membagi sumbu. Daftar ini
+// dipakai untuk memilih jarak tick yang enak dibaca, BUKAN
+// sebagai batas atas. Batas atas selalu dihitung dari data.
+// ============================================================
+
+const CHART_Y_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]
+
+/**
+ * Mengubah nilai error terbesar menjadi batas atas sumbu Y dan
+ * daftar tick.
+ *
+ * Berbeda dari chart pencapaian, fungsi ini TIDAK memasang batas
+ * bawah 100. Kalau nilai terbesar 20, sumbu Y berhenti di 20 dan
+ * bukan melar sampai 100 tanpa alasan. Minimum 1 hanya menjaga
+ * agar pembagi tidak nol saat semua nilai memang 0.
+ */
+function monitoringErrorYAxis(maxValue: number): {
+  max: number
+  ticks: number[]
+} {
+  const rawMax = Math.max(1, maxValue)
+
+  // Memilih step terkecil yang masih membuat jumlah tick tidak
+  // lebih dari 5, supaya batang tidak pernah menyentuh tepi atas
+  // area plot dan sumbu Y tidak terlalu jarang.
+  let step = CHART_Y_STEPS[CHART_Y_STEPS.length - 1]
+
+  for (const candidate of CHART_Y_STEPS) {
+    if (rawMax / candidate <= 5) {
+      step = candidate
+      break
+    }
+  }
+
+  const max = Math.ceil(rawMax / step) * step
+  const ticks: number[] = []
+
+  for (let value = step; value <= max; value += step) {
+    ticks.push(value)
+  }
+
+  return { max, ticks }
 }
 
 // ============================================================
@@ -592,6 +703,366 @@ function AggregateStoreCard({
   )
 }
 
+// ============================================================
+// CHART BATANG GRUP — PERBANDINGAN ERROR PER TOKO
+//
+// POLA VISUAL mengikuti "PerformaStoreChart" pada modul Target
+// Penjualan: batang VERTICAL, toko di sumbu X, gridline dashed,
+// sumbu Y di kiri, legend di atas. Yang ditiru HANYA bentuk
+// visualnya. Logika bisnisnya 100% Monitoring Error.
+//
+// MAKNA DATA (> bentuk visual) adalah prioritas:
+//
+//   - Satu KELOMPOK batang = satu toko, urutan PERSIS mengikuti
+//     stores[] dari server. Urutan TIDAK disorting, sehingga
+//     chart dan "Rekap per Toko" di bawahnya selalu urut sama
+//     dan tidak ada toko yang tersembunyi.
+//   - Di dalam satu toko ada 5 BATANG TERPISAH berdampingan
+//     (grouped), masing-masing untuk satu jenis error. Bentuk
+//     ini TIDAK menumpuk: tinggi setiap batang hanya mewakili
+//     nilai jenis itu sendiri, bukan penjumlahan dengan jenis
+//     lain di sebelahnya.
+//   - Tinggi batang = JUMLAH error jenis itu pada toko itu,
+//     dibaca dari stores[i].totals[jenis] milik server. Nilai
+//     TIDAK pernah dijumlah ulang dari records[].
+//   - Sumbu Y memakai JUMLAH ERROR ABSOLUT dengan skala dinamis
+//     dari data. Angka 0 selalu berada di garis dasar. Tidak
+//     ada persentase, tidak ada garis acuan, dan tidak ada
+//     track 0-100%.
+//
+// CATATAN SOAL BENTUK: memakai batang terpisah per jenis,
+// bukan menumpuk, dengan sengaja. Kalau batang ditumpuk, tinggi
+// batang teratas selalu sama dengan total toko, sehingga
+// perbandingan antar toko langsung didominasi satu nilai saja
+// dan komposisi per jenis tidak bisa dibandingkan antar toko.
+// Bentuk grouped membuat tinggi setiap jenis SEBAGAI BESARAN
+// TERPISAH yang bisa langsung dibandingkan satu per satu, dan
+// total per toko tetap bisa dibaca dari sumbu Y serta judul kolom.
+//
+// ANGKA ABSOLUT SAJA. Tidak ada persentase, dan tidak ada
+// konsep momentary lain dari modul penjualan.
+//
+// DATA: seluruhnya dari response aggregate yang sudah dimuat di
+// state. Komponen ini murni presentation: tanpa fetch, tanpa
+// query, tanpa useEffect, tanpa cache, tanpa navigasi, dan
+// tanpa listener.
+// ============================================================
+
+function MonitoringErrorStoreChart({
+  stores,
+}: {
+  stores: MonitoringErrorAggregateStore[]
+}) {
+  const accent = ACCENT_UTAMA
+
+  // Setiap toko menghasilkan SATU KELOMPOK berisi 5 batang
+  // terpisah. Baris diturunkan PURELY dari stores[].totals.
+  // Tidak ada iterasi ke records[], sehingga biaya chart tidak
+  // bergantung pada jumlah kejadian pada cabang.
+  //
+  // Kelima jenis SELALU ikut dihitung, termasuk yang 0. Slot
+  // kosong tidak boleh dihapus supaya jarak antar batang tetap
+  // rata dan perbandingan antar toko tidak bergeser.
+  const rows = React.useMemo(() => {
+    return stores.map((store) => ({
+      storeId: store.storeId,
+      storeName: store.storeName || store.storeId,
+      // Total dibaca apa adanya dari server, bukan penjumlahan
+      // ulang dari lima jenis.
+      total: store.totals.total,
+      series: MONITORING_ERROR_JENIS_LIST.map((jenis) => ({
+        jenis,
+        value: store.totals[jenis] ?? 0,
+      })),
+    }))
+  }, [stores])
+
+  // Sumbu Y mengikuti nilai error TERTINGGI pada periode ini.
+  // Yang dicari adalah nilai jenis TERBESAR pada satu toko,
+  // BUKAN total toko terbesar, karena setiap batang berdiri
+  // sendiri dan tidak lagi mewakili akumulasi semua jenis.
+  const yAxis = React.useMemo(() => {
+    let maxValue = 0
+
+    for (const row of rows) {
+      for (const item of row.series) {
+        if (item.value > maxValue) maxValue = item.value
+      }
+    }
+
+    return monitoringErrorYAxis(maxValue)
+  }, [rows])
+
+  // Label yang digambar di kolom kiri.
+  //
+  // monitoringErrorYAxis sengaja hanya menghasilkan tick DI ATAS
+  // garis dasar, karena tick dipakai untuk menggambar gridline.
+  // Garis dasar 0 sendiri digambar terpisah sebagai garis solid.
+  //
+  // Daftar ini tidak menambah atau mengubah satu pun tick, step,
+  // atau batas atas sumbu. Yang dilakukan hanya memberi NAMA pada
+  // baseline 0 yang sudah ada, supaya titik paling bawah chart
+  // ikut terbaca dan sejajar dengan label lain. Tanpa ini, sumbu
+  // terlihat melompat dari 2 ke atas lalu berhenti sebelum
+  // garis dasar.
+  const yAxisLabels = React.useMemo(() => [0, ...yAxis.ticks], [yAxis])
+
+  // SATU-SATUNYA sumber koordinat vertikal Y-axis.
+  //
+  // Fungsi ini dipakai PERSIS sama oleh angka pada rail Y-axis dan
+  // oleh gridline di area plot. Karena keduanya membaca rumus yang
+  // sama dari tinggi kotak yang sama, angka dan garis tidak
+  // mungkin terpisah. Tidak ada tick yang digeser sendiri-sendiri:
+  // yang berbeda hanya nilai tick-nya, bukan cara menghitungnya.
+  const yTickBottom = React.useCallback(
+    (tick: number) => `${(tick / yAxis.max) * 100}%`,
+    [yAxis.max],
+  )
+
+  const semuaNol = rows.every((row) => row.total === 0)
+  const tanpaError = rows.filter((row) => row.total === 0).length
+
+  return (
+    <Card
+      className={cn(
+        "overflow-hidden",
+        accent.card,
+        "shadow-[0_1px_0_0_rgba(0,0,0,0.02)]",
+      )}
+    >
+      <div className={cn("h-1 w-full", accent.bar, accent.barGlow)} />
+
+      <div className="space-y-4 px-4 py-4">
+        {/* HEADER */}
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "grid size-10 shrink-0 place-items-center rounded-xl",
+              accent.soft,
+              accent.text,
+              accent.icon,
+            )}
+          >
+            <BarChart3 className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight">
+              Perbandingan Error per Toko
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Jumlah error per jenis di setiap toko pada periode ini
+            </p>
+          </div>
+        </div>
+
+        {/* LEGEND — 5 jenis memakai label canonical dari
+            lib/monitoring-error.ts. Wrap otomatis supaya tetap
+            terbaca pada layar sempit. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {MONITORING_ERROR_JENIS_LIST.map((jenis) => (
+            <span
+              key={jenis}
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2.5 w-2.5 shrink-0 rounded-[3px]",
+                  CHART_SEGMENT[jenis].fill,
+                )}
+              />
+              {MONITORING_ERROR_JENIS_LABEL[jenis]}
+            </span>
+          ))}
+        </div>
+
+        {/* RINGKASAN SKALA — disclose bahwa sumbu Y memakai
+            jumlah error absolut dan berapa toko yang tanpa error.
+            Tidak ada toko yang dihapus diam-diam. */}
+        <p className="text-[11px] text-muted-foreground">
+          Sumbu Y menampilkan jumlah error · skala 0–{yAxis.max} ·{" "}
+          {rows.length} toko
+          {tanpaError > 0
+            ? `, termasuk ${tanpaError} toko tanpa error.`
+            : "."}
+        </p>
+
+        {semuaNol ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <ShieldAlert className="size-3.5" />
+              Perbandingan Error per Toko
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Belum ada error tercatat pada periode ini. Rincian
+              per toko tetap tersedia pada Rekap per Toko di
+              bawah.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* RINGKASAN TEKS untuk pembaca layar. */}
+            <p className="sr-only">
+              Perbandingan jumlah error per jenis di setiap toko pada
+              periode ini. Sumbu Y dari 0 sampai {yAxis.max}. Total{" "}
+              {rows.length} toko, {tanpaError} toko tanpa error.{" "}
+              {rows
+                .map(
+                  (row) =>
+                    `${row.storeName}: total ${row.total} error. ${row.series
+                      .map(
+                        (item) =>
+                          `${MONITORING_ERROR_JENIS_LABEL[item.jenis]} ${item.value}`,
+                      )
+                      .join(", ")}`,
+                )
+                .join(". ")}
+              .
+            </p>
+
+            {/* CHART — satu kelompok batang per toko, dengan
+                sumbu Y di kiri yang TIDAK ikut scroll. */}
+            <div className="flex gap-2 rounded-xl border border-border/70 bg-background/60 p-3">
+              {/* SUMBU Y — satu rail stabil di kiri area plot.
+                  Lebarnya tetap (w-12) dan tidak bisa terjepit.
+                  Semua label memakai right-2, jadi rata kanan pada
+                  kolom yang sama dengan jarak yang sama dari grid.
+
+                  my-1.5 memberi ruang aman yang UNIFORM di atas dan
+                  bawah. Ruang ini dipakai bersama oleh rail ini dan
+                  oleh area plot (lihat PLOT_Y_INSET di bawah), jadi
+                  tick terbesar tidak menempel tepi atas dan tick 0
+                  tidak menempel tepi bawah — tanpa menggeser label
+                  satu per satu.
+
+                  Style tick TIDAK dibedakan berdasarkan nilai. 0
+                  memakai kelas yang persis sama dengan 6, 4, dan 2;
+                  yang membuatnya Baseline hanyalah garis dasarnya,
+                  bukan cetakan yang lebih tebal. */}
+              <div className="relative my-1.5 h-56 w-12 shrink-0">
+                {yAxisLabels.map((tick) => (
+                  <span
+                    key={tick}
+                    className="absolute right-2 -translate-y-1/2 text-[10px] leading-3 tabular-nums text-muted-foreground"
+                    style={{ bottom: yTickBottom(tick) }}
+                  >
+                    {tick}
+                  </span>
+                ))}
+              </div>
+
+              {/* AREA PLOT — scroll horizontal DIBATAS di sini,
+                  halaman utama tidak pernah overflow. Lebar
+                  minimum per toko dipertahankan agar label nama
+                  toko dan batang tidak saling tindih saat
+                  jumlah toko bertambah. */}
+              <div className="w-full min-w-0 overflow-x-auto">
+                <div className="min-w-max">
+                  {/* BATANG + GRID.
+                      my-1.5 PERSIS SAMA dengan my-1.5 pada rail
+                      Y-axis di samping, dan tinggi kotaknya juga
+                      sama (h-56). Rail dan area plot karena itu
+                      memakai sistem koordinat vertikal yang sama,
+                      dengan ruang aman atas dan bawah yang juga
+                      sama. Angka 6, 4, 2, dan 0 karena itu selalu
+                      segaris dengan gridlinenya masing-masing. */}
+                  <div className="relative my-1.5 flex h-56 items-stretch gap-3">
+                    {/* Gridline mengikuti tick sumbu Y */}
+                    {yAxis.ticks.map((tick) => (
+                      <div
+                        key={tick}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border/60"
+                        style={{ bottom: yTickBottom(tick) }}
+                      />
+                    ))}
+
+                    {/* Garis dasar nilai 0 */}
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-border"
+                    />
+
+                    {rows.map((row) => (
+                      <div
+                        key={row.storeId}
+                        className="group/store relative flex w-[96px] shrink-0 flex-col justify-end"
+                        title={`${row.storeName} · total ${row.total} error · ${row.series
+                          .map(
+                            (item) =>
+                              `${MONITORING_ERROR_JENIS_LABEL[item.jenis]}: ${item.value}`,
+                          )
+                          .join(" · ")}`}
+                      >
+                        <div
+                          className="pointer-events-none absolute inset-0 rounded-lg bg-transparent transition-colors duration-200 group-hover/store:bg-muted/40"
+                          aria-hidden
+                        />
+                        <div className="absolute inset-0 flex items-end justify-center gap-1 px-1">
+                          {row.series.map((item) => {
+                            // Nilai 0 TIDAK diberi tinggi minimum
+                            // apa pun supaya tidak memalsukan
+                            // besaran. Batangnya memang tidak
+                            // terlihat, dan angkanya tetap
+                            // terbaca lewat title kolom serta
+                            // teks screen-reader di bawah.
+                            const tinggi =
+                              (item.value / yAxis.max) * 100
+
+                            return (
+                              <div
+                                key={item.jenis}
+                                className="w-full max-w-[16px] shrink-0"
+                                style={{ height: `${tinggi}%` }}
+                                title={`${row.storeName} · ${MONITORING_ERROR_JENIS_LABEL[item.jenis]}: ${item.value}`}
+                              >
+                                {item.value > 0 ? (
+                                  <div
+                                    className={cn(
+                                      "h-full w-full rounded-t-[4px]",
+                                      "transition-[filter] duration-200",
+                                      "group-hover/store:brightness-110",
+                                      CHART_SEGMENT[item.jenis].fill,
+                                      CHART_SEGMENT[item.jenis].barGlow,
+                                    )}
+                                  />
+                                ) : (
+                                  <span className="sr-only">
+                                    {MONITORING_ERROR_JENIS_LABEL[item.jenis]}
+                                    : 0
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* SUMBU X — nama toko, lebar kolom sama dengan
+                      kelompok batang di atas sehingga selalu rata. */}
+                  <div className="mt-1.5 flex gap-3">
+                    {rows.map((row) => (
+                      <p
+                        key={row.storeId}
+                        className="w-[96px] shrink-0 truncate text-center text-[10px] text-muted-foreground"
+                        title={row.storeName}
+                      >
+                        {row.storeName}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function AggregateDashboard({
   data,
   onSelectStore,
@@ -676,6 +1147,20 @@ function AggregateDashboard({
           </div>
         </div>
       </Card>
+
+      {/* ======================================== */}
+      {/* CHART: PERBANDINGAN ERROR PER TOKO     */}
+      {/* ========================================
+          Chart memakai stores[] yang sudah ada dan berada
+          DI DALAM gate aggregate AggregateDashboard,
+          sehingga tidak pernah tampil bersamaan dengan
+          dashboard detail toko. Toko tanpa error TIDAK
+          difilter: kartu "Rekap per Toko" di bawahnya juga
+          tetap dirender utuh. */}
+
+      {stores.length > 0 && (
+        <MonitoringErrorStoreChart stores={stores} />
+      )}
 
       {/* ======================================== */}
       {/* REKAP PER TOKO                       */}
