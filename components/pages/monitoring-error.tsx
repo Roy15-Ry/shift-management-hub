@@ -2350,6 +2350,31 @@ export function MonitoringErrorPage() {
       )}
 
       {/* ============================================ */}
+      {/* STORE — BELUM PUNYA TOKO YANG VALID          */}
+      {/* ============================================ */}
+      {/* Akun Store tanpa storeId yang valid membuat
+          `detailLocked` bernilai true, sehingga blok
+          detail TIDAK pernah dirender. Akibatnya error
+          403 dari server tidak punya jalur render apa
+          pun dan halaman tampil kosong tanpa pesan.
+
+          Blok ini sengaja diletakkan DI LUAR aggregate
+          gate, detail dashboard gate, dan detail history
+          gate. Gate-gate itu tidak diubah, dan blok ini
+          hanya berlaku untuk `isStore && !activeStoreId`,
+          sehingga Store yang valid, Central Cabang, dan
+          Central Pusat tidak terpengaruh sama sekali. */}
+      {isStore && !activeStoreId && (
+        <EmptyState
+          title={
+            error || "Akun Store belum memiliki data toko yang valid."
+          }
+          description="Silakan hubungi admin untuk mengaitkan akun ini dengan toko."
+          icon={TriangleAlert}
+        />
+      )}
+
+      {/* ============================================ */}
       {/* CENTRAL — MODE REKAP SELURUH TOKO CABANG     */}
       {/* ============================================ */}
 
