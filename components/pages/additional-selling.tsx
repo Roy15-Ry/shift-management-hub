@@ -33,6 +33,7 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
+import { AdditionalSellingNotes } from "@/components/additional-selling-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
 import type {
   FirestoreEmployee,
@@ -1708,6 +1709,30 @@ export function AdditionalSellingPage() {
   const detailTitleSuffix =
     isCentral && storeFilter ? detailStoreName.trim() : ""
 
+  // CATATAN TARGET PENJUALAN
+  // ----------------------------------------------------------
+  //
+  // Catatan adalah modal, bukan halaman, sehingga seluruh
+  // state (toko, periode, daftar) hidup di dalam
+  // components/additional-selling-notes.tsx. Yang diteruskan ke
+  // sana HANYA scope yang sudah ada di halaman ini:
+  //
+  //   - Toko  : Store memakai profile.storeId. Central memakai
+  //             storeFilter, sehingga string KOSONG saat masih di
+  //             rekap / belum memilih cabang. Tombol Catatan
+  //             otomatis hilang dan TIDAK ada request apa pun
+  //             (component-nya yang memutuskan, bukan halaman).
+  //   - Periode: periode dashboard yang sedang aktif. Tidak ada
+  //             selector periode terpisah untuk Catatan.
+  //
+  // Role Store tetap read-only lewat "canWrite" dan ditolak lagi
+  // di server.
+  const notesStoreId = isStore ? (profile?.storeId ?? "") : storeFilter
+
+  const notesStoreLabel = isStore
+    ? profile?.namaStore || profile?.storeId || "Toko"
+    : detailStoreName.trim() || "Toko"
+
   return (
     <div className="space-y-5">
       {/* ============================================ */}
@@ -1873,6 +1898,31 @@ export function AdditionalSellingPage() {
                 { value: "dashboard", label: "Dashboard Program" },
                 { value: "history", label: "History" },
               ]}
+            />
+          )}
+
+          {/* CATATAN — tombol yang membuka modal Catatan. Muncul
+              hanya pada mode detail toko (dan untuk Store), lewat
+              guard "notesStoreId" di dalam component. Central yang
+              masih di rekap / belum memilih cabang tidak melihat
+              tombol ini sama sekali. */}
+          {!storeLocked && (
+            <AdditionalSellingNotes
+              storeId={notesStoreId}
+              periode={periode}
+              periodeLabel={formatPeriodeLabel(periode)}
+              storeLabel={notesStoreLabel}
+              isStore={isStore}
+              canWrite={isCentral}
+              getIdToken={async () => {
+                if (!user) {
+                  throw new Error(
+                    "Sesi berakhir. Silakan login kembali.",
+                  )
+                }
+                return user.getIdToken()
+              }}
+              showToast={showToast}
             />
           )}
         </div>

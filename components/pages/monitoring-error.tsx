@@ -31,6 +31,7 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
+import { MonitoringErrorNotes } from "@/components/monitoring-error-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
 import type { FirestoreEmployee } from "@/lib/firestore-data"
 import {
@@ -2175,6 +2176,28 @@ export function MonitoringErrorPage() {
         : "Seluruh Toko"
       : detailStoreName || activeStoreId || "-"
 
+  // CATATAN MONITORING ERROR
+  // ----------------------------------------------------------
+  //
+  // Catatan adalah modal, bukan halaman, sehingga seluruh state
+  // (toko, periode, daftar) hidup di dalam
+  // components/monitoring-error-notes.tsx. Yang diteruskan ke sana
+  // HANYA scope yang sudah ada di halaman ini:
+  //
+  //   - Toko   : memakai `activeStoreId` yang sudah ada di atas,
+  //              yaitu profile.storeId untuk Store dan storeFilter
+  //              untuk Central. String KOSONG saat Central masih
+  //              di aggregate atau belum memilih cabang, sehingga
+  //              tombol otomatis hilang dan TIDAK ada request.
+  //   - Periode: `periode` dashboard yang sedang aktif. Tidak ada
+  //              selector periode terpisah untuk Catatan.
+  //
+  // Role Store tetap read-only lewat "canWrite" dan ditolak lagi
+  // di server.
+  const notesStoreLabel = isStore
+    ? profile?.namaStore || profile?.storeId || "Toko"
+    : detailStoreName.trim() || "Toko"
+
   // Tombol kembali memakai aksen rekap yang sama dengan blok
   // rekap, bukan warna link biasa.
   const backButtonClass = cn(
@@ -2324,6 +2347,34 @@ export function MonitoringErrorPage() {
                 { value: "dashboard", label: "Dashboard" },
                 { value: "history", label: "History" },
               ]}
+            />
+          )}
+
+          {/* CATATAN MONITORING ERROR — tombol yang membuka modal
+              Catatan, bukan tab atau halaman baru.
+              `detailLocked` sudah mencakup cabang belum dipilih
+              (pusatLocked), mode aggregate (storeLocked), dan scope
+              toko yang belum pasti. Jadi Central di aggregate atau
+              sebelum memilih cabang tidak melihat tombol ini
+              sama sekali, dan component-nya tidak melakukan
+              request apa pun. */}
+          {!detailLocked && (
+            <MonitoringErrorNotes
+              storeId={activeStoreId}
+              periode={periode}
+              periodeLabel={monthLabel}
+              storeLabel={notesStoreLabel}
+              isStore={isStore}
+              canWrite={isCentral}
+              getIdToken={async () => {
+                if (!user) {
+                  throw new Error(
+                    "Sesi berakhir. Silakan login kembali.",
+                  )
+                }
+                return user.getIdToken()
+              }}
+              showToast={showToast}
             />
           )}
         </div>
