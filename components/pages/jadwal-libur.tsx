@@ -861,6 +861,13 @@ export function JadwalLiburPage() {
   const kegiatan = keterangan.filter(
     (k) => k.jenis === "kegiatan",
   )
+  // Keterangan per tanggal sudah tersedia di data (dan sudah
+  // tampil di sel kalender halaman web). Semuanya ikut dikirim
+  // ke PDF sebagai section KETERANGAN TANGGAL — tanpa perubahan
+  // data source/API.
+  const catatanTanggal = keterangan.filter(
+    (k) => k.jenis === "tanggal",
+  )
   const operasional = buildOperasionalItems(data)
 
   // ==========================================================
@@ -901,6 +908,13 @@ export function JadwalLiburPage() {
           id: item.id,
           teks: item.teks,
         })),
+        catatanTanggal: catatanTanggal.map(
+          (item) => ({
+            id: item.id,
+            teks: item.teks,
+            tanggal: item.tanggal,
+          }),
+        ),
         operasional: operasional.map((item) => ({
           id: item.id,
           teks: item.teks,

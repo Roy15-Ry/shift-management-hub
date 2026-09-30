@@ -42,6 +42,10 @@ export type PdfJadwalLiburSchedule = {
 export type PdfJadwalLiburTextItem = {
   id: string
   teks: string
+  // Tanggal ISO (YYYY-MM-DD) bila item memang punya tanggal.
+  // Opsional: dipakai untuk memetakan keterangan ke cell tanggal
+  // yang tepat pada kalender halaman 1.
+  tanggal?: string
 }
 
 export type GenerateJadwalLiburPdfInput = {
@@ -57,6 +61,10 @@ export type GenerateJadwalLiburPdfInput = {
   schedulesByStore: Record<string, PdfJadwalLiburSchedule[]>
   // Keterangan jenis "kegiatan" (teks apa adanya).
   kegiatan: PdfJadwalLiburTextItem[]
+  // Keterangan jenis "tanggal" (teks apa adanya + tanggal ISO).
+  // Dimasukkan ke CELL tanggalnya pada kalender halaman 1 —
+  // TIDAK menjadi section/daftar di halaman 2.
+  catatanTanggal: PdfJadwalLiburTextItem[]
   // Hasil buildOperasionalItems(data) — manual + otomatis cuti.
   operasional: PdfJadwalLiburTextItem[]
   filename: string
@@ -196,15 +204,30 @@ function approximateTextWidth(text: string, fontSizePt: number) {
 // memotong/menyingkat isi — memecah kata sebelum terlalu panjang,
 // dan fallback paksa per-karakter hanya untuk kata tanpa spasi
 // yang melebihi lebar pill.
-function splitTextLines(text: string, maxWidthMm: number, fontSizePt: number): string[] {
-  if (approximateTextWidth(text, fontSizePt) <= maxWidthMm) return [text]
+//
+// Parameter `measure` opsional memungkinkan pengukuran lebar
+// memakai sumber yang lebih akurat (mis. jsPDF doc.getTextWidth
+// untuk teks halaman 2). Bila tidak diisi, dipakai estimasi
+// perkiraan yang lama agar perilaku halaman 1 (pill kalender)
+// TIDAK berubah.
+function splitTextLines(
+  text: string,
+  maxWidthMm: number,
+  fontSizePt: number,
+  measure?: (value: string) => number,
+): string[] {
+  const widthOf =
+    measure ??
+    ((value: string) =>
+      approximateTextWidth(value, fontSizePt))
+  if (widthOf(text) <= maxWidthMm) return [text]
   const words = text.split(/\s+/)
   const lines: string[] = []
   let current = ""
   for (const word of words) {
-    if (approximateTextWidth(word, fontSizePt) <= maxWidthMm) {
+    if (widthOf(word) <= maxWidthMm) {
       const candidate = current ? `${current} ${word}` : word
-      if (approximateTextWidth(candidate, fontSizePt) <= maxWidthMm) {
+      if (widthOf(candidate) <= maxWidthMm) {
         current = candidate
       } else {
         if (current) lines.push(current)
@@ -215,7 +238,7 @@ function splitTextLines(text: string, maxWidthMm: number, fontSizePt: number): s
       current = ""
       let chunk = ""
       for (const char of word) {
-        if (approximateTextWidth(chunk + char, fontSizePt) > maxWidthMm) {
+        if (widthOf(chunk + char) > maxWidthMm) {
           if (chunk) lines.push(chunk)
           chunk = char
         } else {
@@ -258,6 +281,10 @@ function drawTitleBlock(doc: jsPDF, input: GenerateJadwalLiburPdfInput) {
 type DayPill = {
   text: string
   storeColor: RGB
+  // "note" = keterangan per tanggal (jenis "tanggal"). Dirender
+  // sebagai pill HITAM dengan teks PUTIH, sama seperti kalender
+  // web. Absent = pill karyawan (warna toko, teks hitam).
+  variant?: "note"
 }
 
 function buildDayEntries(
@@ -273,6 +300,27 @@ function buildDayEntries(
   }
 
   const entries = new Map<string, DayPill[]>()
+
+  // Keterangan per tanggal (jenis "tanggal") masuk ke CELL tanggalnya
+  // sendiri, ditampilkan DI ATAS pill karyawan — mengikuti urutan
+  // kalender web. Satu tanggal boleh memiliki lebih dari satu
+  // keterangan; semuanya ditumpuk vertikal di cell tersebut.
+  //
+  // Keterangan tanpa tanggal atau tanpa teks diabaikan. Keterangan
+  // bertanggal di luar bulan ini juga otomatis tidak tampil karena
+  // hanya tanggal dalam bulan aktif yang dicari saat menggambar.
+  for (const note of input.catatanTanggal ?? []) {
+    const tanggal = (note.tanggal ?? "").trim()
+    const text = (note.teks ?? "").trim()
+    if (!tanggal || !text) continue
+    const list = entries.get(tanggal) ?? []
+    list.push({
+      text,
+      storeColor: COLOR_BLACK,
+      variant: "note",
+    })
+    entries.set(tanggal, list)
+  }
 
   input.stores.forEach((store, index) => {
     const storeColor = STORE_HEX_RGB[index % STORE_HEX_RGB.length]
@@ -311,16 +359,23 @@ function drawPill(
   width: number,
   lines: string[],
   color: RGB,
+  variant?: "note",
 ): number {
+  const isNote = variant === "note"
+  const fill = isNote ? COLOR_BLACK : color
+  const text = isNote ? COLOR_WHITE : COLOR_BLACK
+
   const height = pillHeight(lines)
-  doc.setFillColor(color[0], color[1], color[2])
+  doc.setFillColor(fill[0], fill[1], fill[2])
   doc.roundedRect(x, y, width, height, 0.8, 0.8, "F")
 
-  // Font nama: HITAM, BOLD, CENTER per baris. Warna store hanya
+  // Font nama: BOLD, CENTER per baris. Warna store hanya
   // untuk background pill — teks tidak pernah memakai warna store.
+  // Keterangan per tanggal: background hitam, teks putih (meniru
+  // kalender web).
   doc.setFont("helvetica", "bold")
   doc.setFontSize(NAME_FONT_SIZE)
-  doc.setTextColor(COLOR_BLACK[0], COLOR_BLACK[1], COLOR_BLACK[2])
+  doc.setTextColor(text[0], text[1], text[2])
 
   // SELURUH BLOK TEKS di-center secara vertikal di dalam pill
   // (bukan per baris). Hitung dulu tinggi visual blok (ascent
@@ -426,11 +481,20 @@ function drawCalendar(
       doc.setTextColor(NAVY[0], NAVY[1], NAVY[2])
       doc.text(String(day), cellX + 1.5, cellY + 3)
 
-      // Pill karyawan — SEMUA nama ditampilkan, tanpa batas.
+      // Keterangan tanggal (pill hitam) lalu pill karyawan —
+      // SEMUA ditampilkan, tanpa batas.
       let py = cellY + CONTENT_TOP
       for (const pill of pills) {
         const lines = splitTextLines(pill.text, maxTextWidth, NAME_FONT_SIZE)
-        py += drawPill(doc, cellX + 1, py, CELL_W - 2, lines, pill.storeColor)
+        py += drawPill(
+          doc,
+          cellX + 1,
+          py,
+          CELL_W - 2,
+          lines,
+          pill.storeColor,
+          pill.variant,
+        )
         py += PILL_GAP
       }
     })
@@ -493,6 +557,98 @@ function estimateLegendHeight(stores: PdfJadwalLiburStore[]): number {
 // ------------------------------------------------------------
 // SECTION HALAMAN 2 (header merah rounded + teks langsung)
 // ------------------------------------------------------------
+//
+// Satu item = satu blok. Logical line (baris yang dipisahkan
+// newline di dalam satu item) TIDAK pernah digabung dengan logical
+// line lain; setiap logical line di-wrap sendiri. Baris hasil
+// wrapping di-indent agar jelas masih bagian entry yang sama, dan
+// jarak antar logical line serta antar item dibedakan supaya entry
+// tidak terlihat berdempetan.
+//
+// Lebar wrap memakai jsPDF getTextWidth (lebar glyph sebenarnya),
+// dikurangi indent baris lanjutan agar tidak pernah melewati tepi
+// kanan halaman.
+
+const SECTION_FONT_SIZE = 9
+const SECTION_LINE_H = 4.6
+const SECTION_LOGICAL_GAP = 1.2
+const SECTION_ITEM_GAP = 1.6
+const SECTION_HEADER_H = 8
+const SECTION_HEADER_BODY_GAP = 4
+const SECTION_CONTENT_X = CAL_LEFT + 2
+const SECTION_CONTINUE_INDENT = 6
+const SECTION_WRAP_WIDTH =
+  CAL_WIDTH - 4 - SECTION_CONTINUE_INDENT
+const SECTION_MAX_Y = PAGE_HEIGHT - MARGIN_BOTTOM
+const SECTION_CONTINUE_TOP = MARGIN_TOP + 2
+
+// Pecah satu item menjadi daftar logical line, lalu wrap tiap
+// logical line secara terpisah. Urutan logical line dipertahankan
+// dan tidak pernah digabung. Baris kosong (enter kosong) tetap
+// disimpan agar jarak yang diketik user tidak hilang.
+function splitLogicalLines(
+  doc: jsPDF,
+  text: string,
+): string[][] {
+  return String(text ?? "")
+    .split(/\r\n|\r|\n/)
+    .map((line) =>
+      splitTextLines(
+        line,
+        SECTION_WRAP_WIDTH,
+        SECTION_FONT_SIZE,
+        (value) => doc.getTextWidth(value),
+      ),
+    )
+}
+
+// Gaya teks isi section. Dipanggil ulang setiap kali header
+// digambar ulang (lanjutkan ke halaman baru) karena header
+// mengubah font/warna.
+function applySectionBodyStyle(doc: jsPDF) {
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(SECTION_FONT_SIZE)
+  doc.setTextColor(
+    COLOR_BLACK[0],
+    COLOR_BLACK[1],
+    COLOR_BLACK[2],
+  )
+}
+
+// Gambar header section dan kembalikan Y awal isi section.
+function drawSectionHeader(
+  doc: jsPDF,
+  title: string,
+  topY: number,
+): number {
+  doc.setFillColor(RED[0], RED[1], RED[2])
+  doc.roundedRect(
+    CAL_LEFT,
+    topY,
+    CAL_WIDTH,
+    SECTION_HEADER_H,
+    1.6,
+    1.6,
+    "F",
+  )
+  doc.setTextColor(
+    COLOR_WHITE[0],
+    COLOR_WHITE[1],
+    COLOR_WHITE[2],
+  )
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
+  doc.text(
+    title,
+    PAGE_WIDTH / 2,
+    topY + SECTION_HEADER_H / 2,
+    {
+      align: "center",
+      baseline: "middle",
+    },
+  )
+  return topY + SECTION_HEADER_H + SECTION_HEADER_BODY_GAP
+}
 
 function drawSection(
   doc: jsPDF,
@@ -501,48 +657,74 @@ function drawSection(
   startY: number,
   emptyText: string,
 ): number {
-  if (startY + 12 > PAGE_HEIGHT - MARGIN_BOTTOM) {
+  let y = startY
+
+  // Header + minimal satu baris isi harus muat; kalau tidak,
+  // section dimulai di halaman baru.
+  if (
+    y + SECTION_HEADER_H + SECTION_HEADER_BODY_GAP >
+    SECTION_MAX_Y
+  ) {
     doc.addPage()
-    startY = MARGIN_TOP + 2
+    y = SECTION_CONTINUE_TOP
   }
 
-  const headerH = 8
-  doc.setFillColor(RED[0], RED[1], RED[2])
-  doc.roundedRect(CAL_LEFT, startY, CAL_WIDTH, headerH, 1.6, 1.6, "F")
-  doc.setTextColor(COLOR_WHITE[0], COLOR_WHITE[1], COLOR_WHITE[2])
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10)
-  doc.text(title, PAGE_WIDTH / 2, startY + headerH / 2, {
-    align: "center",
-    baseline: "middle",
-  })
-
-  let y = startY + headerH + 4
+  y = drawSectionHeader(doc, title, y)
 
   if (items.length === 0) {
     doc.setFont("helvetica", "italic")
     doc.setFontSize(7.5)
-    doc.setTextColor(GRAY_TEXT[0], GRAY_TEXT[1], GRAY_TEXT[2])
-    doc.text(emptyText, CAL_LEFT + 2, y)
+    doc.setTextColor(
+      GRAY_TEXT[0],
+      GRAY_TEXT[1],
+      GRAY_TEXT[2],
+    )
+    doc.text(emptyText, SECTION_CONTENT_X, y)
     return y + 5
   }
 
   // Data langsung berupa teks — tanpa NO, ISIAN, cell, border,
   // garis horizontal, maupun tabel.
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(9)
-  doc.setTextColor(COLOR_BLACK[0], COLOR_BLACK[1], COLOR_BLACK[2])
+  applySectionBodyStyle(doc)
 
   for (const item of items) {
-    const lines = splitTextLines(item.teks, CAL_WIDTH - 4, 9)
-    for (const line of lines) {
-      if (y > PAGE_HEIGHT - MARGIN_BOTTOM) {
-        doc.addPage()
-        y = MARGIN_TOP + 2
-      }
-      doc.text(line, CAL_LEFT + 2, y)
-      y += 6
-    }
+    const logicalLines = splitLogicalLines(doc, item.teks)
+
+    logicalLines.forEach(
+      (wrappedLines, logicalIndex) => {
+        wrappedLines.forEach((line, lineIndex) => {
+          if (line.trim() === "") {
+            y += SECTION_LINE_H
+            return
+          }
+
+          if (y > SECTION_MAX_Y) {
+            // Lanjutkan ke halaman baru; header section diulang
+            // supaya judul tidak hilang dan isi tidak menabrak
+            // section lain.
+            doc.addPage()
+            y = drawSectionHeader(
+              doc,
+              title,
+              SECTION_CONTINUE_TOP,
+            )
+            applySectionBodyStyle(doc)
+          }
+
+          const x =
+            SECTION_CONTENT_X +
+            (lineIndex === 0 ? 0 : SECTION_CONTINUE_INDENT)
+          doc.text(line, x, y)
+          y += SECTION_LINE_H
+        })
+
+        if (logicalIndex < logicalLines.length - 1) {
+          y += SECTION_LOGICAL_GAP
+        }
+      },
+    )
+
+    y += SECTION_ITEM_GAP
   }
 
   return y
