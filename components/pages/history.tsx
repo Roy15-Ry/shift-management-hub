@@ -4,6 +4,7 @@ import * as React from "react"
 import { ChevronLeft, ChevronRight, ClipboardList, History as HistoryIcon } from "lucide-react"
 
 import { useAuth } from "@/components/auth-context"
+import { REVISI_ABSENSI_ENABLED } from "@/components/nav-config"
 import { EmptyState, LoadingState } from "@/components/controls"
 import { Button } from "@/components/ui/button"
 import { RevisiStatusBadge } from "@/components/ui/badge"
@@ -595,6 +596,7 @@ export function HistoryPage() {
       {/* ======================================================
           HISTORY REVISI ABSENSI
       ====================================================== */}
+      {REVISI_ABSENSI_ENABLED && (
       <section className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -648,6 +650,7 @@ export function HistoryPage() {
           </HistoryTable>
         )}
       </section>
+      )}
     </div>
   )
 }

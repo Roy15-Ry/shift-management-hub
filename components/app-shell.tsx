@@ -7,6 +7,7 @@ import {
   type PageKey,
 } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
+import { REVISI_ABSENSI_ENABLED } from "@/components/nav-config"
 import { logoutUser } from "@/lib/auth"
 import { DesktopSidebar, MobileSidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
@@ -54,6 +55,30 @@ function PageContent() {
   if (
     role === "store" &&
     !storeAllowedPages.includes(page)
+  ) {
+    setPage("dashboard")
+    return <DashboardPage />
+  }
+
+  /*
+   * =====================================================
+   * FEATURE LOCK — REVISI ABSENSI
+   * =====================================================
+   *
+   * Page key "revisi" dapat dipulihkan dari localStorage
+   * sehingga menu yang disembunyikan saja tidak cukup untuk
+   * menutup akses halaman.
+   *
+   * Selama feature lock aktif, halaman Revisi tidak pernah
+   * dirender dan user diarahkan ke DASHBOARD memakai
+   * mekanisme navigasi yang sama dengan guard Store di atas.
+   * Mengubah REVISI_ABSENSI_ENABLED menjadi true langsung
+   * mengembalikan halaman ini tanpa perubahan lain.
+   */
+
+  if (
+    !REVISI_ABSENSI_ENABLED &&
+    page === "revisi"
   ) {
     setPage("dashboard")
     return <DashboardPage />

@@ -20,12 +20,41 @@ export type NavItem = {
 
 /*
  * =====================================================
+ * FEATURE LOCK — REVISI ABSENSI
+ * =====================================================
+ *
+ * Satu-satunya konfigurasi status fitur Revisi Absensi.
+ *
+ *   false -> "REVISI ABSENSI" disembunyikan dari navigasi.
+ *   true  -> menu kembali tampil tanpa perubahan kode lain.
+ *
+ * Halaman, API, collection Firestore, rules, dan data lama
+ * tetap utuh. Fitur hanya dinonaktifkan dari penggunaan UI
+ * sehingga dapat diaktifkan kembali kapan saja dengan
+ * mengubah nilai ini menjadi true.
+ */
+
+export const REVISI_ABSENSI_ENABLED = false
+
+/*
+ * Menyaring item menu Revisi Absensi hanya ketika feature
+ * lock aktif. Item lain apa pun tidak tersentuh.
+ */
+
+function hideLockedNavItems(items: NavItem[]): NavItem[] {
+  return REVISI_ABSENSI_ENABLED
+    ? items
+    : items.filter((item) => item.key !== "revisi")
+}
+
+/*
+ * =====================================================
  * MENU CENTRAL
  * =====================================================
  *
  * CENTRAL PUSAT dan CENTRAL CABANG menggunakan menu ini.
  */
-export const CENTRAL_NAV_ITEMS: NavItem[] = [
+export const CENTRAL_NAV_ITEMS: NavItem[] = hideLockedNavItems([
   {
     key: "dashboard",
     label: "DASHBOARD",
@@ -61,7 +90,7 @@ export const CENTRAL_NAV_ITEMS: NavItem[] = [
     label: "JADWAL LIBUR",
     icon: Palmtree,
   },
-]
+])
 
 /*
  * =====================================================
@@ -73,7 +102,7 @@ export const CENTRAL_NAV_ITEMS: NavItem[] = [
  * Untuk sementara Store hanya mendapatkan menu
  * yang memang diperuntukkan untuk Store.
  */
-export const STORE_NAV_ITEMS: NavItem[] = [
+export const STORE_NAV_ITEMS: NavItem[] = hideLockedNavItems([
   {
     key: "dashboard",
     label: "DASHBOARD",
@@ -104,7 +133,7 @@ export const STORE_NAV_ITEMS: NavItem[] = [
     label: "HISTORY",
     icon: History,
   },
-]
+])
 
 /*
  * =====================================================

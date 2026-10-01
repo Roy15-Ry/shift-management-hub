@@ -14,7 +14,10 @@ import {
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
-import { PAGE_TITLES } from "@/components/nav-config"
+import {
+  PAGE_TITLES,
+  REVISI_ABSENSI_ENABLED,
+} from "@/components/nav-config"
 import { getRevisiJenisItem, getStore } from "@/lib/data"
 import { auth, logoutUser } from "@/lib/auth"
 
@@ -39,9 +42,17 @@ export function Header({ onMenu }: { onMenu: () => void }) {
 
   // Store BUKAN penerima notifikasi Revisi Absensi.
   // Notifikasi hanya untuk Central Cabang + Central Pusat.
+  //
+  // FEATURE LOCK: seluruh isi lonceng ini hanya untuk fitur
+  // Revisi Absensi (badge, daftar notifikasi, dan tombol
+  // "Lihat semua revisi"). Lonceng ini tidak dipakai fitur
+  // lain, sehingga ikut dinonaktifkan saat
+  // REVISI_ABSENSI_ENABLED = false. Notifikasi dan tombol
+  // lain di header tidak tersentuh.
   const isCentralNotif =
-    accountRole === "central_cabang" ||
-    accountRole === "central_pusat"
+    REVISI_ABSENSI_ENABLED &&
+    (accountRole === "central_cabang" ||
+      accountRole === "central_pusat")
 
   const accountRoleLabel =
     accountRole === "central_pusat"

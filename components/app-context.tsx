@@ -10,6 +10,7 @@ import {
 
 import { db } from "@/lib/firebase"
 import { useAuth } from "@/components/auth-context"
+import { REVISI_ABSENSI_ENABLED } from "@/components/nav-config"
 
 import type {
   Revisi,
@@ -492,6 +493,26 @@ export function AppProvider({
 
   const refreshRevisi =
     React.useCallback(async () => {
+      /*
+       * ====================================================
+       * FEATURE LOCK — REVISI ABSENSI
+       * ====================================================
+       *
+       * Selama feature lock aktif tidak ada read ke
+       * collection "revisi" karena seluruh UI yang
+       * memakainya sudah dinonaktifkan.
+       *
+       * State, action, dan helper Revisi TIDAK dihapus,
+       * sehingga fitur dapat diaktifkan kembali hanya
+       * dengan REVISI_ABSENSI_ENABLED = true.
+       */
+
+      if (!REVISI_ABSENSI_ENABLED) {
+        setRevisi([])
+        setLoadingRevisi(false)
+        return
+      }
+
       if (authLoading) {
         return
       }
