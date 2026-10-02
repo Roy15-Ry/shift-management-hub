@@ -2146,6 +2146,7 @@ export function AdditionalSellingPage() {
                           <th className="px-3 py-3 font-medium">Toko</th>
                           <th className="px-3 py-3 font-medium">Tim</th>
                           <th className="px-3 py-3 font-medium">Jenis</th>
+                          <th className="px-3 py-3 font-medium">Keterangan</th>
                           <th className="px-3 py-3 font-medium">Detail</th>
                           <th className="px-3 py-3 text-right font-medium">
                             Nilai
@@ -2187,6 +2188,9 @@ export function AdditionalSellingPage() {
                                   <Icon className="size-3.5" />
                                   {JENIS_LABEL[txn.jenis]}
                                 </span>
+                              </td>
+                              <td className="px-3 py-3 text-muted-foreground whitespace-pre-wrap break-words">
+                                {txn.keterangan || "-"}
                               </td>
                               <td className="px-3 py-3 text-muted-foreground">
                                 {detailRealisasi(txn)}
