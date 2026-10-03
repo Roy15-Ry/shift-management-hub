@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { RotateCcw, Store as StoreIcon } from "lucide-react"
+import { BarChart3, RotateCcw, Store as StoreIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
@@ -34,7 +34,36 @@ import { cn } from "@/lib/utils"
 import { DashboardJadwalLibur } from "@/components/pages/dashboard-jadwal-libur"
 
 // ============================================================
-// KETERSEDIAAN EMPLOYEE PER TANGGAL MONITORING
+// ADDITIONAL SELLING TYPES & HELPERS
+// ============================================================
+
+type PenjualanJenis = "ADDITIONAL_SELLING" | "UPSIZE_BOTOL" | "SELLING_EKSKLUSIF_PERFUME"
+
+const JENIS_LABEL: Record<PenjualanJenis, string> = {
+  ADDITIONAL_SELLING: "Additional Selling",
+  UPSIZE_BOTOL: "Upsize Botol",
+  SELLING_EKSKLUSIF_PERFUME: "Selling Eksklusif Perfume",
+}
+
+const JENIS_LIST: PenjualanJenis[] = [
+  "ADDITIONAL_SELLING",
+  "UPSIZE_BOTOL",
+  "SELLING_EKSKLUSIF_PERFUME",
+]
+
+function formatRupiah(value: number): string {
+  const safe = Number.isFinite(value) ? Math.round(value) : 0
+  return `Rp${safe.toLocaleString("id-ID")}`
+}
+
+function formatNilai(jenis: PenjualanJenis, value: number): string {
+  const safe = Number.isFinite(value) ? value : 0
+  return jenis === "ADDITIONAL_SELLING"
+    ? formatRupiah(safe)
+    : `${safe.toLocaleString("id-ID")} PCS`
+}
+
+// ============================================================// KETERSEDIAAN EMPLOYEE PER TANGGAL MONITORING
 //
 // Employee "tersedia" pada suatu tanggal monitoring bila masih
 // AKTIF, atau bila NONAKTIF tetapi tanggalNonaktif-nya belum lewat
@@ -1264,6 +1293,688 @@ export function DashboardPage() {
         <DashboardJadwalLibur />
       )}
 
+      {/* ================================================== */}
+      {/* GRAFIK PENCAPAIAN PROGRAM */}
+      {/* ================================================== */}
+
+      {(isStore ||
+        isCentralCabang ||
+        isCentralPusat) && (
+        <ProgramAchievementBarChart
+          centralPusat={isCentralPusat}
+          cabang={
+            isCentralPusat
+              ? branchFilter
+              : ""
+          }
+        />
+      )}
+
+    </div>
+  )
+}
+
+// ============================================================
+// GRAFIK PENCAPAIAN PROGRAM
+// ============================================================
+//
+// SATU chart, vertical grouped bar, satu toko = satu grup
+// dengan TIGA batang (satu per program).
+//
+// MAKNA BATANG
+//   Batang = REALISASI program pada toko tersebut.
+//   Target TIDAK digambar sebagai batang kedua; target hanya
+//   tersedia pada tooltip. Jadi selalu 3 bar per toko, bukan
+//   6 bar.
+//
+// SATUAN
+//   Additional Selling        -> Rupiah (Rp…)
+//   Upsize Botol              -> PCS
+//   Selling Eksklusif Perfume -> PCS
+//   Unit asli dipertahankan di tooltip. Tidak ada persen
+//   sebagai nilai utama.
+//
+// SKALA TINGGI (INTERNAL, BUKAN DATA)
+//   Tiga program memakai satuan berbeda sehingga tidak dapat
+//   dibandingkan pada satu skala angka. Tinggi bar dihitung
+//   per program dari TARGET terbesar program tersebut, bukan
+//   dari realisasi terbesar: bila scale memakai realisasi,
+//   satu-satunya data non-zero selalu menjadi 100% tinggi.
+//   Ini hanya mekanisme rendering: tidak ada angka yang
+//   ditampilkan, tidak ada field baru, tidak ada write, dan
+//   nilai Target/Realisasi pada tooltip tetap angka asli dari
+//   server.
+//
+// DATA
+//   Satu request ke /api/additional-selling/chart. Server
+//   hanya mengirim storeId, storeName, totalTarget, dan
+//   totalAchievement per program. Tidak ada transaksi,
+//   nama karyawan, atau target individual.
+//
+// PERIODE
+//   Kontrak API month = 0-11, jadi now.getMonth() tanpa +1.
+// ============================================================
+
+type ChartJenis = {
+  totalTarget: number
+  totalAchievement: number
+}
+
+type ChartStore = {
+  storeId: string
+  storeName: string
+  byJenis: Partial<
+    Record<PenjualanJenis, ChartJenis>
+  >
+}
+
+type ChartResponse = {
+  success?: boolean
+  message?: string
+  stores?: ChartStore[]
+}
+
+type ChartSeriesItem = {
+  jenis: PenjualanJenis
+  target: number
+  achievement: number
+}
+
+type ChartRow = {
+  storeId: string
+  storeName: string
+  series: ChartSeriesItem[]
+}
+
+type ChartTip = {
+  left: number
+  top: number
+  storeName: string
+  jenis: PenjualanJenis
+  target: number
+  achievement: number
+}
+
+const CHART_TONE: Record<
+  PenjualanJenis,
+  { fill: string; glow: string }
+> = {
+  ADDITIONAL_SELLING: {
+    fill: "bg-emerald-500",
+    glow: "shadow-emerald-500/45",
+  },
+  UPSIZE_BOTOL: {
+    fill: "bg-blue-500",
+    glow: "shadow-blue-500/45",
+  },
+  SELLING_EKSKLUSIF_PERFUME: {
+    fill: "bg-fuchsia-500",
+    glow: "shadow-fuchsia-500/45",
+  },
+}
+
+// Tinggi bar = REALISASI dibagi SKALA TARGET program, yaitu
+// target terbesar antar toko pada cabang terpilih.
+//
+// Scale memakai TARGET, bukan realisasi terbesar: kalau
+// scale memakai realisasi, satu-satunya data non-zero selalu
+// menjadi 100% dan tinggi bar tidak lagi mewakili pencapaian.
+//
+// Rasio ini murni internal penentuan tinggi. Tidak pernah
+// disimpan dan tidak pernah ditampilkan sebagai angka, jadi
+// satuan tetap Rp / PCS dan tidak ada persentase di UI.
+//
+// Realisasi 0 menghasilkan bar tanpa tinggi. Bar hanya
+// mendapat floor 0.5% agar realisasi non-zero yang sangat
+// kecil masih terlihat.
+function chartBarHeight(
+  value: number,
+  scale: number,
+): number {
+  if (value <= 0 || scale <= 0) {
+    return 0
+  }
+
+  return Math.max(
+    0.5,
+    Math.min(100, (value / scale) * 100),
+  )
+}
+
+function ProgramAchievementBarChart({
+  centralPusat,
+  cabang,
+}: {
+  centralPusat: boolean
+  cabang: string
+}) {
+  const { user } = useAuth()
+
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState("")
+  const [stores, setStores] =
+    React.useState<ChartStore[]>([])
+  const [tip, setTip] =
+    React.useState<ChartTip | null>(null)
+
+  // Central Pusat belum memilih cabang: TIDAK ada request
+  // sama sekali, karena API menolak value "ALL" (mekanisme
+  // existing). Branch selector tidak diubah.
+  const cabangDipilih =
+    !centralPusat ||
+    (!!cabang && cabang !== "all")
+
+  React.useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    if (!cabangDipilih) {
+      setStores([])
+      setTip(null)
+      setError("")
+      setLoading(false)
+      return
+    }
+
+    let mounted = true
+
+    const authedUser = user
+
+    async function fetchChart() {
+      try {
+        setLoading(true)
+        setError("")
+
+        const now = new Date()
+
+        // Kontrak API: month 0-11.
+        const params = new URLSearchParams({
+          year: String(now.getFullYear()),
+          month: String(now.getMonth()),
+        })
+
+        if (centralPusat) {
+          params.set("cabang", cabang)
+        }
+
+        const idToken =
+          await authedUser.getIdToken()
+
+        const response = await fetch(
+          `/api/additional-selling/chart?${params.toString()}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+            cache: "no-store",
+          },
+        )
+
+        const result = (await response
+          .json()
+          .catch(() => null)) as ChartResponse | null
+
+        if (!mounted) {
+          return
+        }
+
+        if (!response.ok || !result?.success) {
+          setStores([])
+          setTip(null)
+          setError(
+            result?.message ||
+              "Gagal memuat data pencapaian program.",
+          )
+          return
+        }
+
+        setStores(
+          Array.isArray(result.stores)
+            ? result.stores
+            : [],
+        )
+      } catch {
+        if (mounted) {
+          setStores([])
+          setError(
+            "Gagal memuat data pencapaian program.",
+          )
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchChart()
+
+    return () => {
+      mounted = false
+    }
+  }, [user, centralPusat, cabang, cabangDipilih])
+
+  // ------------------------------------------------------------
+  // BARIS CHART — langsung dari response chart
+  // ------------------------------------------------------------
+  //
+  // Urutan toko mengikuti urutan server (nama toko A-Z).
+  // Tidak ada sampling dan tidak ada top-N.
+
+  const rows = React.useMemo<ChartRow[]>(() => {
+    return stores.map((store) => ({
+      storeId: store.storeId,
+      storeName: store.storeName || store.storeId,
+      series: JENIS_LIST.map((jenis) => {
+        const cell = store.byJenis?.[jenis]
+
+        return {
+          jenis,
+          target: cell?.totalTarget ?? 0,
+          achievement: cell?.totalAchievement ?? 0,
+        }
+      }),
+    }))
+  }, [stores])
+
+  // Skala visual per program: TARGET terbesar antar toko
+  // pada cabang terpilih. Target hanya dipakai sebagai batas
+  // tinggi bar — sudah tampil di tooltip dan tidak pernah
+  // digambar sebagai batang kedua.
+
+  const scaleByJenis =
+    React.useMemo(() => {
+      const scale: Record<
+        PenjualanJenis,
+        number
+      > = {
+        ADDITIONAL_SELLING: 0,
+        UPSIZE_BOTOL: 0,
+        SELLING_EKSKLUSIF_PERFUME: 0,
+      }
+
+      for (const row of rows) {
+        for (const item of row.series) {
+          scale[item.jenis] = Math.max(
+            scale[item.jenis],
+            item.target,
+          )
+        }
+      }
+
+      return scale
+    }, [rows])
+
+  // ------------------------------------------------------------
+  // RANKING REALISASI — TOP 5 PER PROGRAM
+  // ------------------------------------------------------------
+  //
+  // Diturunkan dari state `stores` yang sama persis dengan bar
+  // chart di atas. Tanpa fetch, query, collection, atau field
+  // tambahan, sehingga jumlah request browser dan read Firestore
+  // tidak berubah sama sekali.
+  //
+  // Yang diurutkan hanya `totalAchievement` (realisasi).
+  // `totalTarget` tidak dipakai, jadi panel ini tidak pernah
+  // menampilkan persentase, progress, atau perbandingan
+  // gabungan antar program.
+  //
+  // `stores` sudah diurutkan A-Z oleh server dan `sort` di bawah
+  // stabil, sehingga realisasi yang sama otomatis mengikuti
+  // urutan A-Z tersebut. Tidak ada tie-break acak.
+  //
+  // Array `stores` asli tidak dimutasi: map -> filter -> sort
+  // -> slice menghasilkan array baru per program.
+
+  const rankingByJenis =
+    React.useMemo(
+      () =>
+        JENIS_LIST.map((jenis) => ({
+          jenis,
+          items: stores
+            .map((store) => ({
+              storeId: store.storeId,
+              storeName: store.storeName,
+              achievement:
+                store.byJenis?.[jenis]
+                  ?.totalAchievement ?? 0,
+            }))
+            .filter((item) => item.achievement > 0)
+            .sort(
+              (a, b) =>
+                b.achievement - a.achievement,
+            )
+            .slice(0, 5),
+        })),
+      [stores],
+    )
+
+  function showTip(
+    event: React.SyntheticEvent<HTMLElement>,
+    storeName: string,
+    item: ChartSeriesItem,
+  ) {
+    const rect =
+      event.currentTarget.getBoundingClientRect()
+
+    setTip({
+      left: rect.left + rect.width / 2,
+      top: rect.top,
+      storeName,
+      jenis: item.jenis,
+      target: item.target,
+      achievement: item.achievement,
+    })
+  }
+
+  const empty = rows.length === 0
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-sm">
+
+      {/* HEADER */}
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/5 text-zinc-200 ring-1 ring-inset ring-white/10">
+          <BarChart3 className="size-5" />
+        </span>
+
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight text-zinc-100">
+            Grafik Pencapaian Per Program
+          </h2>
+          <p className="text-xs text-zinc-400">
+            Target dan realisasi per program, antar toko
+          </p>
+        </div>
+      </div>
+
+      {/* LEGEND */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {JENIS_LIST.map((jenis) => (
+          <span
+            key={jenis}
+            className="inline-flex items-center gap-2 text-[11px] font-medium text-zinc-300"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-2.5 w-2.5 shrink-0 rounded-[3px]",
+                CHART_TONE[jenis].fill,
+              )}
+            />
+            {JENIS_LABEL[jenis]}
+          </span>
+        ))}
+      </div>
+
+      {/* BODY */}
+      {loading && (
+        <div className="flex items-center justify-center rounded-xl border border-white/5 bg-white/[0.02] py-16 text-sm text-zinc-400">
+          Memuat data pencapaian program...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300">
+          {error}
+        </div>
+      )}
+
+      {!loading &&
+        !error &&
+        empty &&
+        !cabangDipilih && (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-14 text-center">
+          <div className="flex size-11 items-center justify-center rounded-full bg-white/5 text-zinc-400">
+            <BarChart3 className="size-5" />
+          </div>
+          <p className="text-sm font-semibold text-zinc-200">
+            Pilih cabang terlebih dahulu
+          </p>
+          <p className="max-w-sm text-sm text-zinc-400">
+            Grafik menampilkan toko pada
+            cabang yang dipilih.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && empty && cabangDipilih && (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-14 text-center">
+          <div className="flex size-11 items-center justify-center rounded-full bg-white/5 text-zinc-400">
+            <StoreIcon className="size-5" />
+          </div>
+          <p className="text-sm font-semibold text-zinc-200">
+            Belum ada toko
+          </p>
+          <p className="max-w-sm text-sm text-zinc-400">
+            Cakupan ini belum memiliki toko.
+            Hubungi admin untuk menambahkan
+            toko.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && !empty && (
+        <div className="grid gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
+          {/* Scroll horizontal DIBATAS di area plot,
+              halaman tidak pernah overflow horizontal. */}
+          <div
+            className="w-full min-w-0 overflow-x-auto"
+            onScroll={() => setTip(null)}
+          >
+            <div className="min-w-max">
+              {/* BATANG + GRID */}
+              <div className="relative flex h-72 items-stretch gap-3">
+                {/* Grid horizontal subtle — tanpa
+                    label angka karena satuan antar
+                    program berbeda. */}
+                {[25, 50, 75, 100].map((tick) => (
+                  <div
+                    key={tick}
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-white/5"
+                    style={{
+                      bottom: `${tick}%`,
+                    }}
+                  />
+                ))}
+
+                {/* Garis dasar */}
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-white/10"
+                />
+
+                {rows.map((row) => (
+                  <div
+                    key={row.storeId}
+                    className="group/store relative flex w-[76px] shrink-0 flex-col justify-end"
+                  >
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 rounded-lg transition-colors duration-200 group-hover/store:bg-white/[0.04]"
+                    />
+
+                    <div className="absolute inset-0 flex items-end justify-center gap-1 px-1.5">
+                      {row.series.map((item) => {
+                        const tone =
+                          CHART_TONE[item.jenis]
+
+                        const tinggi =
+                          chartBarHeight(
+                            item.achievement,
+                            scaleByJenis[item.jenis],
+                          )
+
+                        return (
+                          <div
+                            key={item.jenis}
+                            tabIndex={0}
+                            aria-label={`${row.storeName} — ${JENIS_LABEL[item.jenis]}. Target ${formatNilai(item.jenis, item.target)}. Realisasi ${formatNilai(item.jenis, item.achievement)}`}
+                            className={cn(
+                              "w-full max-w-[20px] shrink-0 cursor-default rounded-t-[4px] outline-none",
+                              "transition-[filter,opacity] duration-200",
+                              "hover:brightness-110 focus-visible:brightness-110",
+                              tone.fill,
+                              tone.glow,
+                            )}
+                            style={{
+                              height: `${tinggi}%`,
+                            }}
+                            onMouseEnter={(
+                              event,
+                            ) =>
+                              showTip(
+                                event,
+                                row.storeName,
+                                item,
+                              )
+                            }
+                            onFocus={(event) =>
+                              showTip(
+                                event,
+                                row.storeName,
+                                item,
+                              )
+                            }
+                            onMouseLeave={() =>
+                              setTip(null)
+                            }
+                            onBlur={() =>
+                              setTip(null)
+                            }
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* SUMBU X — nama toko, lebar kolom sama
+                  dengan batang di atas. */}
+              <div className="mt-2 flex gap-3">
+                {rows.map((row) => (
+                  <p
+                    key={row.storeId}
+                    className="w-[76px] shrink-0 truncate text-center text-[10px] text-zinc-400"
+                    title={row.storeName}
+                  >
+                    {row.storeName}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* RANKING REALISASI — TOP 5 PER PROGRAM.
+              Di kanan chart pada xl+, di bawah chart pada
+              layar lebih kecil. Broker perubahan tinggi bar,
+              tooltip, dan gridline. */}
+          <aside className="min-w-0 border-t border-white/5 pt-4 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-100">
+              Ranking Pencapaian Tertinggi
+            </h3>
+
+            <div className="mt-3 space-y-4">
+              {rankingByJenis.map((group) => (
+                <section key={group.jenis}>
+                  <div className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-[2px]",
+                        CHART_TONE[group.jenis].fill,
+                      )}
+                    />
+                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                      {JENIS_LABEL[group.jenis]}
+                    </h4>
+                  </div>
+
+                  {group.items.length === 0 ? (
+                    <p className="mt-2 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-2.5 text-[11px] leading-relaxed text-zinc-400">
+                      Belum ada
+                      realisasi pada
+                      program ini.
+                    </p>
+                  ) : (
+                    <ol className="mt-2 space-y-1.5">
+                      {group.items.map(
+                        (item, index) => (
+                          <li
+                            key={item.storeId}
+                            className="flex items-baseline gap-2"
+                          >
+                            <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-zinc-500">
+                              {index + 1}.
+                            </span>
+                            <span
+                              className="min-w-0 flex-1 truncate text-[11px] text-zinc-300"
+                              title={item.storeName}
+                            >
+                              {item.storeName}
+                            </span>
+                            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-100">
+                              {formatNilai(
+                                group.jenis,
+                                item.achievement,
+                              )}
+                            </span>
+                          </li>
+                        ),
+                      )}
+                    </ol>
+                  )}
+                </section>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* TOOLTIP — Target dan Realisasi dalam satuan
+          asli. */}
+      {tip && (
+        <div
+          role="tooltip"
+          style={{
+            left: tip.left,
+            top: tip.top,
+          }}
+          className="pointer-events-none fixed z-50 w-max max-w-56 -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 shadow-xl"
+        >
+          <p className="text-xs font-semibold text-zinc-100">
+            {tip.storeName}
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-400">
+            {JENIS_LABEL[tip.jenis]}
+          </p>
+
+          <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
+            <p className="text-[11px] text-zinc-400">
+              Target:{" "}
+              <span className="font-semibold tabular-nums text-zinc-100">
+                {formatNilai(
+                  tip.jenis,
+                  tip.target,
+                )}
+              </span>
+            </p>
+            <p className="text-[11px] text-zinc-400">
+              Realisasi:{" "}
+              <span className="font-semibold tabular-nums text-zinc-100">
+                {formatNilai(
+                  tip.jenis,
+                  tip.achievement,
+                )}
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
