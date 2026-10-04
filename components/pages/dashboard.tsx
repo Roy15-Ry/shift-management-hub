@@ -1077,17 +1077,9 @@ export function DashboardPage() {
 
                         <div>
 
-                          <p className="text-sm font-semibold leading-tight">
+                          <p className="text-base font-semibold leading-tight">
                             {
                               store.nama
-                            }
-                          </p>
-
-                          <p className="text-xs text-muted-foreground">
-                            {
-                              formatTanggal(
-                                date,
-                              )
                             }
                           </p>
 
