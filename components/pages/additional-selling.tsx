@@ -1302,7 +1302,13 @@ export function AdditionalSellingPage() {
         )
       }
 
-      setFormOpen(false)
+      if (isEdit) {
+        setFormOpen(false)
+      } else {
+        setFormMode("add")
+        setForm(emptyFormState())
+        setFormError("")
+      }
 
       showToast(
         "success",
