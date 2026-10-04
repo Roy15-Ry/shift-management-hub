@@ -169,6 +169,14 @@ function Shell() {
             <PageContent />
           </div>
         </main>
+
+        <footer className="px-4 py-3 md:px-6">
+          <p
+            className="max-w-[1400px] text-xs text-muted-foreground"
+          >
+            © 2026 Roy15-Ry - Shift Management. All Rights Reserved.
+          </p>
+        </footer>
       </div>
 
       <Modal
