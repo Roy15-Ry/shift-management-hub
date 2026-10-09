@@ -7,6 +7,7 @@ import {
   ChartPie,
   ChevronLeft,
   ChevronRight,
+  Download,
   HandCoins,
   Layers,
   Package,
@@ -35,6 +36,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
 import { AdditionalSellingNotes } from "@/components/additional-selling-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
+import { exportTargetPenjualanHistory } from "@/lib/export-excel"
 import type {
   FirestoreEmployee,
 } from "@/lib/firestore-data"
@@ -1030,6 +1032,8 @@ export function AdditionalSellingPage() {
   function summaryOf(jenis: PenjualanJenis): AddSellJenisSummary {
     return summaryByJenis[jenis] ?? EMPTY_JENIS_SUMMARY
   }
+  const transactions = data?.transactions ?? []
+
 
   // ----------------------------------------------------------
   // HISTORY — FILTER LOKAL
@@ -1045,7 +1049,55 @@ export function AdditionalSellingPage() {
     setTimFilter("all")
   }, [period.year, period.month, cabangFilter])
 
-  const transactions = data?.transactions ?? []
+  const [exporting, setExporting] = React.useState(false)
+
+  function handleExportExcel() {
+    if (exporting) return
+    if (transactions.length === 0) {
+      showToast("error", "Tidak ada data", "Tidak ada transaksi pada periode ini untuk diekspor.")
+      return
+    }
+
+    try {
+      setExporting(true)
+      const rows = transactions
+        .slice()
+        .sort((a, b) => {
+          if (a.tanggal !== b.tanggal) return a.tanggal.localeCompare(b.tanggal)
+          return (a.createdAt || "").localeCompare(b.createdAt || "")
+        })
+        .map((txn) => {
+          const nilai = txn.jenis === "ADDITIONAL_SELLING"
+            ? (Number(txn.nominal) || 0)
+            : (Number(txn.pcs) || 0)
+          return {
+            Tanggal: txn.tanggal,
+            Toko: txn.storeName || "-",
+            Tim: txn.employeeName || "-",
+            Jenis: JENIS_LABEL[txn.jenis] || txn.jenis,
+            Keterangan: txn.keterangan || "-",
+            Detail: detailRealisasi(txn) || "-",
+            Nilai: nilai,
+          }
+        })
+
+      exportTargetPenjualanHistory({
+        rows,
+        periodeLabel: monthLabel,
+        storeName:
+          profile?.namaStore ||
+          selectedStoreName ||
+          detailStoreName ||
+          transactions[0]?.storeName ||
+          "Toko",
+      })
+    } catch (err) {
+      console.error(err)
+      showToast("error", "Gagal mengekspor", "Terjadi kesalahan saat mengekspor Excel.")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const tanggalOptions = React.useMemo(
     () =>
@@ -2036,7 +2088,7 @@ export function AdditionalSellingPage() {
           {!loading && !error && (
             <div className="space-y-4">
               {/* FILTER */}
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <SelectField
                   value={jenisFilter}
                   onChange={setJenisFilter}
@@ -2082,6 +2134,18 @@ export function AdditionalSellingPage() {
                     className="w-full"
                   >
                     Reset Filter
+                  </Button>
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleExportExcel}
+                    disabled={exporting || transactions.length === 0}
+                    className="w-full gap-1.5 whitespace-nowrap"
+                  >
+                    <Download className="size-4 shrink-0" />
+                    {exporting ? "Mengekspor..." : "Export Excel"}
                   </Button>
                 </div>
               </div>
@@ -4366,3 +4430,4 @@ function StatCard({
     </div>
   )
 }
+

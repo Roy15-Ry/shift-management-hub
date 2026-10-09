@@ -6,6 +6,7 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   Layers,
   MapPin,
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
 import { MonitoringErrorNotes } from "@/components/monitoring-error-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
+import { exportMonitoringErrorHistory } from "@/lib/export-excel"
 import type { FirestoreEmployee } from "@/lib/firestore-data"
 import {
   MONITORING_ERROR_JENIS_LABEL,
@@ -2146,6 +2148,30 @@ export function MonitoringErrorPage() {
       ? r.keteranganManual
       : r.keterangan
 
+  function handleExportExcel() {
+    try {
+      exportMonitoringErrorHistory({
+        rows: records.map((record) => ({
+          Tanggal: formatTanggal(record.tanggal),
+          Karyawan: record.employeeName || "-",
+          "Jenis Error": MONITORING_ERROR_JENIS_LABEL[record.jenisError],
+          Keterangan: showKeterangan(record) || "-",
+        })),
+        periodeLabel: monthLabel,
+        storeName: isStore
+          ? profile?.namaStore || records[0]?.storeName || profile?.storeId || "Toko"
+          : detailStoreName || records[0]?.storeName || activeStoreId || "Toko",
+      })
+    } catch (exportError) {
+      console.error("Gagal mengekspor Monitoring Error:", exportError)
+      showToast(
+        "error",
+        "Gagal mengekspor",
+        "Terjadi kesalahan saat mengekspor Excel.",
+      )
+    }
+  }
+
   // ----------------------------------------------------------
   // NAMA CABANG UNTUK TAMPILAN SAJA
   //
@@ -2769,15 +2795,27 @@ export function MonitoringErrorPage() {
                 />
 
                 <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={resetFilters}
-                    disabled={!hasFilter}
-                    className="w-full"
-                  >
-                    Reset Filter
-                  </Button>
+                  <div className="flex w-full gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={resetFilters}
+                      disabled={!hasFilter}
+                      className="flex-1"
+                    >
+                      Reset Filter
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleExportExcel}
+                      disabled={records.length === 0}
+                      className="flex-1 gap-1.5 whitespace-nowrap"
+                    >
+                      <Download className="size-4 shrink-0" />
+                      Export Excel
+                    </Button>
+                  </div>
                 </div>
               </div>
 

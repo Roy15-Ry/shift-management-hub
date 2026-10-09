@@ -174,7 +174,7 @@ function Shell() {
           <p
             className="max-w-[1400px] text-xs text-muted-foreground"
           >
-            © 2026 Roy15-Ry - Shift Management. All Rights Reserved.
+            © 2026 - Shift Management. All Rights Reserved.
           </p>
         </footer>
       </div>
