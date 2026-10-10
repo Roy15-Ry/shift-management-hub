@@ -18,3 +18,5 @@ node_modules
 .DS_Store
 shift-management-hub-firebase-adminsdk-*.json
 .env.local
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
