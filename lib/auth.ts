@@ -35,9 +35,20 @@ export const auth: Auth = initializeAuth(
 // USER PROFILE
 // ============================================================
 
+type UserProfile = {
+    id: string
+    nama?: string
+    email?: string
+    role?: string
+    cabangId?: string
+    storeId?: string
+    namaStore?: string
+    aktif?: boolean
+}
+
 export async function getUserProfile(
     uid: string,
-) {
+): Promise<UserProfile | null> {
     const userRef = doc(
         db,
         "users",

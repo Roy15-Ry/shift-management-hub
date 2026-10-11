@@ -207,7 +207,7 @@ export async function GET(
     const storesSnapshot =
       await storesRef.get()
 
-    let stores = storesSnapshot.docs.map((doc) => {
+    const scopedStores = storesSnapshot.docs.map((doc) => {
       const data = doc.data()
 
       return {
@@ -227,6 +227,7 @@ export async function GET(
           data.aktif !== false,
       }
     })
+    let stores = scopedStores
 
     // Filter menurut scope role.
     if (allowedCabang !== null) {
@@ -270,6 +271,20 @@ export async function GET(
     // =====================================================
 
     if (storesOnly === "1") {
+      const requestedStoreNames = new Set(
+        (url.searchParams.get("storeIds") ?? "")
+          .split(",")
+          .map(normalize)
+          .filter(Boolean),
+      )
+      const storeNames = scopedStores
+        .filter((store) =>
+          requestedStoreNames.has(normalize(store.id)) &&
+          (!requestedCabangId || store.cabangId === requestedCabangId) &&
+          (!requestedStoreId || store.id === requestedStoreId),
+        )
+        .map(({ id, nama }) => ({ id, nama }))
+
       return NextResponse.json({
         success: true,
         user: {
@@ -280,6 +295,7 @@ export async function GET(
             normalize(user.storeId),
         },
         stores,
+        storeNames,
       })
     }
 
@@ -380,6 +396,12 @@ export async function GET(
             status: data.status ?? "",
             cutiJenis:
               data.cutiJenis ?? undefined,
+            statusKhusus:
+              data.statusKhusus ?? undefined,
+            keterangan:
+              data.keterangan ?? undefined,
+            tokoTujuan:
+              data.tokoTujuan ?? undefined,
           }
         })
 

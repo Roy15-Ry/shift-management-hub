@@ -20,7 +20,14 @@ import type { RekapRow } from "@/lib/rekap-jumlah-masuk"
 // ------------------------------------------------------------
 
 export type PdfEmployee = { id: string; name: string }
-export type PdfStatusResolver = (employeeId: string, tanggal: string) => string | null | undefined
+export type PdfScheduleStatus = {
+  status: string
+  statusKhusus?: string
+  keterangan?: string
+  tokoTujuan?: string
+}
+export type PdfStatusValue = string | PdfScheduleStatus
+export type PdfStatusResolver = (employeeId: string, tanggal: string) => PdfStatusValue | null | undefined
 export type PdfActivityResolver = (row: 1 | 2, tanggal: string) => string
 
 export type PdfRekapRow = Pick<
@@ -153,8 +160,8 @@ function wrapTextLines(text: string, maxWidthMm: number, fontSizePt: number): st
 }
 
 // ------------------------------------------------------------
-// VISUAL STATUS (label/arti TIDAK diubah; perilaku lama untuk
-// STATUS_KHUSUS dan IZIN/SAKIT dipertahankan)
+// VISUAL STATUS (warna status dipertahankan; status khusus tertentu
+// memakai label yang disediakan oleh resolver halaman)
 // ------------------------------------------------------------
 
 type CellVisual = {
@@ -164,19 +171,29 @@ type CellVisual = {
   bold: boolean
 }
 
-function statusVisual(status?: string | null, violetStatusKhusus?: boolean): CellVisual {
+function statusVisual(value?: PdfStatusValue | null, violetStatusKhusus?: boolean): CellVisual {
+  const status = typeof value === "string" ? value : value?.status
   if (!status) {
     return { fill: CELL_EMPTY_FILL, text: CELL_EMPTY_TEXT, label: "-", bold: false }
   }
 
   if (status === STATUS_KHUSUS) {
-    // Perilaku lama dipertahankan per halaman pemanggil:
-    //   shift.tsx     -> "-" dengan background netral (bukan violet)
-    //   buat-jadwal   -> "-" violet
+    const special = typeof value === "string" ? undefined : value
+    const label =
+      special?.statusKhusus === "training"
+        ? "LEARNING"
+        : special?.statusKhusus === "event_kegiatan_perusahaan"
+          ? "EVENT"
+          : special?.statusKhusus === "backup_toko_lain"
+            ? special.tokoTujuan?.trim() || "-"
+            : special?.statusKhusus === "lainnya"
+              ? special.keterangan?.trim() || "-"
+            : "-"
+    // Warna status khusus tetap mengikuti perilaku setiap halaman.
     if (violetStatusKhusus) {
-      return { fill: STATUS_KHUSUS_VISUAL, text: COLOR_WHITE, label: "-", bold: false }
+      return { fill: STATUS_KHUSUS_VISUAL, text: COLOR_BLACK, label, bold: true }
     }
-    return { fill: CELL_EMPTY_FILL, text: CELL_EMPTY_TEXT, label: "-", bold: false }
+    return { fill: CELL_EMPTY_FILL, text: COLOR_BLACK, label, bold: true }
   }
 
   const item = getShiftStatusItem(status)
@@ -293,10 +310,29 @@ function drawShiftBlock(
         const employee = input.employees[data.row.index]
         const day = blockDays[data.column.index - 1]
         const tanggal = getDateKey(input.year, input.month, day)
-        const visual = statusVisual(input.getStatus(employee.id, tanggal), input.violetStatusKhusus)
+        const statusValue = input.getStatus(employee.id, tanggal)
+        const visual = statusVisual(statusValue, input.violetStatusKhusus)
         data.cell.styles.fillColor = visual.fill
         data.cell.styles.textColor = visual.text
         data.cell.styles.fontStyle = visual.bold ? "bold" : "normal"
+        if (
+          typeof statusValue !== "string" &&
+          statusValue?.status === STATUS_KHUSUS &&
+          visual.label !== "-"
+        ) {
+          const previousFont = data.doc.getFont()
+          const previousFontSize = data.doc.getFontSize()
+          data.doc.setFont("helvetica", "bold")
+          data.doc.setFontSize(data.cell.styles.fontSize)
+          const labelWidth = data.doc.getTextWidth(visual.label)
+          data.doc.setFont(previousFont.fontName, previousFont.fontStyle)
+          data.doc.setFontSize(previousFontSize)
+
+          const availableWidth = dateWidth - 2
+          if (labelWidth > availableWidth) {
+            data.cell.styles.fontSize *= availableWidth / labelWidth * 0.96
+          }
+        }
         data.cell.styles.halign = "center"
         data.cell.styles.lineColor = [180, 180, 180]
         data.cell.styles.lineWidth = 0.1

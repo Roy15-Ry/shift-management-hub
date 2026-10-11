@@ -106,6 +106,13 @@ function parseCellValue(
         ? obj.cutiJenis.trim()
         : undefined
 
+    if (
+      obj.cutiJenis != null &&
+      typeof obj.cutiJenis !== "string"
+    ) {
+      return null
+    }
+
     // ==================================================
     // STATUS KHUSUS
     //
@@ -132,6 +139,13 @@ function parseCellValue(
         return null
       }
 
+      if (
+        (obj.keterangan != null && typeof obj.keterangan !== "string") ||
+        (obj.tokoTujuan != null && typeof obj.tokoTujuan !== "string")
+      ) {
+        return null
+      }
+
       const keterangan =
         typeof obj.keterangan ===
           "string" &&
@@ -139,6 +153,13 @@ function parseCellValue(
             ""
           ? obj.keterangan.trim()
           : undefined
+
+      if (
+        statusKhusus === "lainnya" &&
+        !keterangan
+      ) {
+        return null
+      }
 
       const tokoTujuan =
         typeof obj.tokoTujuan ===
@@ -358,6 +379,216 @@ async function getAuthenticatedStore(
     storeId,
     cabangId,
   }
+}
+
+type BackupValidationCell = {
+  employeeId: string
+  tanggal: string
+  parsed: ParsedCell
+}
+
+function normalizeStoreIdentity(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase()
+}
+
+function matchesBackupCellContext(
+  data: FirebaseFirestore.DocumentData | undefined,
+  cell: BackupValidationCell,
+  storeId: string,
+  cabangId: string,
+): boolean {
+  return (
+    data?.storeId === storeId &&
+    data?.cabangId === cabangId &&
+    data?.employeeId === cell.employeeId &&
+    data?.tanggal === cell.tanggal
+  )
+}
+
+async function isUnchangedLegacyBackupWithoutTarget(
+  cell: BackupValidationCell,
+  storeId: string,
+  cabangId: string,
+): Promise<boolean> {
+  async function findCellRecord(collectionName: "schedule_drafts" | "schedules") {
+    const snapshot = await adminDb
+      .collection(collectionName)
+      .where("storeId", "==", storeId)
+      .where("tanggal", "==", cell.tanggal)
+      .get()
+    const matches = snapshot.docs.filter(
+      (document) => document.data()?.employeeId === cell.employeeId,
+    )
+
+    return matches.length === 1
+      ? { data: matches[0].data(), ambiguous: false }
+      : { data: undefined, ambiguous: matches.length > 1 }
+  }
+
+  const draft = await findCellRecord("schedule_drafts")
+  if (draft.ambiguous) return false
+  let effectiveData: FirebaseFirestore.DocumentData | undefined
+
+  // Drafts are visible in the editor only when every queried cell identity
+  // matches the authenticated context. An invalid/stale draft is not the
+  // editor's effective value, so the final schedule remains the fallback.
+  if (matchesBackupCellContext(draft.data, cell, storeId, cabangId)) {
+    effectiveData = draft.data
+  } else {
+    const final = await findCellRecord("schedules")
+    if (final.ambiguous) return false
+    if (matchesBackupCellContext(final.data, cell, storeId, cabangId)) {
+      effectiveData = final.data
+    }
+  }
+
+  return (
+    effectiveData?.status === STATUS_KHUSUS &&
+    effectiveData?.statusKhusus === "backup_toko_lain" &&
+    !String(effectiveData?.tokoTujuan ?? "").trim() &&
+    !cell.parsed.tokoTujuan
+  )
+}
+
+function scheduleCellIdentity(employeeId: string, tanggal: string): string {
+  return JSON.stringify([tanggal, employeeId])
+}
+
+async function resolveScheduleWriteIds(
+  cells: BackupValidationCell[],
+  collectionName: "schedule_drafts" | "schedules",
+  storeId: string,
+  cabangId: string,
+): Promise<{ documentIds: Map<string, string> } | { error: string }> {
+  const documentIds = new Map<string, string>()
+  const recordsByDate = new Map<string, Array<{ id: string; data: FirebaseFirestore.DocumentData }>>()
+
+  for (const tanggal of new Set(cells.map((cell) => cell.tanggal))) {
+    const snapshot = await adminDb
+      .collection(collectionName)
+      .where("storeId", "==", storeId)
+      .where("tanggal", "==", tanggal)
+      .get()
+
+    recordsByDate.set(
+      tanggal,
+      snapshot.docs.map((document) => ({
+        id: document.id,
+        data: document.data(),
+      })),
+    )
+  }
+
+  for (const cell of cells) {
+    const identity = scheduleCellIdentity(cell.employeeId, cell.tanggal)
+    if (documentIds.has(identity)) {
+      return { error: "Request berisi identitas sel jadwal yang berulang." }
+    }
+
+    const matches = (recordsByDate.get(cell.tanggal) ?? []).filter(
+      (record) =>
+        record.data?.storeId === storeId &&
+        record.data?.tanggal === cell.tanggal &&
+        record.data?.employeeId === cell.employeeId,
+    )
+
+    if (matches.length > 1) {
+      return { error: "Lebih dari satu dokumen cocok dengan sel jadwal. Tidak ada data yang disimpan." }
+    }
+
+    if (matches.length === 1 && matches[0].data?.cabangId !== cabangId) {
+      return { error: "Dokumen sel jadwal berada di luar scope cabang akun ini." }
+    }
+
+    documentIds.set(
+      identity,
+      matches[0]?.id ?? scheduleId(storeId, cell.tanggal, cell.employeeId),
+    )
+  }
+
+  return { documentIds }
+}
+
+async function validateScheduleEmployees(
+  cells: BackupValidationCell[],
+  storeId: string,
+): Promise<string | null> {
+  const employeeIds = [...new Set(cells.map((cell) => cell.employeeId))]
+  if (employeeIds.length === 0) return null
+
+  const snapshot = await adminDb
+    .collection("employees")
+    .where("storeId", "==", storeId)
+    .get()
+  const allowedIds = new Set(snapshot.docs.map((doc) => doc.id))
+
+  return employeeIds.every((employeeId) => allowedIds.has(employeeId))
+    ? null
+    : "Satu atau lebih karyawan tidak terdaftar pada toko akun."
+}
+
+async function validateBackupTargets(
+  cells: BackupValidationCell[],
+  storeId: string,
+  cabangId: string,
+): Promise<string | null> {
+  const backupCells = cells.filter(
+    (cell) =>
+      cell.parsed.status === STATUS_KHUSUS &&
+      cell.parsed.statusKhusus === "backup_toko_lain",
+  )
+  if (backupCells.length === 0) return null
+
+  const newOrChangedCells: BackupValidationCell[] = []
+  for (const cell of backupCells) {
+    if (await isUnchangedLegacyBackupWithoutTarget(cell, storeId, cabangId)) continue
+    if (!cell.parsed.tokoTujuan) {
+      return "Pilih toko tujuan backup yang valid."
+    }
+    newOrChangedCells.push(cell)
+  }
+  if (newOrChangedCells.length === 0) return null
+
+  const storesSnapshot = await adminDb
+    .collection("stores")
+    .where("cabangId", "==", cabangId)
+    .get()
+  const stores = storesSnapshot.docs.map((doc) => {
+    const data = doc.data()
+    return {
+      id: String(data.storeId ?? doc.id).trim(),
+      cabangId: String(data.cabangId ?? "").trim(),
+      aktif: data.aktif !== false,
+    }
+  })
+
+  const ownStores = stores.filter(
+    (store) =>
+      normalizeStoreIdentity(store.id) === normalizeStoreIdentity(storeId) &&
+      normalizeStoreIdentity(store.cabangId) === normalizeStoreIdentity(cabangId),
+  )
+  if (ownStores.length !== 1) {
+    return "Data toko akun tidak dapat diverifikasi pada cabang yang sama."
+  }
+
+  for (const cell of newOrChangedCells) {
+    const requestedId = normalizeStoreIdentity(cell.parsed.tokoTujuan)
+    const matches = stores.filter(
+      (store) => normalizeStoreIdentity(store.id) === requestedId,
+    )
+    if (
+      matches.length !== 1 ||
+      !matches[0].aktif ||
+      normalizeStoreIdentity(matches[0].cabangId) !== normalizeStoreIdentity(cabangId) ||
+      requestedId === normalizeStoreIdentity(storeId)
+    ) {
+      return "Toko tujuan harus aktif, berada pada cabang yang sama, dan berbeda dari toko Anda."
+    }
+    // Persist the canonical storeId spelling from the trusted store record.
+    cell.parsed.tokoTujuan = matches[0].id
+  }
+
+  return null
 }
 
 // ============================================================
@@ -654,12 +885,18 @@ export async function POST(
         )
       }
 
-      const writes: Promise<unknown>[] = []
-      let wrote = 0
+      const parsedCells: BackupValidationCell[] = []
 
       for (
         const day of days
       ) {
+        if (!day || typeof day !== "object" || Array.isArray(day)) {
+          return NextResponse.json(
+            { success: false, message: "Data sel jadwal tidak valid." },
+            { status: 400 },
+          )
+        }
+
         const tanggal =
           String(
             day?.tanggal ?? "",
@@ -668,7 +905,10 @@ export async function POST(
         if (
           !isValidDateISO(tanggal)
         ) {
-          continue
+          return NextResponse.json(
+            { success: false, message: "Tanggal pada data sel jadwal tidak valid." },
+            { status: 400 },
+          )
         }
 
         for (
@@ -689,38 +929,72 @@ export async function POST(
             )
 
           if (!parsed) {
-            continue
+            return NextResponse.json(
+              { success: false, message: "Satu atau lebih sel jadwal tidak valid." },
+              { status: 400 },
+            )
           }
 
-          const docData =
-            buildScheduleDocData(
-              storeId,
-              cabangId,
-              employeeId,
-              tanggal,
-              parsed,
-            )
-
-          const docId =
-            scheduleId(
-              storeId,
-              tanggal,
-              employeeId,
-            )
-
-          writes.push(
-            adminDb
-              .collection(
-                "schedule_drafts",
-              )
-              .doc(docId)
-              .set(docData, {
-                merge: true,
-              }),
-          )
-
-          wrote += 1
+          parsedCells.push({ employeeId, tanggal, parsed })
         }
+      }
+
+      const employeeValidationError = await validateScheduleEmployees(
+        parsedCells,
+        storeId,
+      )
+      if (employeeValidationError) {
+        return NextResponse.json(
+          { success: false, message: employeeValidationError },
+          { status: 400 },
+        )
+      }
+
+      const validationError = await validateBackupTargets(
+        parsedCells,
+        storeId,
+        cabangId,
+      )
+      if (validationError) {
+        return NextResponse.json(
+          { success: false, message: validationError },
+          { status: 400 },
+        )
+      }
+
+      const writeResolution = await resolveScheduleWriteIds(
+        parsedCells,
+        "schedule_drafts",
+        storeId,
+        cabangId,
+      )
+      if ("error" in writeResolution) {
+        return NextResponse.json(
+          { success: false, message: writeResolution.error },
+          { status: 409 },
+        )
+      }
+
+      const writes: Promise<unknown>[] = []
+      let wrote = 0
+      for (const { employeeId, tanggal, parsed } of parsedCells) {
+        const docData = buildScheduleDocData(
+          storeId,
+          cabangId,
+          employeeId,
+          tanggal,
+          parsed,
+        )
+        const docId = writeResolution.documentIds.get(
+          scheduleCellIdentity(employeeId, tanggal),
+        ) ?? scheduleId(storeId, tanggal, employeeId)
+        writes.push(
+          adminDb
+            .collection("schedule_drafts")
+            .doc(docId)
+            .set(docData, { merge: true }),
+        )
+        wrote += 1
       }
 
       if (wrote === 0) {
@@ -807,8 +1081,7 @@ export async function POST(
           month + 1,
         ).padStart(2, "0")}-`
 
-      const scheduleWrites: Promise<unknown>[] = []
-      let wrote = 0
+      const parsedCells: BackupValidationCell[] = []
 
       for (
         const cell of cells
@@ -828,7 +1101,10 @@ export async function POST(
           !employeeId ||
           !isValidDateISO(tanggal)
         ) {
-          continue
+          return NextResponse.json(
+            { success: false, message: "Identitas karyawan atau tanggal pada sel jadwal tidak valid." },
+            { status: 400 },
+          )
         }
 
         const parsed =
@@ -846,7 +1122,10 @@ export async function POST(
           })
 
         if (!parsed) {
-          continue
+          return NextResponse.json(
+            { success: false, message: "Satu atau lebih sel jadwal tidak valid." },
+            { status: 400 },
+          )
         }
 
         // HANYA memfinalkan tanggal pada bulan target.
@@ -858,34 +1137,65 @@ export async function POST(
           continue
         }
 
-        const docData =
-          buildScheduleDocData(
-            storeId,
-            cabangId,
-            employeeId,
-            tanggal,
-            parsed,
-          )
+        parsedCells.push({ employeeId, tanggal, parsed })
+      }
 
-        // UPSERT berdasarkan identitas unik
-        // storeId + employeeId + tanggal.
-        // Tidak menduplikasi, tidak menghapus milik
-        // toko/bulan lain.
+      const employeeValidationError = await validateScheduleEmployees(
+        parsedCells,
+        storeId,
+      )
+      if (employeeValidationError) {
+        return NextResponse.json(
+          { success: false, message: employeeValidationError },
+          { status: 400 },
+        )
+      }
+
+      const validationError = await validateBackupTargets(
+        parsedCells,
+        storeId,
+        cabangId,
+      )
+      if (validationError) {
+        return NextResponse.json(
+          { success: false, message: validationError },
+          { status: 400 },
+        )
+      }
+
+      const writeResolution = await resolveScheduleWriteIds(
+        parsedCells,
+        "schedules",
+        storeId,
+        cabangId,
+      )
+      if ("error" in writeResolution) {
+        return NextResponse.json(
+          { success: false, message: writeResolution.error },
+          { status: 409 },
+        )
+      }
+
+      const scheduleWrites: Promise<unknown>[] = []
+      let wrote = 0
+      for (const { employeeId, tanggal, parsed } of parsedCells) {
+        const docData = buildScheduleDocData(
+          storeId,
+          cabangId,
+          employeeId,
+          tanggal,
+          parsed,
+        )
+
+        // UPSERT berdasarkan identitas unik storeId + employeeId + tanggal.
         scheduleWrites.push(
           adminDb
             .collection("schedules")
-            .doc(
-              scheduleId(
-                storeId,
-                tanggal,
-                employeeId,
-              ),
-            )
-            .set(docData, {
-              merge: true,
-            }),
+            .doc(writeResolution.documentIds.get(
+              scheduleCellIdentity(employeeId, tanggal),
+            ) ?? scheduleId(storeId, tanggal, employeeId))
+            .set(docData, { merge: true }),
         )
-
         wrote += 1
       }
 
@@ -1008,25 +1318,54 @@ export async function POST(
         )
       }
 
-      // Identitas dokumen draft deterministik: satu dokumen
-      // per sel (store + tanggal + employee). Tidak membaca
-      // collection terlebih dahulu.
-      const docId =
-        scheduleId(
-          storeId,
-          tanggal,
-          employeeId,
-        )
-
-      await adminDb
+      // Gunakan field identitas dan scope yang sama dengan GET draft,
+      // sehingga dokumen legacy dengan ID berbeda tetap dapat ditemukan.
+      const draftsForDate = await adminDb
         .collection("schedule_drafts")
-        .doc(docId)
-        .delete()
+        .where("storeId", "==", storeId)
+        .where("tanggal", "==", tanggal)
+        .get()
+      const matchingDrafts = draftsForDate.docs.filter(
+        (draft) => draft.data()?.employeeId === employeeId,
+      )
+
+      if (matchingDrafts.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Draft sel tidak ditemukan.",
+          },
+          { status: 404 },
+        )
+      }
+
+      if (matchingDrafts.length > 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Lebih dari satu draft cocok dengan sel ini. Tidak ada data yang dihapus.",
+          },
+          { status: 409 },
+        )
+      }
+
+      if (matchingDrafts[0].data()?.cabangId !== cabangId) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Draft sel tidak ditemukan dalam scope cabang akun ini.",
+          },
+          { status: 404 },
+        )
+      }
+
+      await matchingDrafts[0].ref.delete()
 
       return NextResponse.json({
         success: true,
         message:
           "Draft sel berhasil dihapus.",
+        deleted: 1,
       })
     }
 
@@ -1293,20 +1632,50 @@ export async function POST(
           )
         }
 
-        // Identitas dokumen final deterministik: satu dokumen
-        // per sel (store + tanggal + employee). Hanya sel yang
-        // sesuai yang dihapus — karyawan/tanggal lain aman.
-        const docId =
-          scheduleId(
-            storeId,
-            tanggal,
-            employeeId,
-          )
-
-        await adminDb
+        // Gunakan query toko/tanggal seperti jalur Kosongkan Semua, lalu
+        // cocokkan employee dan cabang terhadap dokumen yang benar-benar
+        // dibaca tabel. Dengan begitu ID dokumen legacy tetap didukung.
+        const schedulesForDate = await adminDb
           .collection("schedules")
-          .doc(docId)
-          .delete()
+          .where("storeId", "==", storeId)
+          .where("tanggal", "==", tanggal)
+          .get()
+        const matchingSchedules = schedulesForDate.docs.filter((schedule) => {
+          const data = schedule.data()
+          return data?.employeeId === employeeId
+        })
+
+        if (matchingSchedules.length === 0) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Jadwal final sel tidak ditemukan.",
+            },
+            { status: 404 },
+          )
+        }
+
+        if (matchingSchedules.length > 1) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Lebih dari satu jadwal final cocok dengan sel ini. Tidak ada data yang dihapus.",
+            },
+            { status: 409 },
+          )
+        }
+
+        if (matchingSchedules[0].data()?.cabangId !== cabangId) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Jadwal final sel tidak ditemukan dalam scope cabang akun ini.",
+            },
+            { status: 404 },
+          )
+        }
+
+        await matchingSchedules[0].ref.delete()
 
         return NextResponse.json({
           success: true,

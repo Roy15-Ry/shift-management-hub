@@ -375,6 +375,8 @@ export function addEmployee(
   const newEmployee: Employee = {
     ...data,
 
+    id: `${data.storeId}-NEW-${Date.now()}`,
+
     name: data.name.trim(),
 
     nik: data.nik
@@ -385,9 +387,6 @@ export function addEmployee(
     posisi:
       data.posisi.trim(),
   }
-
-  newEmployee.id =
-    `${data.storeId}-NEW-${Date.now()}`
 
   employees = [
     ...employees,

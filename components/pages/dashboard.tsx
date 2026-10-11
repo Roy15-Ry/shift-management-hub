@@ -22,6 +22,7 @@ import {
   type FirestoreEmployee,
   type FirestoreStore,
 } from "@/lib/firestore-data"
+import { STATUS_KHUSUS, getStatusKhususItem } from "@/lib/shift-status"
 
 import {
   STATUS_ORDER,
@@ -263,7 +264,7 @@ function scheduleKey(storeId: string, tanggal: string) {
 // ============================================================
 
 export function DashboardPage() {
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
   const { showToast } = useToast()
   const showToastRef =
     React.useRef(showToast)
@@ -301,6 +302,9 @@ export function DashboardPage() {
         >
       >
     >({})
+
+  const [destinationNames, setDestinationNames] =
+    React.useState<Record<string, string>>({})
 
   const [loading, setLoading] =
     React.useState(true)
@@ -490,6 +494,53 @@ export function DashboardPage() {
           scheduleMap,
         )
 
+        const destinationIds = [...new Set(
+          Object.values(scheduleMap)
+            .flat()
+            .filter((schedule) =>
+              String(schedule.status) === STATUS_KHUSUS &&
+              schedule.statusKhusus === "backup_toko_lain",
+            )
+            .map((schedule) => schedule.tokoTujuan?.trim())
+            .filter((storeId): storeId is string => Boolean(storeId)),
+        )]
+        const knownDestinationNames: Record<string, string> = {}
+        for (const store of accessibleStores) {
+          knownDestinationNames[store.id.trim().toUpperCase()] = store.nama
+        }
+        setDestinationNames(knownDestinationNames)
+        const missingDestinationIds = destinationIds.filter(
+          (storeId) => !knownDestinationNames[storeId.toUpperCase()],
+        )
+        if (user && missingDestinationIds.length > 0) {
+          try {
+            const idToken = await user.getIdToken()
+            const params = new URLSearchParams({
+              storesOnly: "1",
+              storeIds: missingDestinationIds.join(","),
+            })
+            const response = await fetch(`/api/shift-cabang?${params.toString()}`, {
+              headers: { Authorization: `Bearer ${idToken}` },
+              cache: "no-store",
+            })
+            const data = await response.json()
+            if (response.ok && data.success) {
+              const resolvedNames = { ...knownDestinationNames }
+              for (const store of [
+                ...(Array.isArray(data.stores) ? data.stores : []),
+                ...(Array.isArray(data.storeNames) ? data.storeNames : []),
+              ]) {
+                if (store?.id && store?.nama) {
+                  resolvedNames[String(store.id).trim().toUpperCase()] = String(store.nama)
+                }
+              }
+              setDestinationNames(resolvedNames)
+            }
+          } catch (error) {
+            console.error("Gagal memuat nama toko tujuan jadwal:", error)
+          }
+        }
+
         console.log(
           "DASHBOARD EMPLOYEE FIRESTORE:",
           allEmployees,
@@ -522,6 +573,7 @@ export function DashboardPage() {
     isStore,
     isCentralCabang,
     isCentralPusat,
+    user,
   ])
 
   // ==========================================================
@@ -1161,12 +1213,12 @@ export function DashboardPage() {
                                           b.id,
                                       )?.status
                                     const priorityA =
-                                      statusA
-                                        ? STATUS_PRIORITY[statusA]
+                                      statusA && statusA in STATUS_PRIORITY
+                                        ? STATUS_PRIORITY[statusA as ShiftStatus]
                                         : 99
                                     const priorityB =
-                                      statusB
-                                        ? STATUS_PRIORITY[statusB]
+                                      statusB && statusB in STATUS_PRIORITY
+                                        ? STATUS_PRIORITY[statusB as ShiftStatus]
                                         : 99
                                     return priorityA - priorityB
                                   },
@@ -1195,6 +1247,19 @@ export function DashboardPage() {
                                             item.employeeId ===
                                             employee.id,
                                         )
+
+                                      const special = String(schedule?.status ?? "") === STATUS_KHUSUS
+                                      const specialItem = special
+                                        ? getStatusKhususItem(schedule?.statusKhusus)
+                                        : undefined
+                                      const note = schedule?.keterangan?.trim() ?? ""
+                                      const specialLabel = schedule?.statusKhusus === "backup_toko_lain"
+                                        ? schedule.tokoTujuan
+                                          ? destinationNames[schedule.tokoTujuan.trim().toUpperCase()] ?? schedule.tokoTujuan
+                                          : "BACK UP TOKO LAIN"
+                                        : schedule?.statusKhusus === "lainnya" && note
+                                          ? note
+                                          : specialItem?.label ?? "-"
 
                                       if (
                                         statusFilter !== "all" &&
@@ -1229,10 +1294,15 @@ export function DashboardPage() {
                                                 isStore
                                                   ? "min-w-32 px-3 py-2 text-sm"
                                                   : "min-w-28 px-2.5 py-1 text-[13px]",
-                                                STATUS_BADGE_CLASS[schedule.status],
+                                                special
+                                                  ? "bg-violet-500 text-white ring-violet-500/30"
+                                                  : STATUS_BADGE_CLASS[schedule.status as ShiftStatus],
                                               )}
+                                              title={special && note && schedule?.statusKhusus !== "lainnya"
+                                                ? `${specialLabel} — ${note}`
+                                                : specialLabel}
                                             >
-                                              {statusDisplayLabel(schedule.status)}
+                                              {special ? specialLabel : statusDisplayLabel(schedule.status as ShiftStatus)}
                                             </span>
                                           ) : (
                                             <span

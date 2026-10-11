@@ -335,6 +335,12 @@ export function StoreFirebaseDetail({
     // =====================================================
 
     async function saveNewEmployee() {
+        const currentStore = store
+
+        if (!currentStore) {
+            return
+        }
+
         const name =
             newName.trim()
 
@@ -418,7 +424,7 @@ export function StoreFirebaseDetail({
             showToast(
                 "success",
                 "Karyawan berhasil ditambahkan",
-                `${name} telah ditambahkan ke ${store.namaStore}.`,
+                `${name} telah ditambahkan ke ${currentStore.namaStore}.`,
             )
         } catch (error) {
             showToast(

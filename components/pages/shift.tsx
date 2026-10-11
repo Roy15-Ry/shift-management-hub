@@ -8,6 +8,8 @@ import { generateShiftSchedulePdf, slugifyStoreName } from "@/lib/pdf-shift"
 import {
   SHIFT_STATUS_ITEMS,
   getShiftStatusItem,
+  STATUS_KHUSUS,
+  getStatusKhususItem,
 } from "@/lib/shift-status"
 import { cn } from "@/lib/utils"
 
@@ -112,6 +114,7 @@ function StoreJadwalShift() {
   const [store, setStore] = React.useState<FirestoreStore | null>(null)
   const [employees, setEmployees] = React.useState<FirestoreEmployee[]>([])
   const [schedules, setSchedules] = React.useState<FirestoreSchedule[]>([])
+  const [destinationNameById, setDestinationNameById] = React.useState<Map<string, string>>(new Map())
   const [activityFinals, setActivityFinals] = React.useState<FirestoreActivity[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
@@ -155,6 +158,48 @@ function StoreJadwalShift() {
           ),
         )
         setSchedules(monthlySchedules)
+        const historicalDestinationIds = [...new Set(
+          monthlySchedules
+            .filter((schedule) =>
+              String(schedule.status) === STATUS_KHUSUS &&
+              schedule.statusKhusus === "backup_toko_lain",
+            )
+            .map((schedule) => schedule.tokoTujuan?.trim())
+            .filter((id): id is string => Boolean(id)),
+        )]
+        setDestinationNameById(new Map())
+        if (user && historicalDestinationIds.length > 0) {
+          void (async () => {
+            try {
+              const idToken = await user.getIdToken()
+              const params = new URLSearchParams({
+                storesOnly: "1",
+                storeIds: historicalDestinationIds.join(","),
+              })
+              const response = await fetch(`/api/shift-cabang?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${idToken}` },
+                cache: "no-store",
+              })
+              const data = await response.json()
+              if (!response.ok || !data.success) {
+                throw new Error("Nama toko tujuan tidak dapat dimuat.")
+              }
+              if (cancelled) return
+              const names = new Map<string, string>()
+              for (const candidate of [
+                ...(Array.isArray(data.stores) ? data.stores : []),
+                ...(Array.isArray(data.storeNames) ? data.storeNames : []),
+              ]) {
+                if (candidate?.id && candidate?.nama) {
+                  names.set(candidate.id.trim().toUpperCase(), candidate.nama)
+                }
+              }
+              setDestinationNameById(names)
+            } catch (lookupError) {
+              console.error("Failed to load schedule destination names:", lookupError)
+            }
+          })()
+        }
         if (activityData) setActivityFinals(activityData)
       })
       .catch((loadError) => {
@@ -172,7 +217,7 @@ function StoreJadwalShift() {
   }, [cabangId, period.month, period.year, storeId, user])
 
   const scheduleByCell = React.useMemo(() => {
-    return new Map(schedules.map((schedule) => [`${schedule.employeeId}:${schedule.tanggal}`, schedule.status]))
+    return new Map(schedules.map((schedule) => [`${schedule.employeeId}:${schedule.tanggal}`, schedule]))
   }, [schedules])
 
   const activityByCell = React.useMemo(() => {
@@ -184,7 +229,7 @@ function StoreJadwalShift() {
       employees,
       period.year,
       period.month,
-      (employeeId, tanggal) => scheduleByCell.get(`${employeeId}:${tanggal}`),
+      (employeeId, tanggal) => scheduleByCell.get(`${employeeId}:${tanggal}`)?.status,
       getDateKey,
     )
   }, [employees, period.month, period.year, scheduleByCell])
@@ -212,6 +257,39 @@ function StoreJadwalShift() {
 
   async function handleDownloadPdf() {
     const filename = `JADWAL_SHIFT_${slugifyStoreName(storeDisplayName)}_${monthNameIndo.toUpperCase()}_${period.year}.pdf`
+    const historicalDestinationIds = [...new Set(
+      schedules
+        .filter((schedule) => schedule.statusKhusus === "backup_toko_lain")
+        .map((schedule) => schedule.tokoTujuan?.trim())
+        .filter((id): id is string => Boolean(id)),
+    )]
+    const destinationNameById = new Map<string, string>()
+    if (user) {
+      try {
+        const idToken = await user.getIdToken()
+        const params = new URLSearchParams({ storesOnly: "1" })
+        if (historicalDestinationIds.length > 0) {
+          params.set("storeIds", historicalDestinationIds.join(","))
+        }
+        const response = await fetch(`/api/shift-cabang?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        })
+        const data = await response.json()
+        if (response.ok && data.success) {
+          for (const candidate of [
+            ...(Array.isArray(data.stores) ? data.stores : []),
+            ...(Array.isArray(data.storeNames) ? data.storeNames : []),
+          ]) {
+            if (candidate?.id && candidate?.nama) {
+              destinationNameById.set(candidate.id.trim().toUpperCase(), candidate.nama)
+            }
+          }
+        }
+      } catch (storeLookupError) {
+        console.error("Failed to load store names for schedule PDF:", storeLookupError)
+      }
+    }
 
     await generateShiftSchedulePdf({
       storeName: storeDisplayName,
@@ -219,8 +297,21 @@ function StoreJadwalShift() {
       year: period.year,
       month: period.month,
       employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
-      getStatus: (employeeId, tanggal) => scheduleByCell.get(`${employeeId}:${tanggal}`),
+      getStatus: (employeeId, tanggal) => {
+        const schedule = scheduleByCell.get(`${employeeId}:${tanggal}`)
+        if (!schedule) return undefined
+        const destination = schedule.tokoTujuan
+          ? destinationNameById.get(schedule.tokoTujuan.trim().toUpperCase()) ?? schedule.tokoTujuan
+          : undefined
+        return {
+          status: schedule.status,
+          statusKhusus: schedule.statusKhusus,
+          keterangan: schedule.keterangan,
+          tokoTujuan: destination,
+        }
+      },
       getActivity: (row, tanggal) => activityByCell.get(`${row}:${tanggal}`) ?? "",
+      violetStatusKhusus: true,
       rekapTitle,
       rekapRows,
       filename,
@@ -303,18 +394,35 @@ function StoreJadwalShift() {
                     </td>
                     {days.map((day) => {
                       const tanggal = getDateKey(period.year, period.month, day)
-                      const status = scheduleByCell.get(`${employee.id}:${tanggal}`)
-                      const option = getStoreShiftOption(status)
+                      const schedule = scheduleByCell.get(`${employee.id}:${tanggal}`)
+                      const status = String(schedule?.status ?? "")
+                      const isSpecial = status === STATUS_KHUSUS
+                      const option = isSpecial ? undefined : getStoreShiftOption(status)
+                      const specialItem = isSpecial
+                        ? getStatusKhususItem(schedule?.statusKhusus)
+                        : undefined
+                      const note = schedule?.keterangan?.trim() ?? ""
+                      const specialLabel = schedule?.statusKhusus === "backup_toko_lain"
+                        ? schedule.tokoTujuan
+                          ? destinationNameById.get(schedule.tokoTujuan.trim().toUpperCase()) ?? schedule.tokoTujuan
+                          : "BACK UP TOKO LAIN"
+                        : schedule?.statusKhusus === "lainnya" && note
+                          ? note
+                          : specialItem?.label ?? "-"
+                      const label = isSpecial ? specialLabel : option?.label ?? "-"
+                      const title = isSpecial
+                        ? [specialLabel, note].filter(Boolean).join(" — ")
+                        : option?.title ?? "Belum dijadwalkan"
                       return (
                         <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                           <span
-                            title={option?.title ?? "Belum dijadwalkan"}
+                            title={title}
                             className={cn(
                               "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
-                              option ? option.className : "bg-background text-muted-foreground ring-border",
+                              isSpecial ? "bg-violet-500 text-white ring-violet-500/30" : option ? option.className : "bg-background text-muted-foreground ring-border",
                             )}
                           >
-                            {option?.label ?? "-"}
+                            {label}
                           </span>
                         </td>
                       )
@@ -444,18 +552,20 @@ function StoreMonthlyTable({
   index,
   employees,
   schedules,
+  stores,
   period,
 }: {
   store: FirestoreStore
   index: number
   employees: FirestoreEmployee[]
   schedules: FirestoreSchedule[]
+  stores: FirestoreStore[]
   period: { year: number; month: number }
 }) {
   const days = getDaysInMonth(period.year, period.month)
 
   const scheduleByCell = React.useMemo(() => {
-    return new Map(schedules.map((s) => [`${s.employeeId}:${s.tanggal}`, s.status]))
+    return new Map(schedules.map((s) => [`${s.employeeId}:${s.tanggal}`, s]))
   }, [schedules])
 
   return (
@@ -503,18 +613,33 @@ function StoreMonthlyTable({
                 </td>
                 {days.map((day) => {
                   const tanggal = getDateKey(period.year, period.month, day)
-                  const status = scheduleByCell.get(`${employee.id}:${tanggal}`)
-                  const option = getShiftStatusItem(status)
+                  const schedule = scheduleByCell.get(`${employee.id}:${tanggal}`)
+                  const status = String(schedule?.status ?? "")
+                  const isSpecial = status === STATUS_KHUSUS
+                  const option = isSpecial ? undefined : getShiftStatusItem(status)
+                  const specialItem = isSpecial ? getStatusKhususItem(schedule?.statusKhusus) : undefined
+                  const note = schedule?.keterangan?.trim() ?? ""
+                  const specialLabel = schedule?.statusKhusus === "backup_toko_lain"
+                    ? schedule.tokoTujuan
+                      ? stores.find((candidate) => candidate.id.trim().toUpperCase() === schedule.tokoTujuan?.trim().toUpperCase())?.nama ?? schedule.tokoTujuan
+                      : "BACK UP TOKO LAIN"
+                    : schedule?.statusKhusus === "lainnya" && note
+                      ? note
+                      : specialItem?.label ?? "-"
+                  const label = isSpecial ? specialLabel : option?.label ?? "-"
+                  const title = isSpecial
+                    ? [specialLabel, note].filter(Boolean).join(" — ")
+                    : option?.title ?? "Belum dijadwalkan"
                   return (
                     <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                       <span
-                        title={option?.title ?? "Belum dijadwalkan"}
+                        title={title}
                         className={cn(
                           "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
-                          option ? option.className : "bg-background text-muted-foreground ring-border",
+                          isSpecial ? "bg-violet-500 text-white ring-violet-500/30" : option ? option.className : "bg-background text-muted-foreground ring-border",
                         )}
                       >
-                        {option?.label ?? "-"}
+                        {label}
                       </span>
                     </td>
                   )
@@ -538,12 +663,14 @@ function StoreDailyTable({
   index,
   employees,
   schedules,
+  stores,
   tanggal,
 }: {
   store: FirestoreStore
   index: number
   employees: FirestoreEmployee[]
   schedules: FirestoreSchedule[]
+  stores: FirestoreStore[]
   tanggal: string
 }) {
   const scheduleByEmployee = React.useMemo(() => {
@@ -551,7 +678,7 @@ function StoreDailyTable({
     return new Map(
       schedules
         .filter((s) => normalizeDateKey(s.tanggal) === key)
-        .map((s) => [s.employeeId, s.status] as [string, string]),
+        .map((s) => [s.employeeId, s] as [string, FirestoreSchedule]),
     )
   }, [schedules, tanggal])
 
@@ -581,8 +708,23 @@ function StoreDailyTable({
           </thead>
           <tbody>
             {employees.map((employee) => {
-              const status = scheduleByEmployee.get(employee.id)
-              const option = getShiftStatusItem(status)
+              const schedule = scheduleByEmployee.get(employee.id)
+              const status = String(schedule?.status ?? "")
+              const isSpecial = status === STATUS_KHUSUS
+              const option = isSpecial ? undefined : getShiftStatusItem(status)
+              const specialItem = isSpecial ? getStatusKhususItem(schedule?.statusKhusus) : undefined
+              const note = schedule?.keterangan?.trim() ?? ""
+              const specialLabel = schedule?.statusKhusus === "backup_toko_lain"
+                ? schedule.tokoTujuan
+                  ? stores.find((candidate) => candidate.id.trim().toUpperCase() === schedule.tokoTujuan?.trim().toUpperCase())?.nama ?? schedule.tokoTujuan
+                  : "BACK UP TOKO LAIN"
+                : schedule?.statusKhusus === "lainnya" && note
+                  ? note
+                  : specialItem?.label ?? "-"
+              const label = isSpecial ? specialLabel : option?.label ?? "-"
+              const title = isSpecial
+                ? [specialLabel, note].filter(Boolean).join(" — ")
+                : option?.title ?? "Belum dijadwalkan"
               return (
                 <tr key={employee.id}>
                   <td className="min-w-[9rem] border-b border-r border-border bg-card px-1.5 py-1.5 align-middle sm:px-2 md:min-w-[12rem]">
@@ -592,13 +734,13 @@ function StoreDailyTable({
                   </td>
                   <td className="border-b border-r border-border p-0.5 text-center last:border-r-0">
                     <span
-                      title={option?.title ?? "Belum dijadwalkan"}
+                      title={title}
                       className={cn(
                         "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-16 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
-                        option ? option.className : "bg-background text-muted-foreground ring-border",
+                        isSpecial ? "bg-violet-500 text-white ring-violet-500/30" : option ? option.className : "bg-background text-muted-foreground ring-border",
                       )}
                     >
-                      {option?.label ?? "-"}
+                      {label}
                     </span>
                   </td>
                 </tr>
@@ -620,6 +762,7 @@ function StoreShiftCard({
   index,
   employees,
   schedules,
+  stores,
   period,
   mode,
   date,
@@ -634,6 +777,7 @@ function StoreShiftCard({
   index: number
   employees: FirestoreEmployee[]
   schedules: FirestoreSchedule[]
+  stores: FirestoreStore[]
   period: { year: number; month: number }
   mode: "bulanan" | "harian"
   date: string
@@ -700,6 +844,7 @@ function StoreShiftCard({
       index={index}
       employees={employees}
       schedules={schedules}
+      stores={stores}
       period={period}
     />
   ) : (
@@ -708,6 +853,7 @@ function StoreShiftCard({
       index={index}
       employees={employees}
       schedules={schedules}
+      stores={stores}
       tanggal={date}
     />
   )
@@ -1061,6 +1207,7 @@ export function ShiftCabangPage() {
                 index={index + 1}
                 employees={cached?.employees ?? []}
                 schedules={cached?.schedules ?? []}
+                stores={stores}
                 period={period}
                 mode={mode}
                 date={date}
@@ -1092,6 +1239,7 @@ export function ShiftCabangPage() {
                 index={index + 1}
                 employees={cached?.employees ?? []}
                 schedules={cached?.schedules ?? []}
+                stores={stores}
                 period={period}
                 mode={mode}
                 date={date}

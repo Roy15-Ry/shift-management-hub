@@ -141,7 +141,7 @@ export const STATUS_KHUSUS_ITEMS: StatusKhususItem[] = [
   },
   {
     value: "training",
-    label: "TRAINING",
+    label: "LEARNING",
     description: "Kegiatan training atau pelatihan",
   },
   {
@@ -156,7 +156,7 @@ export const STATUS_KHUSUS_ITEMS: StatusKhususItem[] = [
   },
   {
     value: "event_kegiatan_perusahaan",
-    label: "EVENT / KEGIATAN PERUSAHAAN",
+    label: "EVENT",
     description: "Event atau kegiatan perusahaan",
   },
   {

@@ -16,6 +16,7 @@ import {
   type FirestoreSchedule,
   type FirestoreStore,
 } from "@/lib/firestore-data"
+import { updateScheduleCellAfterDelete } from "@/lib/schedule-cell"
 import {
   generateSchedule,
   type GenerateScheduleCell,
@@ -86,7 +87,7 @@ function getShiftOption(status?: string | null): ShiftStatusItem | undefined {
 // foundation di lib/shift-status.ts. display selalu "-" dan
 // warna VIOLET. Sub-jenis TIDAK ditampilkan di dalam cell.
 //
-// PENTING: "BATAL PILIH" HANYALAH LABEL UI untuk aksi
+// PENTING: "HAPUS" HANYALAH LABEL UI untuk aksi
 // mengosongkan cell — ia BUKAN status. Aksi tersebut dijalankan
 // dengan MENGHAPUS key cell dari state, sehingga cell menjadi
 // EMPTY (display "-", warna netral). Tidak ada status/schema
@@ -96,22 +97,20 @@ function getShiftOption(status?: string | null): ShiftStatusItem | undefined {
 const STATUS_KHUSUS_CLASS =
   "bg-violet-500 text-white ring-violet-500/30"
 
-const BATAL_PILIH_LABEL = "BATAL PILIH"
-const BATAL_PILIH_DESC = "Kosongkan cell (warna netral)"
+const HAPUS_LABEL = "HAPUS"
+const HAPUS_DESC = "Hapus status pada sel ini"
 
 // ============================================================
-// MENU STATUS KHUSUS — FINAL (3 item)
+// MENU STATUS KHUSUS
 //
-// Menu baru hanya menampilkan 3 status khusus. Item dibatasi di
-// file ini; foundation (STATUS_KHUSUS_ITEMS) dan data lama tetap
-// utuh untuk backward compatibility. Tidak ada form tambahan
-// (keterangan/tokoTujuan) — status langsung diterapkan.
+// Pilihan LAINNYA meminta keterangan sebelum diterapkan.
 // ============================================================
 
 const STATUS_KHUSUS_MENU: { value: StatusKhusus; label: string }[] = [
   { value: "backup_toko_lain", label: "BACK UP TOKO LAIN" },
-  { value: "training", label: "TRAINING" },
+  { value: "training", label: "LEARNING" },
   { value: "event_kegiatan_perusahaan", label: "EVENT" },
+  { value: "lainnya", label: "LAINNYA" },
 ]
 
 // ============================================================
@@ -296,10 +295,8 @@ function CutiPopover(props: {
 // ============================================================
 // POPOVER STATUS KHUSUS / "-"
 //
-// Menu final: 1) BATAL PILIH (AKSI mengosongkan cell — BUKAN
-// status), 2-4) status khusus dari STATUS_KHUSUS_MENU. Status
-// langsung diterapkan tanpa form tambahan (tidak ada keterangan
-// maupun tokoTujuan).
+// Menu final: 1) HAPUS (AKSI mengosongkan cell — BUKAN
+// status), lalu status khusus dari STATUS_KHUSUS_MENU.
 // ============================================================
 
 function StatusKhususPopover(props: {
@@ -308,8 +305,9 @@ function StatusKhususPopover(props: {
   onBatalPilih: () => void
   onSelectKhusus: (statusKhusus: StatusKhusus) => void
   onClose: () => void
+  deleteOnly?: boolean
 }) {
-  const { x, y, onBatalPilih, onSelectKhusus, onClose } = props
+  const { x, y, onBatalPilih, onSelectKhusus, onClose, deleteOnly = false } = props
   const ref = React.useRef<HTMLDivElement>(null)
   const [pos, setPos] = React.useState({ top: y, left: x })
 
@@ -340,7 +338,7 @@ function StatusKhususPopover(props: {
     <div
       ref={ref}
       role="dialog"
-      aria-label="Status khusus"
+      aria-label={deleteOnly ? "Hapus status" : "Status khusus"}
       className="fixed z-50 w-64 rounded-lg border border-border bg-card p-1.5 shadow-lg"
       style={{ top: pos.top, left: pos.left }}
     >
@@ -349,12 +347,12 @@ function StatusKhususPopover(props: {
           type="button"
           onClick={onBatalPilih}
           className="flex w-full items-center justify-between rounded-md bg-background px-2 py-1.5 text-xs font-semibold text-muted-foreground ring-1 ring-border transition-colors hover:brightness-95"
-          title={BATAL_PILIH_DESC}
+          title={HAPUS_DESC}
         >
-          <span>{BATAL_PILIH_LABEL}</span>
+          <span>{HAPUS_LABEL}</span>
         </button>
-        <div className="my-1 border-t border-border" />
-        {STATUS_KHUSUS_MENU.map((item) => (
+        {!deleteOnly && <div className="my-1 border-t border-border" />}
+        {!deleteOnly && STATUS_KHUSUS_MENU.map((item) => (
           <button
             key={item.value}
             type="button"
@@ -573,7 +571,13 @@ export function BuatJadwalPage() {
   const [draftChanges, setDraftChanges] = React.useState<Record<string, CellValue>>({})
   const [activeCell, setActiveCell] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
   const [cutiTarget, setCutiTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
-  const [statusKhususTarget, setStatusKhususTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number } | null>(null)
+  const [statusKhususTarget, setStatusKhususTarget] = React.useState<{ employeeId: string; tanggal: string; x: number; y: number; deleteOnly?: boolean } | null>(null)
+  const [keteranganTarget, setKeteranganTarget] = React.useState<{ employeeId: string; tanggal: string } | null>(null)
+  const [keteranganInput, setKeteranganInput] = React.useState("")
+  const [keteranganInputError, setKeteranganInputError] = React.useState("")
+  const [backupStoreTarget, setBackupStoreTarget] = React.useState<{ employeeId: string; tanggal: string } | null>(null)
+  const [backupStores, setBackupStores] = React.useState<FirestoreStore[]>([])
+  const [backupStoresError, setBackupStoresError] = React.useState("")
   const [phase, setPhase] = React.useState<SchedulePhase>("Belum dibuat")
   const [editing, setEditing] = React.useState(false)
   const [message, setMessage] = React.useState("")
@@ -635,6 +639,42 @@ export function BuatJadwalPage() {
       })
 
     const authedUser = user
+    const currentStoreId = storeId
+
+    async function loadBackupStores() {
+      try {
+        const idToken = await authedUser.getIdToken()
+        const response = await fetch("/api/shift-cabang?storesOnly=1", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        })
+        const data = await response.json()
+        if (!response.ok || !data.success) {
+          throw new Error(data?.message ?? "Daftar toko tujuan tidak dapat dimuat.")
+        }
+        if (cancelled) return
+        const accountStoreId = currentStoreId.trim().toUpperCase()
+        const accountCabangId = (cabangId ?? "").trim().toUpperCase()
+        setBackupStores(
+          (Array.isArray(data.stores) ? data.stores : []).filter(
+            (candidate: FirestoreStore) =>
+              candidate.aktif !== false &&
+              candidate.id.trim().toUpperCase() !== accountStoreId &&
+              candidate.cabangId.trim().toUpperCase() === accountCabangId,
+          ),
+        )
+        setBackupStoresError("")
+      } catch (backupStoresLoadError) {
+        if (!cancelled) {
+          console.error("Failed to load backup stores:", backupStoresLoadError)
+          setBackupStores([])
+          setBackupStoresError("Daftar toko tujuan tidak dapat dimuat.")
+        }
+      }
+    }
+
+    void loadBackupStores()
 
     async function loadDrafts() {
       const idToken = await authedUser.getIdToken()
@@ -739,7 +779,13 @@ export function BuatJadwalPage() {
     return new Map(
       schedules.map((schedule) => [
         getCellKey(schedule.employeeId, schedule.tanggal),
-        { status: schedule.status, cutiJenis: schedule.cutiJenis },
+        {
+          status: schedule.status,
+          cutiJenis: schedule.cutiJenis,
+          statusKhusus: schedule.statusKhusus as StatusKhusus | undefined,
+          keterangan: schedule.keterangan,
+          tokoTujuan: schedule.tokoTujuan,
+        },
       ]),
     )
   }, [schedules])
@@ -748,7 +794,13 @@ export function BuatJadwalPage() {
     return new Map(
       savedDrafts.map((draft) => [
         getCellKey(draft.employeeId, draft.tanggal),
-        { status: draft.status as ScheduleStatus, cutiJenis: draft.cutiJenis },
+        {
+          status: draft.status as CellStatus,
+          cutiJenis: draft.cutiJenis,
+          statusKhusus: draft.statusKhusus as StatusKhusus | undefined,
+          keterangan: draft.keterangan,
+          tokoTujuan: draft.tokoTujuan,
+        },
       ]),
     )
   }, [savedDrafts])
@@ -880,14 +932,13 @@ export function BuatJadwalPage() {
   }
 
   // ============================================================
-  // STATUS KHUSUS & BATAL PILIH
+  // STATUS KHUSUS & HAPUS
   //
-  // "BATAL PILIH" BUKAN status. Ia menghapus key cell dari
+  // "HAPUS" BUKAN status. Ia menghapus key cell dari
   // state (bukan status baru), sehingga getCellValue(...)
   // kembali ke nilai saluran berikutnya (draft Firestore, lalu
-  // final). Jika cell pernah disimpan sebagai draft di
-  // schedule_drafts, BATAL PILIH menghapus document draft
-  // tersebut. Schedules (data final) TIDAK disentuh.
+  // final). Jika cell tersimpan sebagai draft atau final,
+  // HAPUS memakai endpoint yang hanya menghapus sel terpilih.
   // ============================================================
 
   function removeCell(key: string) {
@@ -911,26 +962,35 @@ export function BuatJadwalPage() {
     setActiveCell(null)
   }
 
-  async function batalPilih() {
-    if (!statusKhususTarget || !canEditCells) return
-    const { employeeId, tanggal } = statusKhususTarget
+  async function batalPilih(targetOverride?: { employeeId: string; tanggal: string }): Promise<boolean> {
+    setMessage("")
+    setActionError("")
+    const target = targetOverride ?? statusKhususTarget
+    if (!target) return false
+    const { employeeId, tanggal } = target
     const key = getCellKey(employeeId, tanggal)
+    const hasLocalChange = Object.prototype.hasOwnProperty.call(draftChanges, key)
     const hasSavedDraft =
       savedDraftByCell.has(key)
     const hasFinal =
       savedScheduleByCell.has(key)
+    if (!canEditCells && !hasFinal) return false
 
     // Sel benar-benar kosong: cukup update state lokal,
     // tanpa Firestore write.
     if (!hasSavedDraft && !hasFinal) {
+      if (!hasLocalChange) {
+        setStatusKhususTarget(null)
+        return false
+      }
       removeCell(key)
       setPhase((p) => (p === "Selesai" ? p : "Draft"))
-      setMessage("Cell dikosongkan.")
+      setMessage("Status sel berhasil dihapus.")
       setStatusKhususTarget(null)
-      return
+      return true
     }
 
-    if (!user || !storeId) return
+    if (!user || !storeId) return false
     setSaving(true)
     setActionError("")
     try {
@@ -951,16 +1011,13 @@ export function BuatJadwalPage() {
           },
         )
         const finalData = await finalResponse.json()
-        if (!finalResponse.ok || !finalData.success) {
+        if (!finalResponse.ok || !finalData.success || finalData.deleted !== 1) {
           throw new Error(finalData?.message ?? "Gagal membatalkan pilihan.")
         }
         // Hanya setelah DELETE berhasil, buang jadwal final dari
         // state agar cell menjadi kosong.
         setSchedules((current) =>
-          current.filter(
-            (schedule) =>
-              !(schedule.employeeId === employeeId && schedule.tanggal === tanggal),
-          ),
+          updateScheduleCellAfterDelete(current, employeeId, tanggal, true),
         )
       }
 
@@ -979,7 +1036,7 @@ export function BuatJadwalPage() {
           },
         )
         const draftData = await draftResponse.json()
-        if (!draftResponse.ok || !draftData.success) {
+        if (!draftResponse.ok || !draftData.success || draftData.deleted !== 1) {
           throw new Error(draftData?.message ?? "Gagal membatalkan pilihan.")
         }
         // Hanya setelah DELETE berhasil, buang draft dari state
@@ -996,17 +1053,19 @@ export function BuatJadwalPage() {
       setPhase((p) => (p === "Selesai" ? p : "Draft"))
       setMessage(
         hasFinal && hasSavedDraft
-          ? "Jadwal final dan draft dibatalkan."
+          ? "Jadwal final dan draft sel berhasil dihapus."
           : hasFinal
-            ? "Jadwal final sel dibatalkan."
-            : "Draft dibatalkan.",
+            ? "Jadwal final sel berhasil dihapus."
+            : "Draft sel berhasil dihapus.",
       )
       setStatusKhususTarget(null)
+      return true
     } catch (deleteError) {
       console.error("Failed to delete schedule:", deleteError)
       setActionError(
-        deleteError instanceof Error ? deleteError.message : "Gagal membatalkan pilihan.",
+        deleteError instanceof Error ? deleteError.message : "Gagal menghapus status sel.",
       )
+      return false
     } finally {
       setSaving(false)
     }
@@ -1014,11 +1073,108 @@ export function BuatJadwalPage() {
 
   function chooseStatusKhusus(statusKhusus: StatusKhusus) {
     if (!statusKhususTarget || !canEditCells) return
-    const key = getCellKey(statusKhususTarget.employeeId, statusKhususTarget.tanggal)
-    applyCell(key, { status: STATUS_KHUSUS, statusKhusus })
+    const { employeeId, tanggal } = statusKhususTarget
+    const key = getCellKey(employeeId, tanggal)
+    if (statusKhusus === "backup_toko_lain") {
+      setBackupStoreTarget({
+        employeeId,
+        tanggal,
+      })
+      setStatusKhususTarget(null)
+      setBackupStoresError("")
+      return
+    }
+    if (statusKhusus === "lainnya") {
+      const currentValue = getCellValue(employeeId, tanggal)
+      setKeteranganTarget({ employeeId, tanggal })
+      setKeteranganInput(currentValue?.status === STATUS_KHUSUS ? currentValue.keterangan ?? "" : "")
+      setKeteranganInputError("")
+      setStatusKhususTarget(null)
+      return
+    }
+    const currentValue = getCellValue(employeeId, tanggal)
+    const nextValue: CellValue = { status: STATUS_KHUSUS, statusKhusus }
+    if (currentValue?.status === STATUS_KHUSUS && currentValue.keterangan !== undefined) {
+      nextValue.keterangan = currentValue.keterangan
+    }
+    applyCell(key, nextValue)
     setPhase((p) => (p === "Selesai" ? p : "Draft"))
     setMessage("Status khusus disimpan sebagai draft pada browser ini.")
     setStatusKhususTarget(null)
+  }
+
+  function saveKeteranganLainnya() {
+    if (!keteranganTarget || !canEditCells) return
+    const keterangan = keteranganInput.trim()
+    if (!keterangan) {
+      setKeteranganInputError("Keterangan wajib diisi.")
+      return
+    }
+
+    const { employeeId, tanggal } = keteranganTarget
+    applyCell(getCellKey(employeeId, tanggal), {
+      status: STATUS_KHUSUS,
+      statusKhusus: "lainnya",
+      keterangan,
+    })
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage("Keterangan Lainnya disimpan sebagai draft pada browser ini.")
+    setKeteranganTarget(null)
+    setKeteranganInputError("")
+  }
+
+  async function deleteKeteranganLainnya() {
+    if (!keteranganTarget || !canEditCells) return
+    const { employeeId, tanggal } = keteranganTarget
+    const currentValue = getCellValue(employeeId, tanggal)
+    if (
+      currentValue?.status !== STATUS_KHUSUS ||
+      currentValue.statusKhusus !== "lainnya" ||
+      !currentValue.keterangan
+    ) return
+
+    const deleted = await batalPilih({ employeeId, tanggal })
+    if (!deleted) return
+    setKeteranganTarget(null)
+    setKeteranganInputError("")
+  }
+
+  function selectBackupStore(destinationId: string) {
+    if (!backupStoreTarget || !canEditCells) return
+    const destination = backupStores.find(
+      (candidate) => candidate.id.trim().toUpperCase() === destinationId.trim().toUpperCase(),
+    )
+    if (!destination || destination.aktif === false) {
+      setBackupStoresError("Pilih toko aktif yang tersedia pada cabang ini.")
+      return
+    }
+    const { employeeId, tanggal } = backupStoreTarget
+    const key = getCellKey(employeeId, tanggal)
+    const currentValue = getCellValue(employeeId, tanggal)
+    const nextValue: CellValue = {
+      status: STATUS_KHUSUS,
+      statusKhusus: "backup_toko_lain",
+      tokoTujuan: destination.id,
+    }
+    if (
+      currentValue?.status === STATUS_KHUSUS &&
+      currentValue.statusKhusus &&
+      currentValue.keterangan !== undefined
+    ) {
+      nextValue.keterangan = currentValue.keterangan
+    }
+    applyCell(key, nextValue)
+    setPhase((p) => (p === "Selesai" ? p : "Draft"))
+    setMessage("Toko tujuan backup disimpan sebagai draft pada browser ini.")
+    setBackupStoreTarget(null)
+  }
+
+  function getBackupStoreLabel(destinationId?: string) {
+    if (!destinationId) return "-"
+    const destination = backupStores.find(
+      (candidate) => candidate.id.trim().toUpperCase() === destinationId.trim().toUpperCase(),
+    )
+    return destination?.nama || destinationId
   }
 
   // ============================================================
@@ -1599,6 +1755,42 @@ export function BuatJadwalPage() {
   async function handleDownloadPdf() {
     if (!store) return
 
+    const destinationNameById = new Map(
+      backupStores.map((candidate) => [candidate.id.trim().toUpperCase(), candidate.nama]),
+    )
+    const historicalDestinationIds = [...new Set(
+      buildVisibleCells()
+        .filter((cell) => cell.status === STATUS_KHUSUS && cell.statusKhusus === "backup_toko_lain")
+        .map((cell) => cell.tokoTujuan?.trim())
+        .filter((id): id is string => Boolean(id)),
+    )]
+    if (user) {
+      try {
+        const idToken = await user.getIdToken()
+        const params = new URLSearchParams({ storesOnly: "1" })
+        if (historicalDestinationIds.length > 0) {
+          params.set("storeIds", historicalDestinationIds.join(","))
+        }
+        const response = await fetch(`/api/shift-cabang?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        })
+        const data = await response.json()
+        if (response.ok && data.success) {
+          for (const candidate of [
+            ...(Array.isArray(data.stores) ? data.stores : []),
+            ...(Array.isArray(data.storeNames) ? data.storeNames : []),
+          ]) {
+            if (candidate?.id && candidate?.nama) {
+              destinationNameById.set(candidate.id.trim().toUpperCase(), candidate.nama)
+            }
+          }
+        }
+      } catch (storeLookupError) {
+        console.error("Failed to load store names for schedule PDF:", storeLookupError)
+      }
+    }
+
     const filename = `JADWAL_SHIFT_${slugifyStoreName(store.nama ?? "toko")}_${monthFormatter
       .format(new Date(period.year, period.month, 1))
       .toUpperCase()}.pdf`
@@ -1609,7 +1801,19 @@ export function BuatJadwalPage() {
       year: period.year,
       month: period.month,
       employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
-      getStatus: (employeeId, tanggal) => getCellValue(employeeId, tanggal)?.status,
+      getStatus: (employeeId, tanggal) => {
+        const value = getCellValue(employeeId, tanggal)
+        if (!value) return undefined
+        const destination = value.tokoTujuan
+          ? destinationNameById.get(value.tokoTujuan.trim().toUpperCase()) ?? value.tokoTujuan
+          : undefined
+        return {
+          status: value.status,
+          statusKhusus: value.statusKhusus,
+          keterangan: value.keterangan,
+          tokoTujuan: destination,
+        }
+      },
       getActivity: (row, tanggal) => getActivityCellValue(row, tanggal),
       violetStatusKhusus: true,
       rekapTitle,
@@ -1698,7 +1902,7 @@ export function BuatJadwalPage() {
         {isLocked && (
           <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground">
             <LockKeyhole className="size-4" />
-            Jadwal telah selesai dan terkunci. Klik <span className="font-semibold text-foreground">Edit</span> untuk mengubahnya.
+            Jadwal telah selesai dan terkunci. Klik <span className="font-semibold text-foreground">Edit</span> untuk mengubah jadwal, atau klik sel untuk menghapus statusnya.
           </p>
         )}
 
@@ -1748,12 +1952,17 @@ export function BuatJadwalPage() {
                     const statusKhususItem = isStatusKhusus
                       ? getStatusKhususItem(value?.statusKhusus)
                       : undefined
+                    const specialDisplayLabel =
+                      value?.statusKhusus === "backup_toko_lain"
+                        ? getBackupStoreLabel(value.tokoTujuan)
+                        : statusKhususItem?.label ?? "-"
                     const isActive = activeCell?.employeeId === employee.id && activeCell.tanggal === tanggal
 
                     const titleParts: string[] = []
                     if (isStatusKhusus) {
-                      titleParts.push(`${employee.name} — ${statusKhususItem?.label ?? "Status Khusus"}`)
-                      if (value?.tokoTujuan) titleParts.push(`Toko Tujuan: ${value.tokoTujuan}`)
+                      titleParts.push(
+                        `${employee.name} — ${value?.statusKhusus === "backup_toko_lain" ? specialDisplayLabel : statusKhususItem?.label ?? "Status Khusus"}`,
+                      )
                       if (value?.keterangan) titleParts.push(value.keterangan)
                     } else if (option) {
                       titleParts.push(
@@ -1775,15 +1984,39 @@ export function BuatJadwalPage() {
                     if (isLocked) {
                       return (
                         <td key={tanggal} className="border-b border-r border-border p-0.5 text-center last:border-r-0">
-                          <span
-                            title={title}
+                          {savedScheduleByCell.has(getCellKey(employee.id, tanggal)) ? (
+                          <button
+                            type="button"
+                            title={`${title}\nPilih untuk menghapus status`}
+                            aria-label={`${employee.name}, ${tanggal}: ${title}. Hapus status`}
+                            onClick={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect()
+                              setStatusKhususTarget({
+                                employeeId: employee.id,
+                                tanggal,
+                                x: rect.left,
+                                y: rect.bottom,
+                                deleteOnly: true,
+                              })
+                            }}
                             className={cn(
-                              "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
+                              "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
                               displayClass,
                             )}
                           >
-                            {option?.label ?? "-"}
-                          </span>
+                            {isStatusKhusus ? specialDisplayLabel : option?.label ?? "-"}
+                          </button>
+                          ) : (
+                            <span
+                              title={title}
+                              className={cn(
+                                "flex h-6 items-center justify-center truncate rounded px-1 text-[0.6rem] font-bold ring-1 md:mx-auto md:h-7 md:min-w-12 md:px-1.5 md:text-[0.68rem] md:whitespace-nowrap",
+                                displayClass,
+                              )}
+                            >
+                              {isStatusKhusus ? specialDisplayLabel : option?.label ?? "-"}
+                            </span>
+                          )}
                         </td>
                       )
                     }
@@ -1804,7 +2037,7 @@ export function BuatJadwalPage() {
                             isActive && "ring-2 ring-ring",
                           )}
                         >
-                          {option?.label ?? "-"}
+                          {isStatusKhusus ? specialDisplayLabel : option?.label ?? "-"}
                         </button>
                       </td>
                     )
@@ -1973,11 +2206,107 @@ export function BuatJadwalPage() {
         <StatusKhususPopover
           x={statusKhususTarget.x}
           y={statusKhususTarget.y}
-          onBatalPilih={batalPilih}
+          onBatalPilih={() => { void batalPilih() }}
           onSelectKhusus={chooseStatusKhusus}
           onClose={() => setStatusKhususTarget(null)}
         />
       )}
+
+      {statusKhususTarget?.deleteOnly && isLocked && (
+        <StatusKhususPopover
+          x={statusKhususTarget.x}
+          y={statusKhususTarget.y}
+          onBatalPilih={() => { void batalPilih(statusKhususTarget) }}
+          onSelectKhusus={chooseStatusKhusus}
+          onClose={() => setStatusKhususTarget(null)}
+          deleteOnly
+        />
+      )}
+
+      <Modal
+        open={!!backupStoreTarget && canEditCells}
+        onClose={() => setBackupStoreTarget(null)}
+        title="Pilih toko tujuan"
+        description="Hanya toko aktif lain pada cabang yang sama yang tersedia."
+        footer={
+          <Button variant="outline" onClick={() => setBackupStoreTarget(null)}>
+            Batal
+          </Button>
+        }
+      >
+        {backupStoresError ? (
+          <p role="alert" className="text-sm text-destructive">{backupStoresError}</p>
+        ) : backupStores.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Tidak ada toko aktif lain pada cabang ini.</p>
+        ) : (
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {backupStores.map((destination) => (
+              <button
+                key={destination.id}
+                type="button"
+                onClick={() => selectBackupStore(destination.id)}
+                className="flex w-full rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted"
+              >
+                {destination.nama}
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!keteranganTarget && canEditCells}
+        onClose={() => {
+          setKeteranganTarget(null)
+          setKeteranganInputError("")
+        }}
+        title="Keterangan Lainnya"
+        description="Isi keterangan untuk status LAINNYA. Perubahan diterapkan ke draft setelah disimpan."
+        footer={
+          <>
+            {keteranganTarget && (() => {
+              const value = getCellValue(keteranganTarget.employeeId, keteranganTarget.tanggal)
+              return value?.status === STATUS_KHUSUS &&
+                value.statusKhusus === "lainnya" &&
+                Boolean(value.keterangan)
+            })() && (
+              <Button variant="outline" onClick={deleteKeteranganLainnya}>
+                Hapus status LAINNYA
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setKeteranganTarget(null)
+                setKeteranganInputError("")
+              }}
+            >
+              Batal
+            </Button>
+            <Button onClick={saveKeteranganLainnya}>
+              Simpan
+            </Button>
+          </>
+        }
+      >
+        <label className="block space-y-1 text-sm font-medium">
+          <span>Keterangan <span className="text-destructive">*</span></span>
+          <textarea
+            autoFocus
+            rows={3}
+            value={keteranganInput}
+            onChange={(event) => {
+              setKeteranganInput(event.target.value)
+              setKeteranganInputError("")
+            }}
+            placeholder="Tulis keterangan..."
+            className="block w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        {keteranganInputError && (
+          <p role="alert" className="mt-2 text-sm text-destructive">{keteranganInputError}</p>
+        )}
+      </Modal>
 
       {activityTarget && (
         <ActivityPopover
