@@ -8,6 +8,7 @@ import {
   UsersRound,
   TrendingUp,
   ShieldAlert,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react"
 import type { PageKey } from "@/components/app-context"
@@ -164,6 +165,11 @@ export const PROGRAM_KERJA_GROUP: {
       label: "MONITORING ERROR",
       icon: ShieldAlert,
     },
+    {
+      key: "kontribusi-omset",
+      label: "KONTRIBUSI OMSET",
+      icon: BarChart3,
+    },
   ],
 }
 
@@ -184,4 +190,5 @@ export const PAGE_TITLES: Record<PageKey, string> = {
   "jadwal-libur": "JADWAL LIBUR",
   "additional-selling": "TARGET PENJUALAN",
   "monitoring-error": "MONITORING ERROR",
+  "kontribusi-omset": "KONTRIBUSI OMSET",
 }

@@ -38,6 +38,7 @@ export type PageKey =
   | "jadwal-libur"
   | "additional-selling"
   | "monitoring-error"
+  | "kontribusi-omset"
 
 type AppContextValue = {
   page: PageKey
@@ -135,6 +136,7 @@ const VALID_PAGE_KEYS: PageKey[] = [
   "jadwal-libur",
   "additional-selling",
   "monitoring-error",
+  "kontribusi-omset",
 ]
 
 type HistoryState =

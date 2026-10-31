@@ -61,6 +61,7 @@ function SidebarContent({
   const PROGRAM_PAGES = [
     "additional-selling",
     "monitoring-error",
+    "kontribusi-omset",
   ] as const
 
   const isProgramPage = (

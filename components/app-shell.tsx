@@ -23,6 +23,7 @@ import { ManajemenAkunPage } from "@/components/pages/manajemen-akun"
 import { JadwalLiburPage } from "@/components/pages/jadwal-libur"
 import { AdditionalSellingPage } from "@/components/pages/additional-selling"
 import { MonitoringErrorPage } from "@/components/pages/monitoring-error"
+import { KontribusiOmsetPage } from "@/components/pages/kontribusi-omset"
 
 function PageContent() {
   const { page, setPage } = useApp()
@@ -50,6 +51,7 @@ function PageContent() {
     "pengaturan",
     "additional-selling",
     "monitoring-error",
+    "kontribusi-omset",
   ]
 
   if (
@@ -116,6 +118,9 @@ function PageContent() {
 
     case "monitoring-error":
       return <MonitoringErrorPage />
+
+    case "kontribusi-omset":
+      return <KontribusiOmsetPage />
 
     default:
       return null
