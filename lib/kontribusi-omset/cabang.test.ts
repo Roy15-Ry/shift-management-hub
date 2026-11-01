@@ -7,13 +7,13 @@ describe("getCabangDisplayName", () => {
     expect(getCabangDisplayName("bgr-1")).toBe("Bogor dan Banten")
   })
 
-  it("memetakan cjr-1 ke Cianjur dan Cipanas", () => {
-    expect(getCabangDisplayName("cjr-1")).toBe("Cianjur dan Cipanas")
+  it("memetakan cjr-01 ke Cianjur dan Cipanas", () => {
+    expect(getCabangDisplayName("cjr-01")).toBe("Cianjur dan Cipanas")
   })
 
   it("bersifat case-insensitive", () => {
     expect(getCabangDisplayName("BGR-1")).toBe("Bogor dan Banten")
-    expect(getCabangDisplayName("CJR-1")).toBe("Cianjur dan Cipanas")
+    expect(getCabangDisplayName("CJR-01")).toBe("Cianjur dan Cipanas")
   })
 
   it("mengembalikan string kosong untuk kode yang tidak dikenali", () => {
@@ -26,6 +26,6 @@ describe("getCabangDisplayName", () => {
 describe("KONTRIBUSI_CABANG_NAMES", () => {
   it("memuat kedua pemetaan wajib", () => {
     expect(KONTRIBUSI_CABANG_NAMES["bgr-1"]).toBe("Bogor dan Banten")
-    expect(KONTRIBUSI_CABANG_NAMES["cjr-1"]).toBe("Cianjur dan Cipanas")
+    expect(KONTRIBUSI_CABANG_NAMES["cjr-01"]).toBe("Cianjur dan Cipanas")
   })
 })

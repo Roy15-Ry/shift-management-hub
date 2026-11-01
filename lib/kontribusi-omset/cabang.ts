@@ -4,7 +4,7 @@
 
 export const KONTRIBUSI_CABANG_NAMES: Record<string, string> = {
   "bgr-1": "Bogor dan Banten",
-  "cjr-1": "Cianjur dan Cipanas",
+  "cjr-01": "Cianjur dan Cipanas",
 }
 
 export function getCabangDisplayName(
