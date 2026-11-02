@@ -202,7 +202,8 @@ function parseTargetBulanan(
 // mempersempit ke satu toko dalam scope.
 async function resolveStoreIds(
   user: TargetUser,
-  storeParam: string,
+  cabangParam: string,
+  storeParam: string = "",
 ): Promise<TargetStoreScope> {
   const role =
     user.role.toLowerCase()
@@ -228,7 +229,7 @@ async function resolveStoreIds(
 
   if (role === "central_pusat") {
     cabangId =
-      normalize(storeParam)
+      normalize(cabangParam)
 
     if (
       !cabangId ||
@@ -482,7 +483,10 @@ export async function GET(
       await resolveStoreIds(
         user,
         user.role.toLowerCase() === "central_pusat"
-          ? cabangParam || storeParam
+          ? cabangParam
+          : "",
+        user.role.toLowerCase() === "central_pusat"
+          ? storeParam
           : "",
       )
 

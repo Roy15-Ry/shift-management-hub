@@ -988,13 +988,14 @@ export function KontribusiOmsetPage() {
   // Load employees (active only)
   React.useEffect(() => {
     const storeIdForEmployees = isStore ? profile?.storeId : selectedStore
+    const cabangIdForEmployees = isStore ? undefined : storeScopeCabang
     if ((!isStore && !isCentral) || !storeIdForEmployees) {
       setEmployees([])
       return
     }
     let cancelled = false
     setEmployeesLoading(true)
-    getEmployees(storeIdForEmployees)
+    getEmployees(storeIdForEmployees, cabangIdForEmployees)
       .then((list) => {
         if (!cancelled) {
           setEmployees(Array.isArray(list) ? list : [])
@@ -1012,10 +1013,10 @@ export function KontribusiOmsetPage() {
         }
       })
     return () => { cancelled = true }
-  }, [isStore, isCentral, profile?.storeId, selectedStore])
+  }, [isStore, isCentral, profile?.storeId, selectedStore, storeScopeCabang])
 
-  async function getEmployees(storeId: string): Promise<FirestoreEmployee[]> {
-    return getFirestoreEmployees(storeId)
+  async function getEmployees(storeId: string, cabangId?: string): Promise<FirestoreEmployee[]> {
+    return getFirestoreEmployees(storeId, cabangId)
   }
 
   // Load daily reports
@@ -1035,6 +1036,7 @@ export function KontribusiOmsetPage() {
       return
     }
     const requestId = ++dailyReportsRequestRef.current
+    setDailyReports([])
     setDailyReportsLoading(true)
     try {
       const authedUser = user
@@ -1050,9 +1052,9 @@ export function KontribusiOmsetPage() {
           return
         }
         url += "&cabang=" + encodeURIComponent(selectedBranch)
-        if (selectedStore) {
-          url += "&store=" + encodeURIComponent(selectedStore)
-        }
+      }
+      if (isCentral && selectedStore) {
+        url += "&store=" + encodeURIComponent(selectedStore)
       }
       const response = await fetch(url, {
         method: "GET",
@@ -1118,6 +1120,9 @@ export function KontribusiOmsetPage() {
           store: targetStoreId,
           employeeId: emp.id,
         })
+        if (isCentralPusat && selectedBranch) {
+          params.set("cabang", selectedBranch)
+        }
         const url = "/api/kontribusi-omset/target?" + params.toString()
         const response = await fetch(url, {
           method: "GET",
@@ -1769,7 +1774,24 @@ export function KontribusiOmsetPage() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          {singleStoreContext && (
+          {isCentral && (
+            <span className="inline-flex items-center gap-1 rounded-lg border border-red-500/50 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.20)]">
+              MODE PEMANTAUAN
+            </span>
+          )}
+          {isCentral && selectedStore && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedStore("")}
+              className="gap-1.5"
+            >
+              <ArrowLeft className="size-4" />
+              Kembali ke Daftar Toko
+            </Button>
+          )}
+          {isStore && singleStoreContext && (
             <Button
               type="button"
               onClick={openTargetModal}
@@ -1826,18 +1848,10 @@ export function KontribusiOmsetPage() {
                   <ScopeValue value="Memuat toko..." muted />
                 ) : storesError ? (
                   <ScopeValue value="Daftar toko tidak tersedia" muted />
+                ) : selectedStore ? (
+                  <ScopeValue value={selectedStoreOption?.namaStore || selectedStore} />
                 ) : (
-                  <SelectField
-                    value={selectedStore}
-                    onChange={setSelectedStore}
-                    options={[
-                      { value: "", label: "Semua Toko" },
-                      ...stores.map((store) => ({
-                        value: store.storeId,
-                        label: store.namaStore || store.storeId,
-                      })),
-                    ]}
-                  />
+                  <ScopeValue value="Pilih toko dari kartu di bawah" muted />
                 )}
               </Field>
             </CardContent>
@@ -1853,6 +1867,45 @@ export function KontribusiOmsetPage() {
               >
                 Coba Lagi
               </Button>
+            </div>
+          )}
+          {!isStore && !storesLoading && !storesError && stores.length === 0 && (
+            <EmptyState
+              title="Belum ada toko"
+              description="Cabang ini belum memiliki toko aktif."
+              icon={Store}
+            />
+          )}
+          {!isStore && !storesLoading && !storesError && stores.length > 0 && !singleStoreContext && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {stores.map((store) => (
+                <button
+                  type="button"
+                  key={store.storeId}
+                  onClick={() => setSelectedStore(store.storeId)}
+                   className={cn(
+                     "group flex flex-col gap-3 rounded-xl border border-red-500 bg-card bg-red-500/5 p-4 text-left shadow-[0_0_4px_rgba(239,68,68,0.25)] transition-all duration-200 hover:-translate-y-0.5 hover:border-red-500 hover:shadow-[0_0_6px_rgba(239,68,68,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                   )}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+                      <Store className="size-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {store.namaStore || store.storeId}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {store.storeId}
+                      </p>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                  <div className="flex items-center justify-end border-t border-border/60 pt-2 text-xs font-medium text-primary">
+                    Lihat Dashboard Toko
+                  </div>
+                </button>
+              ))}
             </div>
           )}
           {singleStoreContext && !storesLoading && !storesError && (!isCentral || stores.length > 0) ? (
@@ -2058,25 +2111,29 @@ export function KontribusiOmsetPage() {
                               <td className="px-3 py-2 text-center">
                                 {report ? (
                                   <div className="flex items-center justify-center gap-1">
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleEditReport(tanggal)}
-                                      disabled={isEditingReport || isDeletingReport}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="destructive"
-                                      size="sm"
-                                      onClick={() => handleDeleteReport(tanggal)}
-                                      disabled={isEditingReport || isDeletingReport}
-                                    >
-                                      <Trash className="size-3" />
-                                      Hapus
-                                    </Button>
+                                    {isStore && (
+                                      <>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleEditReport(tanggal)}
+                                          disabled={isEditingReport || isDeletingReport}
+                                        >
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="destructive"
+                                          size="sm"
+                                          onClick={() => handleDeleteReport(tanggal)}
+                                          disabled={isEditingReport || isDeletingReport}
+                                        >
+                                          <Trash className="size-3" />
+                                          Hapus
+                                        </Button>
+                                      </>
+                                    )}
                                   </div>
                                   ) : null}
                               </td>
@@ -2142,13 +2199,13 @@ export function KontribusiOmsetPage() {
                 </CardContent>
               </Card>
             </div>
-          ) : (
+          ) : !storesLoading && !storesError && stores.length === 0 ? (
             <EmptyState
               title="Belum ada toko"
               description="Belum ada toko pada cabang yang dipilih."
               icon={Store}
             />
-          )}
+          ) : null}
         </div>
       )}
     {/* Modal Atur Target Tim */}

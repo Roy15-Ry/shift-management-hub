@@ -465,7 +465,8 @@ function errorResponse(
 
 async function resolveStoreIds(
   user: KontribusiUser,
-  storeParam: string,
+  cabangParam: string,
+  storeParam: string = "",
 ): Promise<KontribusiStoreScope> {
   const role =
     user.role.toLowerCase()
@@ -491,7 +492,7 @@ async function resolveStoreIds(
 
   if (role === "central_pusat") {
     cabangId =
-      normalize(storeParam)
+      normalize(cabangParam)
 
     if (
       !cabangId ||
@@ -634,7 +635,10 @@ export async function GET(
       await resolveStoreIds(
         user,
         user.role.toLowerCase() === "central_pusat"
-          ? cabangParam || storeParam
+          ? cabangParam
+          : "",
+        user.role.toLowerCase() === "central_pusat"
+          ? storeParam
           : "",
       )
 
