@@ -1,23 +1,22 @@
 import { readFile } from "node:fs/promises"
 
 // ============================================================
-// FAVICON (WEBP) — serves app/icon.webp as the browser favicon.
+// FAVICON (ICO) — serves public/favicon (1).ico as the browser favicon.
 //
-// Next.js only auto-discovers app icons for .ico/.jpg/.jpeg/
-// .png/.svg via the `icon` file convention. `.webp` is NOT
-// supported by the convention, so we serve it explicitly and
-// reference it from metadata.icons in app/layout.tsx.
+// `.ico` IS supported by Next.js icon convention, but we serve it
+// explicitly via this route and reference it from metadata.icons
+// in app/layout.tsx so the favicon source can be controlled here.
 // ============================================================
 
 export async function GET() {
   try {
-    const file = new URL("../../icon.webp", import.meta.url)
+    const file = new URL("../../../public/favicon (1).ico", import.meta.url)
 
     const bytes = await readFile(file)
 
     return new Response(bytes, {
       headers: {
-        "Content-Type": "image/webp",
+        "Content-Type": "image/x-icon",
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     })

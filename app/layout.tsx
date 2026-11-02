@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: 'MOTIONS — Management Operational System',
   generator: 'v0.app',
   icons: {
-    icon: '/api/icon',
+    icon: '/api/icon?v=2',
   },
 }
 
