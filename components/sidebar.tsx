@@ -86,12 +86,12 @@ function SidebarContent({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold leading-tight text-white">
-            SHIFT MANAGEMENT
+          <p className="text-base font-bold leading-tight text-white">
+            MOTIONS
           </p>
 
-          <p className="truncate text-xs text-sidebar-foreground/70">
-            Monitoring Jadwal Shift
+          <p className="text-[9px] leading-[1.1] text-sidebar-foreground/70">
+            MANAGEMENT OPERATIONAL SYSTEM
           </p>
         </div>
       </div>

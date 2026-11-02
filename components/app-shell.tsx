@@ -179,7 +179,7 @@ function Shell() {
           <p
             className="max-w-[1400px] text-xs text-muted-foreground"
           >
-            © 2026 - Shift Management. All Rights Reserved.
+            © 2026 - Management Operational System. All Rights Reserved.
           </p>
         </footer>
       </div>

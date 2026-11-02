@@ -13,8 +13,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Shift Management — Central',
-  description: 'Pusat Informasi dan Monitoring Jadwal Shift',
+  title: 'MOTIONS',
+  description: 'MOTIONS — Management Operational System',
   generator: 'v0.app',
   icons: {
     icon: '/api/icon',

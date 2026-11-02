@@ -156,6 +156,8 @@ function KpiCardPerKaryawan({
   sisaTarget,
   targetHariIni,
   pencapaian,
+  totalVisitor,
+  rataRataPenjualan,
   onEditTarget,
 }: {
   karyawan: { employeeId: string; employeeName: string }
@@ -165,6 +167,8 @@ function KpiCardPerKaryawan({
   sisaTarget: number | null
   targetHariIni: number
   pencapaian: number | null
+  totalVisitor: number
+  rataRataPenjualan: number
   onEditTarget: () => void
 }) {
   const color = getKaryawanColorText(
@@ -172,7 +176,7 @@ function KpiCardPerKaryawan({
   )
 
   return (
-    <Card className="overflow-hidden border border-l-4 border-l-2">
+    <Card className="overflow-hidden border border-blue-500/40 border-l-4 shadow-[0_0_12px_rgba(59,130,246,0.15)] hover:border-blue-500/60 hover:shadow-[0_0_16px_rgba(59,130,246,0.25)] transition-colors duration-200">
       <CardContent className="p-4 sm:p-5">
         {/* Header: Nama */}
         <div className="flex items-center gap-2 mb-3">
@@ -194,7 +198,7 @@ function KpiCardPerKaryawan({
 
         <div className="grid gap-2 sm:grid-cols-2">
           {/* Target Bulan Ini */}
-          <div className="rounded-lg border border-muted p-3">
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
             <p className="text-xs font-medium text-foreground">
               Target Bulan Ini
             </p>
@@ -211,7 +215,7 @@ function KpiCardPerKaryawan({
           </div>
 
           {/* Realisasi */}
-          <div className="rounded-lg border border-muted p-3">
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
             <p className="text-xs font-medium text-foreground">
               Realisasi
             </p>
@@ -221,7 +225,7 @@ function KpiCardPerKaryawan({
           </div>
 
           {/* Sisa Target */}
-          <div className="rounded-lg border border-muted p-3">
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
             <p className="text-xs font-medium text-foreground">
               Sisa Target
             </p>
@@ -233,7 +237,7 @@ function KpiCardPerKaryawan({
           </div>
 
           {/* Persentase Pencapaian */}
-          <div className="rounded-lg border border-muted p-3">
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
             <p className="text-xs font-medium text-foreground">
               Persentase Pencapaian
             </p>
@@ -241,14 +245,34 @@ function KpiCardPerKaryawan({
               {pencapaian !== null ? `${pencapaian.toFixed(1)}%` : "0%"}
             </p>
           </div>
+
+          {/* Total Visitor */}
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
+            <p className="text-xs font-medium text-foreground">
+              Total Visitor
+            </p>
+            <p className="mt-1 text-sm font-semibold tabular-nums">
+              {totalVisitor.toLocaleString("id-ID")}
+            </p>
+          </div>
+
+          {/* Rata-rata Penjualan */}
+          <div className="rounded-lg border border-blue-500/30 p-3 shadow-[0_0_8px_rgba(59,130,246,0.10)] hover:border-blue-500/50 hover:shadow-[0_0_12px_rgba(59,130,246,0.15)] transition-colors duration-200">
+            <p className="text-xs font-medium text-foreground">
+              Rata-rata Penjualan
+            </p>
+            <p className="mt-1 text-sm font-semibold tabular-nums">
+              {formatRupiahNumber(rataRataPenjualan)}
+            </p>
+          </div>
         </div>
 
         {/* Target Hari Ini */}
-        <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+        <div className="mt-2 rounded-lg border border-red-500/80 bg-red-500/10 p-3 shadow-[0_0_10px_rgba(239,68,68,0.25)]">
           <p className="text-xs font-medium text-foreground">
             Target Hari Ini
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-primary">
+          <p className="mt-1 text-lg font-bold tabular-nums text-red-500">
             {formatRupiahNumber(targetHariIni)}
           </p>
         </div>
@@ -434,8 +458,6 @@ function createOmsetInputHandler(
       ? formatDigitsWithThousandSeparators(digits)
       : ""
 
-    const dotsBeforeCaret =
-      (rawValue.slice(0, start).match(/\./g) || []).length
     const digitsBeforeCaret =
       (rawValue.slice(0, start).match(/\d/g) || []).length
 
@@ -444,18 +466,20 @@ function createOmsetInputHandler(
     requestAnimationFrame(() => {
       if (!input || input !== document.activeElement) return
       const totalDigits = digits.length
-      const digitsFromRight = totalDigits - digitsBeforeCaret
-      let dotsBeforeNewCaret = 0
-      if (digitsFromRight >= 3) {
-        dotsBeforeNewCaret = Math.floor(digitsFromRight / 3)
-        if (digitsFromRight % 3 === 0 && digitsBeforeCaret > 0) {
-          dotsBeforeNewCaret -= 1
+      let newPos: number
+      if (start === rawValue.length) {
+        // Kursor di ujung kanan sebelum pemformatan → di ujung kanan hasil format
+        newPos = formatted.length
+      } else {
+        // Pengeditan di tengah: hitung pemisah ribuan sebelum posisi kursor
+        let dotsBeforeNewCaret = 0
+        for (let p = 1; p < digitsBeforeCaret; p++) {
+          if ((totalDigits - p) % 3 === 0) {
+            dotsBeforeNewCaret++
+          }
         }
+        newPos = Math.min(digitsBeforeCaret + dotsBeforeNewCaret, formatted.length)
       }
-      const newPos = Math.min(
-        digitsBeforeCaret + dotsBeforeNewCaret,
-        formatted.length,
-      )
       input.setSelectionRange(newPos, newPos)
     })
   }
@@ -477,8 +501,6 @@ function createTargetInputHandler(
       ? formatDigitsWithThousandSeparators(digits)
       : ""
 
-    const dotsBeforeCaret =
-      (rawValue.slice(0, start).match(/\./g) || []).length
     const digitsBeforeCaret =
       (rawValue.slice(0, start).match(/\d/g) || []).length
 
@@ -487,18 +509,20 @@ function createTargetInputHandler(
     requestAnimationFrame(() => {
       if (!input || input !== document.activeElement) return
       const totalDigits = digits.length
-      const digitsFromRight = totalDigits - digitsBeforeCaret
-      let dotsBeforeNewCaret = 0
-      if (digitsFromRight >= 3) {
-        dotsBeforeNewCaret = Math.floor(digitsFromRight / 3)
-        if (digitsFromRight % 3 === 0 && digitsBeforeCaret > 0) {
-          dotsBeforeNewCaret -= 1
+      let newPos: number
+      if (start === rawValue.length) {
+        // Kursor di ujung kanan sebelum pemformatan → di ujung kanan hasil format
+        newPos = formatted.length
+      } else {
+        // Pengeditan di tengah: hitung pemisah ribuan sebelum posisi kursor
+        let dotsBeforeNewCaret = 0
+        for (let p = 1; p < digitsBeforeCaret; p++) {
+          if ((totalDigits - p) % 3 === 0) {
+            dotsBeforeNewCaret++
+          }
         }
+        newPos = Math.min(digitsBeforeCaret + dotsBeforeNewCaret, formatted.length)
       }
-      const newPos = Math.min(
-        digitsBeforeCaret + dotsBeforeNewCaret,
-        formatted.length,
-      )
       input.setSelectionRange(newPos, newPos)
     })
   }
@@ -1179,13 +1203,15 @@ export function KontribusiOmsetPage() {
     const targetBulanan = target?.targetBulanan ?? null
     const targetTersedia = target?.targetTersedia ?? false
 
-    // Realisasi from daily reports
+    // Realisasi and visitor from daily reports
     let realisasiBulanan = 0
     let realisasiSebelumHariIni = 0
+    let totalVisitor = 0
     for (const r of dailyReports) {
       const empReport = r.employees.find((e) => e.employeeId === emp.id)
       if (empReport) {
         realisasiBulanan += empReport.omset
+        totalVisitor += empReport.visitor
         if (r.tanggal !== todayJakartaDateStr) {
           realisasiSebelumHariIni += empReport.omset
         }
@@ -1198,6 +1224,7 @@ export function KontribusiOmsetPage() {
     const targetHariIni = sisaTarget !== null && sisaHari > 0
       ? hitungTargetHarian(sisaTarget, sisaHari) ?? 0
       : 0
+    const rataRataPenjualan = totalVisitor > 0 ? realisasiBulanan / totalVisitor : 0
 
     return {
       employeeId: emp.id,
@@ -1208,6 +1235,8 @@ export function KontribusiOmsetPage() {
       sisaTarget,
       pencapaian,
       targetHariIni,
+      totalVisitor,
+      rataRataPenjualan,
     }
   })
 
@@ -1852,6 +1881,8 @@ export function KontribusiOmsetPage() {
                       sisaTarget={kpi.sisaTarget}
                       targetHariIni={kpi.targetHariIni ?? 0}
                       pencapaian={kpi.pencapaian}
+                      totalVisitor={kpi.totalVisitor}
+                      rataRataPenjualan={kpi.rataRataPenjualan}
                       onEditTarget={() => openTargetModal()}
                     />
                   ))
@@ -1867,8 +1898,8 @@ export function KontribusiOmsetPage() {
                       {isStore && (
                         <Button
                           type="button"
-                          variant="outline"
                           size="sm"
+                          className="bg-red-500 text-white hover:bg-red-600 shadow-[0_0_8px_rgba(239,68,68,0.20)] hover:shadow-[0_0_12px_rgba(239,68,68,0.30)] transition-colors duration-200"
                           onClick={() => {
                             setInputError("")
                             setInputTanggal(todayJakartaDateStr ?? "")
