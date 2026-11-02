@@ -224,5 +224,32 @@ service cloud.firestore {
 
       allow create, update, delete: if false;
     }
+
+    // =====================================================
+    // KONTRIBUSI OMZET REPORTS — akses hanya melalui server
+    // =====================================================
+
+    match /kontribusi_omset_reports/{docId} {
+
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // KONTRIBUSI OMZET TARGETS — akses hanya melalui server
+    // =====================================================
+
+    match /kontribusi_omset_targets/{docId} {
+
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // KONTRIBUSI OMZET TARGET HISTORY — akses hanya melalui server
+    // =====================================================
+
+    match /kontribusi_omset_target_history/{docId} {
+
+      allow read, write: if false;
+    }
   }
 }
