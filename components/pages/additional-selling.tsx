@@ -1231,11 +1231,77 @@ export function AdditionalSellingPage() {
   const [formError, setFormError] = React.useState("")
   const [formSaving, setFormSaving] = React.useState(false)
   const [produkDropdownOpen, setProdukDropdownOpen] = React.useState(false)
+  const [produkMenuPosition, setProdukMenuPosition] = React.useState<{
+    top: number
+    left: number
+    width: number
+    maxHeight: number
+  } | null>(null)
   const produkTriggerRef = React.useRef<HTMLDivElement>(null)
   const produkMenuRef = React.useRef<HTMLDivElement>(null)
 
+  const PRODUK_DROPDOWN_MARGIN = 4
+  const PRODUK_DROPDOWN_MAX_HEIGHT = 362
+  const PRODUK_DROPDOWN_ITEM_HEIGHT = 36
+
+  const computeProdukMenuPosition = () => {
+    if (!produkTriggerRef.current) return null
+
+    const triggerRect = produkTriggerRef.current.getBoundingClientRect()
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+
+    const spaceBelow = viewportHeight - triggerRect.bottom - PRODUK_DROPDOWN_MARGIN
+    const spaceAbove = triggerRect.top - PRODUK_DROPDOWN_MARGIN
+
+    let top: number
+    let maxHeight: number
+
+    if (spaceBelow >= PRODUK_DROPDOWN_MAX_HEIGHT) {
+      top = triggerRect.bottom + PRODUK_DROPDOWN_MARGIN
+      maxHeight = PRODUK_DROPDOWN_MAX_HEIGHT
+    } else if (spaceAbove >= PRODUK_DROPDOWN_MAX_HEIGHT) {
+      top = triggerRect.top - PRODUK_DROPDOWN_MAX_HEIGHT - PRODUK_DROPDOWN_MARGIN
+      maxHeight = PRODUK_DROPDOWN_MAX_HEIGHT
+    } else if (spaceBelow > spaceAbove && spaceBelow > PRODUK_DROPDOWN_ITEM_HEIGHT * 2) {
+      top = triggerRect.bottom + PRODUK_DROPDOWN_MARGIN
+      maxHeight = Math.min(spaceBelow, PRODUK_DROPDOWN_MAX_HEIGHT)
+    } else if (spaceAbove > PRODUK_DROPDOWN_ITEM_HEIGHT * 2) {
+      top = triggerRect.top - spaceAbove - PRODUK_DROPDOWN_MARGIN
+      maxHeight = Math.min(spaceAbove, PRODUK_DROPDOWN_MAX_HEIGHT)
+    } else {
+      top = Math.max(PRODUK_DROPDOWN_MARGIN, triggerRect.bottom + PRODUK_DROPDOWN_MARGIN)
+      maxHeight = Math.max(
+        Math.min(viewportHeight - top - PRODUK_DROPDOWN_MARGIN, PRODUK_DROPDOWN_MAX_HEIGHT),
+        PRODUK_DROPDOWN_ITEM_HEIGHT * 2
+      )
+    }
+
+    top = Math.max(
+      PRODUK_DROPDOWN_MARGIN,
+      Math.min(top, viewportHeight - maxHeight - PRODUK_DROPDOWN_MARGIN)
+    )
+
+    const left = Math.max(
+      PRODUK_DROPDOWN_MARGIN,
+      Math.min(
+        triggerRect.left,
+        viewportWidth - triggerRect.width - PRODUK_DROPDOWN_MARGIN
+      )
+    )
+
+    return { top, left, width: triggerRect.width, maxHeight }
+  }
+
+  const updateProdukMenuPosition = () => {
+    const position = computeProdukMenuPosition()
+    if (position) {
+      setProdukMenuPosition(position)
+    }
+  }
+
   React.useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handlePointerDown(e: PointerEvent) {
       if (
         produkDropdownOpen &&
         produkTriggerRef.current &&
@@ -1246,8 +1312,29 @@ export function AdditionalSellingPage() {
         setProdukDropdownOpen(false)
       }
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
+
+    function handleViewportChange() {
+      updateProdukMenuPosition()
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    window.addEventListener("scroll", handleViewportChange)
+    window.addEventListener("resize", handleViewportChange)
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", handleViewportChange)
+      window.visualViewport.addEventListener("scroll", handleViewportChange)
+    }
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      window.removeEventListener("scroll", handleViewportChange)
+      window.removeEventListener("resize", handleViewportChange)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", handleViewportChange)
+        window.visualViewport.removeEventListener("scroll", handleViewportChange)
+      }
+    }
   }, [produkDropdownOpen])
 
   // Employee tersedia pada tanggal form: aktif, ATAU nonaktif namun
@@ -2779,6 +2866,9 @@ export function AdditionalSellingPage() {
                   <Field label="Produk">
                     <div className="relative" onClick={(e) => {
                       e.stopPropagation()
+                      if (!produkDropdownOpen) {
+                        updateProdukMenuPosition()
+                      }
                       setProdukDropdownOpen(!produkDropdownOpen)
                     }}>
                       <div
@@ -2799,14 +2889,15 @@ export function AdditionalSellingPage() {
                           className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                         />
                       </div>
-                      {produkDropdownOpen && produkTriggerRef.current && (
+                      {produkDropdownOpen && produkTriggerRef.current && produkMenuPosition && (
                         <div
                           ref={produkMenuRef}
-                          className="fixed z-[60] w-full max-h-[362px] overflow-y-auto border border-input bg-card rounded-lg shadow-lg"
+                          className="fixed z-[60] w-full overflow-y-auto border border-input bg-card rounded-lg shadow-lg"
                           style={{
-                            top: produkTriggerRef.current.getBoundingClientRect().bottom + 4,
-                            left: produkTriggerRef.current.getBoundingClientRect().left,
-                            width: produkTriggerRef.current.getBoundingClientRect().width,
+                            top: produkMenuPosition.top,
+                            left: produkMenuPosition.left,
+                            width: produkMenuPosition.width,
+                            maxHeight: produkMenuPosition.maxHeight,
                           }}
                         >
                           {PRODUK_LIST.map((p) => (
