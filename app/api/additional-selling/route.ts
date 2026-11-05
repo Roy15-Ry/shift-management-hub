@@ -86,7 +86,34 @@ type PenjualanJenis = (typeof JENIS_LIST)[number]
 const UKURAN_BOTOL_LIST = ["55 ML", "100 ML"] as const
 
 // Produk yang valid untuk SELLING EKSKLUSIF PERFUME.
-const PRODUK_LIST = ["PAX", "FEEL BETTER", "LAINNYA"] as const
+// Semua entri huruf kapital agar cocok dengan hasil normalize() (uppercase)
+// saat dibandingkan oleh isProduk().
+const PRODUK_LIST = [
+  "PAX",
+  "FEEL BETTER",
+  "D'DAY ROYALE EIXIR",
+  "ADERIE",
+  "BLUE DESIRO",
+  "CHIFFON PINK",
+  "CONTRA NOUVEA",
+  "DARK OPIUM",
+  "DEEP OCEAN",
+  "ENDLESS EUPHORIA",
+  "EXTRAIT OF RED",
+  "FRESH MIND",
+  "I CAN TO SAY",
+  "JUST BELIEVE",
+  "MOTION BLUE",
+  "SAVAGE",
+  "SCENT OF VANILLA",
+  "SPARKLING WOMEN",
+  "STILL GOOD",
+  "VIKSI BOMB",
+  "VIKSI ROMANTIC",
+  "VIKSI SCAND",
+  "WHO SAYS",
+  "LAINNYA",
+] as const
 
 type UkuranBotol = (typeof UKURAN_BOTOL_LIST)[number]
 type Produk = (typeof PRODUK_LIST)[number]

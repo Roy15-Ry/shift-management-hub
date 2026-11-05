@@ -18,6 +18,7 @@ import {
   Target,
   Trash2,
   TrendingUp,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/ui/modal"
@@ -75,10 +76,34 @@ const JENIS_LIST = [
 type PenjualanJenis = (typeof JENIS_LIST)[number]
 
 const UKURAN_BOTOL_LIST = ["55 ML", "100 ML"] as const
-const PRODUK_LIST = ["PAX", "FEEL BETTER", "LAINNYA"] as const
+const PRODUK_LIST = [
+  "FEEL BETTER",
+  "D'day Royale Eixir",
+  "Aderie",
+  "Blue Desiro",
+  "Chiffon Pink",
+  "Contra Nouvea",
+  "Dark Opium",
+  "Deep Ocean",
+  "Endless Euphoria",
+  "Extrait Of Red",
+  "Fresh Mind",
+  "I Can To Say",
+  "Just Believe",
+  "Motion Blue",
+  "Savage",
+  "Scent Of Vanilla",
+  "Sparkling Women",
+  "Still Good",
+  "Viksi Bomb",
+  "Viksi Romantic",
+  "Viksi Scand",
+  "Who Says",
+  "LAINNYA",
+] as const
 
 type UkuranBotol = (typeof UKURAN_BOTOL_LIST)[number]
-type Produk = (typeof PRODUK_LIST)[number]
+type Produk = "" | "PAX" | (typeof PRODUK_LIST)[number]
 
 const JENIS_LABEL: Record<PenjualanJenis, string> = {
   ADDITIONAL_SELLING: "Additional Selling",
@@ -1194,7 +1219,7 @@ export function AdditionalSellingPage() {
       nominal: "",
       pcs: "",
       ukuranBotol: "55 ML",
-      produk: "PAX",
+      produk: "",
       namaProdukLain: "",
       keterangan: "",
     }
@@ -1205,6 +1230,25 @@ export function AdditionalSellingPage() {
   const [form, setForm] = React.useState<FormState>(emptyFormState)
   const [formError, setFormError] = React.useState("")
   const [formSaving, setFormSaving] = React.useState(false)
+  const [produkDropdownOpen, setProdukDropdownOpen] = React.useState(false)
+  const produkTriggerRef = React.useRef<HTMLDivElement>(null)
+  const produkMenuRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        produkDropdownOpen &&
+        produkTriggerRef.current &&
+        produkMenuRef.current &&
+        !produkTriggerRef.current.contains(e.target as Node) &&
+        !produkMenuRef.current.contains(e.target as Node)
+      ) {
+        setProdukDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [produkDropdownOpen])
 
   // Employee tersedia pada tanggal form: aktif, ATAU nonaktif namun
   // tanggal belum melewati tanggalNonaktif.
@@ -1299,6 +1343,11 @@ export function AdditionalSellingPage() {
       }
 
       body.pcs = pcs
+
+      if (form.jenis === "SELLING_EKSKLUSIF_PERFUME" && !form.produk) {
+        setFormError("Produk wajib dipilih.")
+        return
+      }
 
       if (form.jenis === "UPSIZE_BOTOL") {
         body.ukuranBotol = form.ukuranBotol
@@ -2619,49 +2668,57 @@ export function AdditionalSellingPage() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Tanggal">
-              <DateField
-                value={form.tanggal}
-                onChange={(v) =>
-                  setForm((current) => ({ ...current, tanggal: v }))
-                }
-              />
+              <div className="focus-within:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus-within:shadow-[0_0_14px_rgba(59,130,248,0.50)] dark:focus-within:bg-blue-900/5 focus-within:bg-blue-50/30 transition-all duration-150 rounded-lg p-0.5">
+                <DateField
+                  value={form.tanggal}
+                  onChange={(v) =>
+                    setForm((current) => ({ ...current, tanggal: v }))
+                  }
+                />
+              </div>
             </Field>
 
             <Field label="Nama Tim">
-              <SelectField
-                value={form.employeeId}
-                onChange={(v) =>
-                  setForm((current) => ({
-                    ...current,
-                    employeeId: v,
-                  }))
-                }
-                options={[
-                  { value: "", label: "Pilih Tim" },
-                  ...availableEmployees.map((e) => ({
-                    value: e.id,
-                    label: e.name,
-                  })),
-                ]}
-              />
+              <div className="focus-within:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus-within:shadow-[0_0_14px_rgba(59,130,248,0.50)] dark:focus-within:bg-blue-900/5 focus-within:bg-blue-50/30 transition-all duration-150 rounded-lg p-0.5">
+                <SelectField
+                  value={form.employeeId}
+                  onChange={(v) =>
+                    setForm((current) => ({
+                      ...current,
+                      employeeId: v,
+                    }))
+                  }
+                  options={[
+                    { value: "", label: "Pilih Tim" },
+                    ...availableEmployees.map((e) => ({
+                      value: e.id,
+                      label: e.name,
+                    })),
+                  ]}
+                />
+              </div>
             </Field>
           </div>
 
           <Field label="Jenis Penjualan">
-            <SelectField
-              value={form.jenis}
-              onChange={(v) =>
-                setForm((current) => ({
-                  ...current,
-                  jenis: v as PenjualanJenis,
-                }))
-              }
-              options={JENIS_LIST.map((j) => ({
-                value: j,
-                label: JENIS_LABEL[j],
-              }))}
-            />
-          </Field>
+              <div className="focus-within:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus-within:shadow-[0_0_14px_rgba(59,130,248,0.50)] dark:focus-within:bg-blue-900/5 focus-within:bg-blue-50/30 transition-all duration-150 rounded-lg p-0.5">
+                <SelectField
+                  value={form.jenis}
+                  onChange={(v) => {
+                    setForm((current) => ({
+                      ...current,
+                      jenis: v as PenjualanJenis,
+                      produk: v === "SELLING_EKSKLUSIF_PERFUME" ? "" : current.produk,
+                    }))
+                    setProdukDropdownOpen(false)
+                  }}
+                  options={JENIS_LIST.map((j) => ({
+                    value: j,
+                    label: JENIS_LABEL[j],
+                  }))}
+                />
+              </div>
+            </Field>
 
           {form.jenis === "ADDITIONAL_SELLING" ? (
             <Field label="Nilai Additional Selling (Rp)">
@@ -2675,8 +2732,8 @@ export function AdditionalSellingPage() {
                     nominal: toDigitsOnly(e.target.value, 12),
                   }))
                 }
-                placeholder="Contoh: 150000"
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+                    placeholder="Contoh: 150000"
+                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/25 shadow-[0_0_6px_rgba(255,255,255,0.10)] dark:shadow-[0_0_6px_rgba(255,255,255,0.18)] focus:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus:shadow-[0_0_14px_rgba(59,130,248,0.50)] focus:bg-blue-50/30 dark:focus:bg-blue-900/10"
               />
             </Field>
           ) : (
@@ -2694,43 +2751,83 @@ export function AdditionalSellingPage() {
                       }))
                     }
                     placeholder="Contoh: 12"
-                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+                    className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/25 shadow-[0_0_6px_rgba(255,255,255,0.10)] dark:shadow-[0_0_6px_rgba(255,255,255,0.18)] focus:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus:shadow-[0_0_14px_rgba(59,130,248,0.50)] focus:bg-blue-50/30 dark:focus:bg-blue-900/10"
                   />
                 </Field>
 
                 {form.jenis === "UPSIZE_BOTOL" && (
                   <Field label="Ukuran Botol">
-                    <SelectField
-                      value={form.ukuranBotol}
-                      onChange={(v) =>
-                        setForm((current) => ({
-                          ...current,
-                          ukuranBotol: v as UkuranBotol,
-                        }))
-                      }
-                      options={UKURAN_BOTOL_LIST.map((u) => ({
-                        value: u,
-                        label: u,
-                      }))}
-                    />
+                    <div className="focus-within:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus-within:shadow-[0_0_14px_rgba(59,130,248,0.50)] dark:focus-within:bg-blue-900/5 focus-within:bg-blue-50/30 transition-all duration-150 rounded-lg p-0.5">
+                      <SelectField
+                        value={form.ukuranBotol}
+                        onChange={(v) =>
+                          setForm((current) => ({
+                            ...current,
+                            ukuranBotol: v as UkuranBotol,
+                          }))
+                        }
+                        options={UKURAN_BOTOL_LIST.map((u) => ({
+                          value: u,
+                          label: u,
+                        }))}
+                      />
+                    </div>
                   </Field>
                 )}
 
                 {form.jenis === "SELLING_EKSKLUSIF_PERFUME" && (
                   <Field label="Produk">
-                    <SelectField
-                      value={form.produk}
-                      onChange={(v) =>
-                        setForm((current) => ({
-                          ...current,
-                          produk: v as Produk,
-                        }))
-                      }
-                      options={PRODUK_LIST.map((p) => ({
-                        value: p,
-                        label: p,
-                      }))}
-                    />
+                    <div className="relative" onClick={(e) => {
+                      e.stopPropagation()
+                      setProdukDropdownOpen(!produkDropdownOpen)
+                    }}>
+                      <div
+                        ref={produkTriggerRef}
+                        className={cn(
+                          "flex items-center h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground shadow-sm shadow-[0_0_6px_rgba(255,255,255,0.10)] dark:shadow-[0_0_6px_rgba(255,255,255,0.18)] outline-none transition-all duration-150 cursor-pointer",
+                          produkDropdownOpen
+                            ? "border-ring focus-visible:ring-3 focus-visible:ring-ring/25 shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:shadow-[0_0_14px_rgba(59,130,248,0.50)] focus:bg-blue-50/30 dark:focus:bg-blue-900/10"
+                            : "border-border",
+                        )}
+                      >
+                        {form.produk
+                          ? form.produk === "LAINNYA"
+                            ? "Lainnya"
+                            : form.produk
+                          : "KLIK PILIHAN"}
+                        <ChevronDown
+                          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                        />
+                      </div>
+                      {produkDropdownOpen && produkTriggerRef.current && (
+                        <div
+                          ref={produkMenuRef}
+                          className="fixed z-[60] w-full max-h-[362px] overflow-y-auto border border-input bg-card rounded-lg shadow-lg"
+                          style={{
+                            top: produkTriggerRef.current.getBoundingClientRect().bottom + 4,
+                            left: produkTriggerRef.current.getBoundingClientRect().left,
+                            width: produkTriggerRef.current.getBoundingClientRect().width,
+                          }}
+                        >
+                          {PRODUK_LIST.map((p) => (
+                            <div
+                              key={p}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setForm((current) => ({
+                                  ...current,
+                                  produk: p as Produk,
+                                }))
+                                setProdukDropdownOpen(false)
+                              }}
+                              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
+                            >
+                              {p === "LAINNYA" ? "Lainnya" : p}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </Field>
                 )}
               </div>
@@ -2748,7 +2845,7 @@ export function AdditionalSellingPage() {
                         }))
                       }
                       placeholder="Tuliskan nama produk"
-                      className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+                      className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/25 shadow-[0_0_6px_rgba(255,255,255,0.10)] dark:shadow-[0_0_6px_rgba(255,255,255,0.18)] focus:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus:shadow-[0_0_14px_rgba(59,130,248,0.50)] focus:bg-blue-50/30 dark:focus:bg-blue-900/10"
                     />
                   </Field>
                 )}
@@ -2767,7 +2864,7 @@ export function AdditionalSellingPage() {
               rows={3}
               maxLength={500}
               placeholder="Catatan tambahan"
-              className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/25"
+              className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-all duration-150 focus:border-primary focus:ring-2 focus:ring-primary/25 shadow-[0_0_6px_rgba(255,255,255,0.10)] dark:shadow-[0_0_6px_rgba(255,255,255,0.18)] focus:shadow-[0_0_14px_rgba(59,130,248,0.35)] dark:focus:shadow-[0_0_14px_rgba(59,130,248,0.50)] focus:bg-blue-50/30 dark:focus:bg-blue-900/10"
             />
           </Field>
 
