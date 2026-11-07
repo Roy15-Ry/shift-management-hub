@@ -41,6 +41,7 @@ import { exportTargetPenjualanHistory } from "@/lib/export-excel"
 import type {
   FirestoreEmployee,
 } from "@/lib/firestore-data"
+import { ParfumTargetSection } from "@/components/target-penjualan-parfum"
 
 // ============================================================
 // TARGET PENJUALAN
@@ -3011,6 +3012,7 @@ export function AdditionalSellingPage() {
           </div>
         )}
       </Modal>
+      <ParfumTargetSection />
     </div>
   )
 }
