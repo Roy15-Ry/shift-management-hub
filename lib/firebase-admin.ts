@@ -1,6 +1,3 @@
-import fs from "fs"
-import path from "path"
-
 import {
   cert,
   getApps,
@@ -10,43 +7,56 @@ import {
 import { getAuth } from "firebase-admin/auth"
 import { getFirestore } from "firebase-admin/firestore"
 
-// ============================================================
-// FIREBASE ADMIN SERVICE ACCOUNT
-// ============================================================
+type ServiceAccount = {
+  project_id: string
+  client_email: string
+  private_key: string
+}
 
-// Mode 1 (priority): Vercel / production.
-// Kredensial diberikan langsung sebagai secret JSON via environment variable.
-const serviceAccountJson =
-  process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
+let cachedApp: ReturnType<typeof getApps>[number] | null =
+  null
 
-// Mode 2 (fallback): local development.
-// Kredensial dibaca dari file service-account JSON lokal.
-const serviceAccountFile =
-  process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE
+let initError: Error | null = null
 
-let serviceAccount: Record<string, string>
+function loadServiceAccount(): ServiceAccount {
+  const serviceAccountJson =
+    process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
 
-if (serviceAccountJson) {
-  serviceAccount = JSON.parse(serviceAccountJson)
-} else if (serviceAccountFile) {
-  const serviceAccountPath = path.join(
-    process.cwd(),
-    serviceAccountFile,
-  )
-
-  if (!fs.existsSync(serviceAccountPath)) {
-    throw new Error(
-      "File Firebase Admin Service Account tidak ditemukan.",
-    )
+  if (serviceAccountJson) {
+    return JSON.parse(
+      serviceAccountJson,
+    ) as ServiceAccount
   }
 
-  serviceAccount = JSON.parse(
-    fs.readFileSync(
-      serviceAccountPath,
-      "utf8",
-    ),
-  )
-} else {
+  const serviceAccountFile =
+    process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE
+
+  if (serviceAccountFile) {
+    const runtimeRequire = (
+      globalThis as { require?: (id: string) => any }
+    ).require || (0, eval)("require")
+    const fs = runtimeRequire("fs")
+    const path = runtimeRequire("path")
+
+    const serviceAccountPath = path.join(
+      process.cwd(),
+      serviceAccountFile,
+    )
+
+    if (!fs.existsSync(serviceAccountPath)) {
+      throw new Error(
+        "File Firebase Admin Service Account tidak ditemukan.",
+      )
+    }
+
+    return JSON.parse(
+      fs.readFileSync(
+        serviceAccountPath,
+        "utf8",
+      ),
+    ) as ServiceAccount
+  }
+
   throw new Error(
     "Kredensial Firebase Admin belum dikonfigurasi. " +
       "Set FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON (Vercel/production) " +
@@ -54,38 +64,80 @@ if (serviceAccountJson) {
   )
 }
 
-if (
-  !serviceAccount.project_id ||
-  !serviceAccount.client_email ||
-  !serviceAccount.private_key
-) {
-  throw new Error(
-    "Service Account Firebase Admin tidak lengkap. " +
-      "Diperlukan project_id, client_email, dan private_key.",
-  )
+function getFirebaseApp() {
+  if (cachedApp) {
+    return cachedApp
+  }
+
+  if (initError) {
+    throw initError
+  }
+
+  try {
+    const serviceAccount = loadServiceAccount()
+
+    if (
+      !serviceAccount.project_id ||
+      !serviceAccount.client_email ||
+      !serviceAccount.private_key
+    ) {
+      throw new Error(
+        "Service Account Firebase Admin tidak lengkap. " +
+          "Diperlukan project_id, client_email, dan private_key.",
+      )
+    }
+
+    const firebaseAdminApp =
+      getApps().length > 0
+        ? getApps()[0]
+        : initializeApp({
+            credential: cert({
+              projectId: serviceAccount.project_id,
+              clientEmail: serviceAccount.client_email,
+              privateKey: serviceAccount.private_key,
+            }),
+          })
+
+    cachedApp = firebaseAdminApp
+
+    return firebaseAdminApp
+  } catch (error) {
+    initError = error as Error
+
+    throw initError
+  }
 }
 
-// ============================================================
-// INITIALIZE FIREBASE ADMIN
-// ============================================================
+export const adminAuth = new Proxy(
+  {} as ReturnType<typeof getAuth>,
+  {
+    get(_target, property) {
+      const auth = getAuth(getFirebaseApp())
 
-const firebaseAdminApp =
-  getApps().length > 0
-    ? getApps()[0]
-    : initializeApp({
-        credential: cert({
-          projectId: serviceAccount.project_id,
-          clientEmail: serviceAccount.client_email,
-          privateKey: serviceAccount.private_key,
-        }),
-      })
+      const value = (auth as unknown as Record<PropertyKey, unknown>)[
+        property
+      ]
 
-// ============================================================
-// EXPORT
-// ============================================================
+      return typeof value === "function"
+        ? value.bind(auth)
+        : value
+    },
+  },
+)
 
-export const adminAuth =
-  getAuth(firebaseAdminApp)
+export const adminDb = new Proxy(
+  {} as ReturnType<typeof getFirestore>,
+  {
+    get(_target, property) {
+      const db = getFirestore(getFirebaseApp())
 
-export const adminDb =
-  getFirestore(firebaseAdminApp)
+      const value = (db as unknown as Record<PropertyKey, unknown>)[
+        property
+      ]
+
+      return typeof value === "function"
+        ? value.bind(db)
+        : value
+    },
+  },
+)
