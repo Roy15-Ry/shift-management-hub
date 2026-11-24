@@ -51,6 +51,11 @@ export function ParfumCreateTargetModal({
   const [generalError, setGeneralError] = React.useState("")
 
   React.useEffect(() => {
+    if (!open) {
+      setEmployeeLoading(false)
+      return
+    }
+
     if (!storeId) {
       setEmployeeLoading(false)
       return
@@ -90,7 +95,7 @@ export function ParfumCreateTargetModal({
 
     loadEmployees()
     return () => { cancelled = true }
-  }, [storeId, periode, user])
+  }, [open, storeId, periode, user])
 
   React.useEffect(() => {
     if (open && drafts.length === 0) {

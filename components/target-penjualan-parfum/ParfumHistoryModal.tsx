@@ -44,7 +44,7 @@ export function ParfumHistoryModal({
   periode: string
   storeId: string
   realisasiList: ParfumRealisasi[]
-  onDelete?: () => void
+  onDelete?: (id: string) => void
 }) {
   const { user, profile } = useAuth()
   const { showToast } = useToast()
@@ -106,7 +106,7 @@ export function ParfumHistoryModal({
 
       showToast("success", "Realisasi dihapus", json.message ?? "Realisasi berhasil dihapus.")
       setRefreshKey((prev) => prev + 1)
-      onDelete?.()
+      onDelete?.(id)
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal menghapus realisasi."
       showToast("error", "Gagal menghapus", message)

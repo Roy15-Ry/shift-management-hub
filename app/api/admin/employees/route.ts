@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { FieldValue } from "firebase-admin/firestore"
+import { FieldValue, Query } from "firebase-admin/firestore"
 
 import {
     adminAuth,
@@ -414,12 +414,22 @@ export async function GET(
         // AMBIL EMPLOYEES
         // =================================================
 
-        const snapshot =
-            await adminDb
-                .collection(
-                    "employees",
-                )
-                .get()
+        let employeeQuery: Query = adminDb.collection("employees");
+
+        const effectiveStoreId =
+            user.role === "store"
+                ? normalizeText(user.storeId).toUpperCase()
+                : requestedStoreId;
+
+        if (effectiveStoreId) {
+            employeeQuery = employeeQuery.where(
+                "storeId",
+                "==",
+                effectiveStoreId,
+            );
+        }
+
+        const snapshot = await employeeQuery.get();
 
         let employees =
             snapshot.docs.map(
@@ -1273,3 +1283,5 @@ export async function DELETE(
         )
     }
 }
+
+

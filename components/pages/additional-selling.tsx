@@ -712,6 +712,33 @@ export function AdditionalSellingPage() {
   const [tab, setTab] = React.useState<TabKey>("dashboard")
 
   // ----------------------------------------------------------
+  // LAZY MOUNT — TARGET PENJUALAN PARFUM (P2.2)
+  // ----------------------------------------------------------
+  const parfumSectionRef = React.useRef<HTMLDivElement>(null)
+  const [parfumMounted, setParfumMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    if (parfumMounted) return
+    const node = parfumSectionRef.current
+    if (!node) return
+    if (typeof IntersectionObserver === "undefined") {
+      setParfumMounted(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setParfumMounted(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: "300px 0px" },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [parfumMounted])
+
+  // ----------------------------------------------------------
   // CENTRAL PUSAT — pilih SATU cabang dahulu
   // ----------------------------------------------------------
 
@@ -3012,7 +3039,9 @@ export function AdditionalSellingPage() {
           </div>
         )}
       </Modal>
-      <ParfumTargetSection />
+      <div ref={parfumSectionRef} style={{ minHeight: 1 }}>
+        {parfumMounted ? <ParfumTargetSection /> : null}
+      </div>
     </div>
   )
 }

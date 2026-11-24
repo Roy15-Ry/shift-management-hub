@@ -51,7 +51,9 @@ export function ParfumTargetSection() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState("")
 
-  const [refreshKey, setRefreshKey] = React.useState(0)
+  const inFlightRef = React.useRef<Map<string, Promise<void>>>(new Map())
+  const targetsRequestRef = React.useRef(0)
+  const realisasiRequestRef = React.useRef(0)
 
   const [createTargetOpen, setCreateTargetOpen] = React.useState(false)
   const [realizationOpen, setRealizationOpen] = React.useState(false)
@@ -63,6 +65,102 @@ export function ParfumTargetSection() {
   // MUAT DATA
   // ----------------------------------------------------------
 
+  const loadTargetsAndAllocations = React.useCallback(async () => {
+    if (!storeId) return
+    const key = `targets|${user?.uid ?? ""}|${role}|${storeId}|${periode}`
+    const inFlight = inFlightRef.current.get(key)
+    if (inFlight) {
+      await inFlight
+      return
+    }
+
+    const requestId = ++targetsRequestRef.current
+    const promise = (async () => {
+      try {
+        const idToken = await user?.getIdToken()
+        const base = `/api/parfum-target`
+        const [tRes, aRes] = await Promise.all([
+          fetch(`${base}/target?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: "no-store",
+          }),
+          fetch(`${base}/allocation?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: "no-store",
+          }),
+        ])
+        if (requestId !== targetsRequestRef.current) return
+        const tJson = (await tRes.json()) as { success?: boolean; targets?: ParfumTarget[] }
+        const aJson = (await aRes.json()) as { success?: boolean; allocations?: ParfumAllocation[] }
+        if (requestId !== targetsRequestRef.current) return
+        setTargets(tJson.success ? (tJson.targets ?? []) : [])
+        setAllocations(aJson.success ? (aJson.allocations ?? []) : [])
+      } catch (err) {
+        console.error(err)
+        if (requestId === targetsRequestRef.current) {
+          setError("Gagal memuat data target parfum.")
+        }
+      } finally {
+        inFlightRef.current.delete(key)
+      }
+    })()
+
+    inFlightRef.current.set(key, promise)
+    await promise
+  }, [storeId, periode, user, role])
+
+  const loadRealisasi = React.useCallback(async () => {
+    if (!storeId) return
+    const key = `realisasi|${user?.uid ?? ""}|${role}|${storeId}|${periode}`
+    const inFlight = inFlightRef.current.get(key)
+    if (inFlight) {
+      await inFlight
+      return
+    }
+
+    const requestId = ++realisasiRequestRef.current
+    const promise = (async () => {
+      try {
+        const idToken = await user?.getIdToken()
+        const base = `/api/parfum-target`
+        const rRes = await fetch(`${base}/realisasi?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: "no-store",
+        })
+        if (requestId !== realisasiRequestRef.current) return
+        const rJson = (await rRes.json()) as { success?: boolean; realisasi?: ParfumRealisasi[] }
+        if (requestId !== realisasiRequestRef.current) return
+        setRealisasiList(rJson.success ? (rJson.realisasi ?? []) : [])
+      } catch (err) {
+        console.error(err)
+        if (requestId === realisasiRequestRef.current) {
+          setError("Gagal memuat data target parfum.")
+        }
+      } finally {
+        inFlightRef.current.delete(key)
+      }
+    })()
+
+    inFlightRef.current.set(key, promise)
+    await promise
+  }, [storeId, periode, user, role])
+
+  const loadAll = React.useCallback(async () => {
+    if (!storeId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError("")
+    try {
+      await Promise.all([loadTargetsAndAllocations(), loadRealisasi()])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }, [storeId, loadTargetsAndAllocations, loadRealisasi])
+
   let cancelled = false
 
   React.useEffect(() => {
@@ -72,58 +170,12 @@ export function ParfumTargetSection() {
     }
 
     cancelled = false
-    setLoading(true)
-    setError("")
-
-    const base = `/api/parfum-target`
-
-    async function loadAll() {
-      try {
-        const idToken = await user?.getIdToken()
-
-        const [tRes, aRes, rRes] = await Promise.all([
-          fetch(`${base}/target?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
-            headers: { Authorization: `Bearer ${idToken}` },
-            cache: "no-store",
-          }),
-          fetch(`${base}/allocation?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
-            headers: { Authorization: `Bearer ${idToken}` },
-            cache: "no-store",
-          }),
-          fetch(`${base}/realisasi?periode=${encodeURIComponent(periode)}&storeId=${encodeURIComponent(storeId)}`, {
-            headers: { Authorization: `Bearer ${idToken}` },
-            cache: "no-store",
-          }),
-        ])
-
-        if (cancelled) return
-
-        const tJson = (await tRes.json()) as { success?: boolean; targets?: ParfumTarget[] }
-        const aJson = (await aRes.json()) as { success?: boolean; allocations?: ParfumAllocation[] }
-        const rJson = (await rRes.json()) as { success?: boolean; realisasi?: ParfumRealisasi[] }
-
-        if (!cancelled) {
-          setTargets(tJson.success ? (tJson.targets ?? []) : [])
-          setAllocations(aJson.success ? (aJson.allocations ?? []) : [])
-          setRealisasiList(rJson.success ? (rJson.realisasi ?? []) : [])
-          setLoading(false)
-          setError("")
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError("Gagal memuat data target parfum.")
-          setLoading(false)
-          console.error(err)
-        }
-      }
-    }
-
     loadAll()
 
     return () => {
       cancelled = true
     }
-  }, [periode, storeId, user, refreshKey])
+  }, [periode, storeId, user])
 
   // ----------------------------------------------------------
   // MUAT DAFTAR TOKO UNTUK CENTRAL
@@ -329,7 +381,7 @@ export function ParfumTargetSection() {
       setDeleteOpen(false)
       setDeleteTarget(null)
       showToast("success", "Target dihapus", json.message ?? "Target parfum berhasil dihapus.")
-      setRefreshKey((prev) => prev + 1)
+      void loadTargetsAndAllocations()
     } catch (err) {
       const message = err instanceof Error ? err.message : "Gagal menghapus target."
       showToast("error", "Gagal menghapus", message)
@@ -550,7 +602,7 @@ export function ParfumTargetSection() {
         onSuccess={() => {
           setCreateTargetOpen(false)
           setError("")
-          setRefreshKey((prev) => prev + 1)
+          void loadTargetsAndAllocations()
         }}
       />
 
@@ -563,7 +615,7 @@ export function ParfumTargetSection() {
         onSuccess={() => {
           setRealizationOpen(false)
           setError("")
-          setRefreshKey((prev) => prev + 1)
+          void loadRealisasi()
         }}
       />
 
@@ -573,7 +625,7 @@ export function ParfumTargetSection() {
         periode={periode}
         storeId={storeId}
         realisasiList={realisasiList}
-        onDelete={() => setRefreshKey((prev) => prev + 1)}
+        onDelete={(id) => setRealisasiList((prev) => prev.filter((r) => r.id !== id))}
       />
 
       {/* Dialog Konfirmasi Hapus Target */}
@@ -605,3 +657,4 @@ export function ParfumTargetSection() {
     </div>
   )
 }
+
