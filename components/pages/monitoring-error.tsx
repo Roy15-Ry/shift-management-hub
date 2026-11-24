@@ -1391,6 +1391,7 @@ export function MonitoringErrorPage() {
   // simpan / ubah / hapus). Dipakai bersama cache rekap.
   const [reloadKey, setReloadKey] = React.useState(0)
   const requestSeqRef = React.useRef(0)
+  const monitoringErrorInFlightRef = React.useRef<Map<string, Promise<void>>>(new Map())
 
   // ----------------------------------------------------------
   // CACHE REKAP (IN-MEMORY SAJA)
@@ -1514,6 +1515,13 @@ export function MonitoringErrorPage() {
     }
 
     const authedUser = user
+
+    const dedupKey = `${user.uid}|${role}|${cabangFilter}|${storeFilter}|${period.year}-${period.month}|${reloadKey}|${pusatLocked}|${storeLocked}`
+    const inFlight = monitoringErrorInFlightRef.current.get(dedupKey)
+    if (inFlight) {
+      return () => {}
+    }
+
     let cancelled = false
     setLoading(true)
     setError("")
@@ -1671,7 +1679,11 @@ export function MonitoringErrorPage() {
       }
     }
 
-    loadData()
+    const promise = loadData()
+    monitoringErrorInFlightRef.current.set(dedupKey, promise)
+    promise.finally(() => {
+      monitoringErrorInFlightRef.current.delete(dedupKey)
+    })
 
     return () => {
       cancelled = true
@@ -3214,3 +3226,4 @@ export function MonitoringErrorPage() {
     </div>
   )
 }
+

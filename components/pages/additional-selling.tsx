@@ -881,6 +881,7 @@ export function AdditionalSellingPage() {
   const [error, setError] = React.useState("")
   const [reloadKey, setReloadKey] = React.useState(0)
   const requestSeqRef = React.useRef(0)
+  const additionalSellingInFlightRef = React.useRef<Map<string, Promise<void>>>(new Map())
   // Muat ulang manual (setReloadKey) harus selalu benar-benar
   // meminta data terbaru, sehingga cache rekap dilewati begitu
   // nilainya berubah.
@@ -931,6 +932,13 @@ export function AdditionalSellingPage() {
     }
 
     const authedUser = user
+
+    const dedupKey = `${user.uid}|${role}|${cabangFilter}|${storeFilter}|${period.year}-${period.month}|${reloadKey}|${pusatLocked}|${storeLocked}`
+    const inFlight = additionalSellingInFlightRef.current.get(dedupKey)
+    if (inFlight) {
+      return () => {}
+    }
+
     let cancelled = false
     setLoading(true)
     setError("")
@@ -1028,7 +1036,11 @@ export function AdditionalSellingPage() {
       }
     }
 
-    loadData()
+    const promise = loadData()
+    additionalSellingInFlightRef.current.set(dedupKey, promise)
+    promise.finally(() => {
+      additionalSellingInFlightRef.current.delete(dedupKey)
+    })
 
     return () => {
       cancelled = true
