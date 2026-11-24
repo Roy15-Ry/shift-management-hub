@@ -712,6 +712,9 @@ export function KontribusiOmsetPage() {
   const [dailyReports, setDailyReports] = React.useState<DailyReport[]>([])
   const [dailyReportsLoading, setDailyReportsLoading] = React.useState(false)
   const dailyReportsRequestRef = React.useRef(0)
+  const reportsInFlightRef = React.useRef<Map<string, Promise<void>>>(new Map())
+  const targetsRequestIdRef = React.useRef(0)
+  const targetsInFlightRef = React.useRef<Map<string, Promise<void>>>(new Map())
 
   const [targets, setTargets] = React.useState<KontribusiOmsetTargetRow[]>([])
   const [targetsLoading, setTargetsLoading] = React.useState(false)
@@ -1035,10 +1038,18 @@ export function KontribusiOmsetPage() {
       setDailyReportsLoading(false)
       return
     }
+    const scopeKey = `${user.uid}|${role}|${isCentralPusat ? selectedBranch ?? "" : ""}|${isCentral ? selectedStore ?? "" : ""}|${period.year}-${period.month}`
+    const inFlightKey = `reports:${scopeKey}`
+    const inFlight = reportsInFlightRef.current.get(inFlightKey)
+    if (inFlight) {
+      await inFlight
+      return
+    }
     const requestId = ++dailyReportsRequestRef.current
-    setDailyReports([])
-    setDailyReportsLoading(true)
-    try {
+    const run = async () => {
+      setDailyReports([])
+      setDailyReportsLoading(true)
+      try {
       const authedUser = user
       const idToken = await authedUser.getIdToken()
       const params = new URLSearchParams({
@@ -1071,11 +1082,21 @@ export function KontribusiOmsetPage() {
       if (requestId === dailyReportsRequestRef.current && result.success) {
         setDailyReports(result.reports ?? [])
       }
+    } catch (loadError) {
+      console.error("Gagal memuat laporan omset:", loadError)
+      if (requestId === dailyReportsRequestRef.current) {
+        showToast("error", "Gagal memuat laporan", "Laporan omset belum dapat dimuat. Silakan coba lagi.")
+      }
     } finally {
       if (requestId === dailyReportsRequestRef.current) {
         setDailyReportsLoading(false)
       }
+      reportsInFlightRef.current.delete(inFlightKey)
     }
+    }
+    const promise = run()
+    reportsInFlightRef.current.set(inFlightKey, promise)
+    await promise.catch(() => {})
   }
 
   React.useEffect(() => {
@@ -1086,40 +1107,54 @@ export function KontribusiOmsetPage() {
   }, [isStore, isCentral, isCentralPusat, period, selectedBranch, selectedStore, user, authLoading])
 
   // Load targets per employee
-  const loadTargets = async () => {
+  const loadTargets = () => {
     if (authLoading) {
       setTargetsLoading(false)
-      return
+      return () => {}
     }
     if (!isStore && !isCentral) {
       setTargets([])
       setTargetsLoading(false)
-      return
+      return () => {}
     }
     if (!user) {
       setTargets([])
       setTargetsLoading(false)
-      return
+      return () => {}
     }
     if (!targetStoreId) {
       setTargets([])
       setTargetsLoading(false)
-      return
+      return () => {}
     }
-    const authedUser = user
+    const employeeIds = activeEmployees
+      .map((emp) => emp.id)
+      .filter((id) => Boolean(id))
+
+    if (employeeIds.length === 0) {
+      setTargets([])
+      setTargetsLoading(false)
+      return () => {}
+    }
+
+    const key = `targets:${user.uid}|${role}|${targetStoreId}|${selectedBranch ?? ""}|${period.year}-${period.month}|${employeeIds.join(",")}`
+    const inFlight = targetsInFlightRef.current.get(key)
+    if (inFlight) {
+      return () => {}
+    }
+
     let cancelled = false
     setTargetsLoading(true)
-    try {
-      const idToken = await authedUser.getIdToken()
-      const fetchedTargets: KontribusiOmsetTargetRow[] = []
-
-      for (const emp of activeEmployees) {
+    const requestId = ++targetsRequestIdRef.current
+    const run = async () => {
+      try {
+        const idToken = await user.getIdToken()
         const params = new URLSearchParams({
           year: String(period.year),
           month: String(period.month),
           store: targetStoreId,
-          employeeId: emp.id,
         })
+        params.set("employeeIds", employeeIds.join(","))
         if (isCentralPusat && selectedBranch) {
           params.set("cabang", selectedBranch)
         }
@@ -1129,34 +1164,44 @@ export function KontribusiOmsetPage() {
           headers: { Authorization: `Bearer ${idToken}` },
           cache: "no-store",
         })
-        if (!response.ok) continue
+        if (cancelled || requestId !== targetsRequestIdRef.current) return
+        if (!response.ok) {
+          setTargets([])
+          return
+        }
         const result = (await response.json()) as {
           success?: boolean
           message?: string
           targets?: KontribusiOmsetTargetRow[]
         }
-        if (cancelled || !result?.success) continue
-        fetchedTargets.push(...(Array.isArray(result.targets) ? result.targets : []))
-      }
-
-      if (cancelled) return
-      setTargets(fetchedTargets)
-    } catch (loadError) {
-      console.error("Gagal memuat target:", loadError)
-      if (!cancelled) {
-        setTargets([])
-        setTargetsLoading(false)
-      }
-    } finally {
-      if (!cancelled) {
-        setTargetsLoading(false)
+        if (cancelled || requestId !== targetsRequestIdRef.current) return
+        if (!result?.success) {
+          setTargets([])
+          return
+        }
+        setTargets(Array.isArray(result.targets) ? result.targets : [])
+      } catch (loadError) {
+        console.error("Gagal memuat target:", loadError)
+        if (!cancelled && requestId === targetsRequestIdRef.current) {
+          setTargets([])
+        }
+      } finally {
+        if (!cancelled && requestId === targetsRequestIdRef.current) {
+          setTargetsLoading(false)
+        }
+        targetsInFlightRef.current.delete(key)
       }
     }
+    const promise = run()
+    targetsInFlightRef.current.set(key, promise)
     return () => { cancelled = true }
   }
 
   React.useEffect(() => {
-    loadTargets()
+    const cleanup = loadTargets()
+    return () => {
+      if (typeof cleanup === "function") cleanup()
+    }
   }, [isStore, isCentral, isCentralPusat, period, selectedBranch, selectedStore, targetStoreId, employees, user, authLoading])
 
   // Initialize target modal inputs when employees change
@@ -1347,6 +1392,7 @@ export function KontribusiOmsetPage() {
       const idToken = await user.getIdToken()
       let successCount = 0
       let failureCount = 0
+      const savedTargets: Array<{ employeeId: string; targetBulanan: number }> = []
 
       // Save all targets sequentially
       for (const t of targetsToSave) {
@@ -1377,11 +1423,39 @@ export function KontribusiOmsetPage() {
           }))
         } else {
           successCount++
+          savedTargets.push({ employeeId: t.employeeId, targetBulanan: t.targetBulanan })
         }
       }
 
-      // Refresh targets after save
-      await loadTargets()
+      if (savedTargets.length > 0) {
+        setTargets((prev) => {
+          const next = [...prev]
+          for (const s of savedTargets) {
+            const idx = next.findIndex((t) => t.employeeId === s.employeeId)
+            if (idx >= 0) {
+              next[idx] = {
+                ...next[idx],
+                targetBulanan: s.targetBulanan,
+                targetTersedia: true,
+              }
+            } else {
+              next.push({
+                targetId: "",
+                storeId: targetStoreId,
+                cabangId: profile?.cabangId ?? "",
+                periode,
+                employeeId: s.employeeId,
+                targetTersedia: true,
+                targetBulanan: s.targetBulanan,
+                employeeCountSnapshot: null,
+                updatedBy: user.uid,
+                updatedAt: null,
+              })
+            }
+          }
+          return next
+        })
+      }
 
       setTargetNominalInputs({})
       setTargetAlasanInputs({})
@@ -1506,7 +1580,7 @@ export function KontribusiOmsetPage() {
         }),
       })
       const result = (await response.json().catch(() => null)) as
-        | { success?: boolean; message?: string }
+        | { success?: boolean; message?: string; id?: string }
         | null
 
       if (!response.ok || !result?.success) {
@@ -1514,9 +1588,35 @@ export function KontribusiOmsetPage() {
         return
       }
 
+      const newReport: DailyReport = {
+        reportId: result.id ?? `${targetStoreId}__${inputTanggal}`,
+        storeId: targetStoreId,
+        tanggal: inputTanggal,
+        employees: inputKaryawanData.map((row) => ({
+          employeeId: row.employeeId,
+          employeeName: row.employeeName,
+          visitor: row.visitor !== "" ? Number(row.visitor) : 0,
+          omset: parseRupiahInput(row.omset),
+        })),
+        totalVisitor: inputKaryawanData.reduce(
+          (sum, row) => sum + (row.visitor !== "" ? Number(row.visitor) : 0),
+          0,
+        ),
+        totalOmset: inputKaryawanData.reduce(
+          (sum, row) => sum + parseRupiahInput(row.omset),
+          0,
+        ),
+        jumlahKaryawan: inputKaryawanData.length,
+      }
+
+      setDailyReports((prev) =>
+        [...prev.filter((r) => r.tanggal !== inputTanggal), newReport].sort((a, b) =>
+          a.tanggal.localeCompare(b.tanggal),
+        ),
+      )
+
       showToast("success", "Laporan disimpan", "Realisasi omset berhasil disimpan.")
       setInputModalOpen(false)
-      void loadReports()
     } catch (err) {
       setInputError("Terjadi kesalahan saat menyimpan laporan omset.")
     } finally {
@@ -1607,7 +1707,7 @@ export function KontribusiOmsetPage() {
         }),
       })
       const result = (await response.json().catch(() => null)) as
-        | { success?: boolean; message?: string }
+        | { success?: boolean; message?: string; id?: string }
         | null
 
       if (!response.ok || !result?.success) {
@@ -1615,9 +1715,36 @@ export function KontribusiOmsetPage() {
         return
       }
 
+      const existingReport = dailyReports.find((r) => r.tanggal === editReportTanggal)
+      const editedReport: DailyReport = {
+        reportId: result.id ?? existingReport?.reportId ?? `${targetStoreId}__${editReportTanggal}`,
+        storeId: targetStoreId,
+        tanggal: editReportTanggal,
+        employees: editReportData.map((row) => ({
+          employeeId: row.employeeId,
+          employeeName: row.employeeName,
+          visitor: row.visitor !== "" ? Number(row.visitor) : 0,
+          omset: parseRupiahInput(row.omset),
+        })),
+        totalVisitor: editReportData.reduce(
+          (sum, row) => sum + (row.visitor !== "" ? Number(row.visitor) : 0),
+          0,
+        ),
+        totalOmset: editReportData.reduce(
+          (sum, row) => sum + parseRupiahInput(row.omset),
+          0,
+        ),
+        jumlahKaryawan: editReportData.length,
+      }
+
+      setDailyReports((prev) =>
+        prev
+          .map((r) => (r.tanggal === editReportTanggal ? editedReport : r))
+          .sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
+      )
+
       showToast("success", "Laporan diperbarui", "Realisasi omset berhasil diubah.")
       closeEditReportModal()
-      void loadReports()
     } catch (err) {
       setEditReportError("Terjadi kesalahan saat menyimpan perubahan.")
     } finally {
@@ -1674,7 +1801,7 @@ export function KontribusiOmsetPage() {
 
       showToast("success", "Laporan dihapus", "Realisasi omset berhasil dihapus.")
       closeDeleteReportDialog()
-      void loadReports()
+      setDailyReports((prev) => prev.filter((r) => r.tanggal !== deleteReportTanggal))
     } catch (err) {
       setDeleteReportError("Terjadi kesalahan saat menghapus laporan.")
     } finally {

@@ -479,6 +479,34 @@ export async function GET(
         200,
       )
 
+    const employeeIdsParam =
+      cleanString(
+        url.searchParams.get("employeeIds") ?? "",
+        10000,
+      )
+
+    // Bulk: daftar ID karyawan yang dipisahkan koma. Pertahankan
+    // employeeId tunggal untuk kompatibilitas pemanggil lama.
+    let employeeIds: string[] = []
+    if (employeeIdsParam) {
+      employeeIds = employeeIdsParam
+        .split(",")
+        .map((value) => cleanString(value, 200))
+        .filter((value) => value.length > 0)
+    } else if (employeeIdParam) {
+      employeeIds = [employeeIdParam]
+    } else {
+      employeeIds = [""]
+    }
+
+    employeeIds = Array.from(
+      new Set(employeeIds),
+    )
+
+    if (employeeIds.length === 0) {
+      employeeIds = [""]
+    }
+
     const scope =
       await resolveStoreIds(
         user,
@@ -526,59 +554,63 @@ export async function GET(
     for (
       const storeId of targetStoreIds
     ) {
-      const targetId =
-        employeeIdParam
-          ? getKontribusiOmsetTargetIdPerEmployee(
-              storeId,
-              periode,
-              employeeIdParam,
-            )
-          : getKontribusiOmsetTargetId(
-              storeId,
-              periode,
-            )
+      for (
+        const employeeId of employeeIds
+      ) {
+        const targetId =
+          employeeId
+            ? getKontribusiOmsetTargetIdPerEmployee(
+                storeId,
+                periode,
+                employeeId,
+              )
+            : getKontribusiOmsetTargetId(
+                storeId,
+                periode,
+              )
 
-      const docSnapshot =
-        await adminDb
-          .collection(TARGET_COLLECTION)
-          .doc(targetId)
-          .get()
+        const docSnapshot =
+          await adminDb
+            .collection(TARGET_COLLECTION)
+            .doc(targetId)
+            .get()
 
-      if (!docSnapshot.exists) {
-        // Target belum pernah dibuat -> berbeda dari target 0.
+        if (!docSnapshot.exists) {
+          // Target belum pernah dibuat -> berbeda dari target 0.
+          targets.push(
+            {
+              targetId: "",
+              storeId,
+              cabangId:
+                cleanString(
+                  user.cabangId,
+                  100,
+                ),
+              periode,
+              employeeId,
+              targetTersedia: false,
+              targetBulanan: null,
+              employeeCountSnapshot: null,
+              updatedBy: "",
+              updatedAt: null,
+            },
+          )
+          continue
+        }
+
         targets.push(
-          {
-            targetId: "",
+          toTargetRow(
+            docSnapshot.id,
             storeId,
-            cabangId:
-              cleanString(
-                user.cabangId,
-                100,
-              ),
             periode,
-            employeeId: employeeIdParam,
-            targetTersedia: false,
-            targetBulanan: null,
-            employeeCountSnapshot: null,
-            updatedBy: "",
-            updatedAt: null,
-          },
-        )
-        continue
-      }
-
-      targets.push(
-        toTargetRow(
-          docSnapshot.id,
-          storeId,
-          periode,
-          docSnapshot.data() ?? {},
-          cleanString(
-            user.cabangId,
-            100,
+            docSnapshot.data() ?? {},
+            cleanString(
+              user.cabangId,
+              100,
+            ),
           ),
-        ),
-      )
+        )
+      }
     }
 
     return NextResponse.json(

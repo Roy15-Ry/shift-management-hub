@@ -689,6 +689,16 @@ export async function GET(
             "==",
             storeId,
           )
+          .where(
+            "reportDate",
+            ">=",
+            start,
+          )
+          .where(
+            "reportDate",
+            "<",
+            end,
+          )
           .get()
 
       snapshot.docs.forEach(
