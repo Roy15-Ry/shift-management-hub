@@ -19,6 +19,7 @@ import {
     SearchInput,
 } from "@/components/controls"
 import { useToast } from "@/components/ui/toast"
+import { useAuth } from "@/components/auth-context"
 import { cn } from "@/lib/utils"
 
 type FirebaseStore = {
@@ -147,6 +148,65 @@ export function StoreFirebaseDetail({
 
     const [saving, setSaving] =
         React.useState(false)
+
+    // =====================================================
+    // PENGATURAN AKSES PROGRAM KERJA
+    // =====================================================
+
+    const { profile: authProfile } = useAuth()
+
+    const programAccessRole =
+        String(authProfile?.role ?? "")
+            .trim()
+            .toLowerCase()
+
+    const programAccessReadOnly =
+        programAccessRole === "store"
+
+    const programAccessCanSave =
+        programAccessRole === "central_pusat" ||
+        programAccessRole === "central_cabang"
+
+    type ProgramAccessDraft = {
+        targetPenjualanEnabled: boolean
+        monitoringErrorEnabled: boolean
+        kontribusiOmsetEnabled: boolean
+    }
+
+    const [programAccessLoading, setProgramAccessLoading] =
+        React.useState(true)
+
+    const [programAccessError, setProgramAccessError] =
+        React.useState("")
+
+    const [programAccessSaving, setProgramAccessSaving] =
+        React.useState(false)
+
+    const [programAccessConflict, setProgramAccessConflict] =
+        React.useState("")
+
+    const [programAccessSaved, setProgramAccessSaved] =
+        React.useState<
+            | (ProgramAccessDraft & {
+                  version: number
+                  updatedAt: string | null
+                  updatedByUid: string
+                  updatedByName: string
+                  updatedByRole: string
+                  source: string
+              })
+            | null
+        >(null)
+
+    const [programAccessDraft, setProgramAccessDraft] =
+        React.useState<ProgramAccessDraft>({
+            targetPenjualanEnabled: true,
+            monitoringErrorEnabled: true,
+            kontribusiOmsetEnabled: true,
+        })
+
+    const programAccessSeqRef =
+        React.useRef(0)
 
     async function getIdToken() {
         const authModule =
@@ -297,13 +357,233 @@ export function StoreFirebaseDetail({
         }
     }
 
+    async function loadProgramAccess() {
+        const seq = ++programAccessSeqRef.current
+
+        setProgramAccessLoading(true)
+        setProgramAccessError("")
+        setProgramAccessConflict("")
+
+        try {
+            const idToken =
+                await getIdToken()
+
+            const response =
+                await fetch(
+                    `/api/admin/store-program-access?storeId=${encodeURIComponent(
+                        storeId,
+                    )}`,
+                    {
+                        method: "GET",
+                        headers: {
+                            Authorization:
+                                `Bearer ${idToken}`,
+                        },
+                        cache: "no-store",
+                    },
+                )
+
+            const data =
+                await response.json()
+
+            if (seq !== programAccessSeqRef.current) {
+                return
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message ||
+                        "Gagal mengambil pengaturan akses program.",
+                )
+            }
+
+            const saved = {
+                targetPenjualanEnabled:
+                    data.targetPenjualanEnabled !== false,
+                monitoringErrorEnabled:
+                    data.monitoringErrorEnabled !== false,
+                kontribusiOmsetEnabled:
+                    data.kontribusiOmsetEnabled !== false,
+                version:
+                    typeof data.version === "number"
+                        ? data.version
+                        : 0,
+                updatedAt:
+                    typeof data.updatedAt === "string"
+                        ? data.updatedAt
+                        : null,
+                updatedByUid:
+                    String(
+                        data.updatedByUid ?? "",
+                    ),
+                updatedByName:
+                    String(
+                        data.updatedByName ?? "",
+                    ),
+                updatedByRole:
+                    String(
+                        data.updatedByRole ?? "",
+                    ),
+                source:
+                    String(data.source ?? "default"),
+            }
+
+            setProgramAccessSaved(saved)
+            setProgramAccessDraft({
+                targetPenjualanEnabled:
+                    saved.targetPenjualanEnabled,
+                monitoringErrorEnabled:
+                    saved.monitoringErrorEnabled,
+                kontribusiOmsetEnabled:
+                    saved.kontribusiOmsetEnabled,
+            })
+        } catch (error) {
+            if (seq !== programAccessSeqRef.current) {
+                return
+            }
+
+            setProgramAccessSaved(null)
+            setProgramAccessError(
+                error instanceof Error
+                    ? error.message
+                    : "Gagal mengambil pengaturan akses program.",
+            )
+        } finally {
+            if (seq === programAccessSeqRef.current) {
+                setProgramAccessLoading(false)
+            }
+        }
+    }
+
+    async function saveProgramAccess() {
+        if (
+            !programAccessCanSave ||
+            programAccessSaving
+        ) {
+            return
+        }
+
+        if (!programAccessSaved) {
+            return
+        }
+
+        const hasChanges =
+            programAccessDraft.targetPenjualanEnabled !==
+                programAccessSaved.targetPenjualanEnabled ||
+            programAccessDraft.monitoringErrorEnabled !==
+                programAccessSaved.monitoringErrorEnabled ||
+            programAccessDraft.kontribusiOmsetEnabled !==
+                programAccessSaved.kontribusiOmsetEnabled
+
+        if (!hasChanges) {
+            return
+        }
+
+        setProgramAccessSaving(true)
+        setProgramAccessConflict("")
+
+        try {
+            const idToken =
+                await getIdToken()
+
+            const response =
+                await fetch(
+                    "/api/admin/store-program-access",
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                            Authorization:
+                                `Bearer ${idToken}`,
+                        },
+                        body: JSON.stringify({
+                            storeId,
+                            targetPenjualanEnabled:
+                                programAccessDraft.targetPenjualanEnabled,
+                            monitoringErrorEnabled:
+                                programAccessDraft.monitoringErrorEnabled,
+                            kontribusiOmsetEnabled:
+                                programAccessDraft.kontribusiOmsetEnabled,
+                            version:
+                                programAccessSaved.version,
+                        }),
+                    },
+                )
+
+            const data =
+                await response.json()
+
+            if (response.status === 409) {
+                setProgramAccessConflict(
+                    data.message ||
+                        "Pengaturan telah berubah. Muat ulang data sebelum menyimpan.",
+                )
+
+                await loadProgramAccess()
+
+                return
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message ||
+                        "Gagal menyimpan pengaturan akses program.",
+                )
+            }
+
+            await loadProgramAccess()
+
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(
+                    new CustomEvent(
+                        "program-access-changed",
+                        {
+                            detail: {
+                                storeId,
+                            },
+                        },
+                    ),
+                )
+            }
+
+            showToast(
+                "success",
+                "Pengaturan akses program berhasil diperbarui",
+                "Perubahan telah disimpan.",
+            )
+        } catch (error) {
+            showToast(
+                "error",
+                "Gagal menyimpan pengaturan akses program",
+                error instanceof Error
+                    ? error.message
+                    : "Terjadi kesalahan saat menyimpan pengaturan akses program.",
+            )
+        } finally {
+            setProgramAccessSaving(false)
+        }
+    }
+
     // =====================================================
     // LOAD SAAT STORE DIPILIH
     // =====================================================
 
     React.useEffect(() => {
+        programAccessSeqRef.current++
+        setProgramAccessSaved(null)
+        setProgramAccessDraft({
+            targetPenjualanEnabled: true,
+            monitoringErrorEnabled: true,
+            kontribusiOmsetEnabled: true,
+        })
+        setProgramAccessError("")
+        setProgramAccessConflict("")
+        setProgramAccessLoading(true)
+
         loadStore()
         loadEmployees()
+        loadProgramAccess()
     }, [storeId])
 
     // =====================================================
@@ -811,6 +1091,15 @@ export function StoreFirebaseDetail({
             },
         )
 
+    const programAccessHasChanges =
+        !!programAccessSaved &&
+        (programAccessDraft.targetPenjualanEnabled !==
+            programAccessSaved.targetPenjualanEnabled ||
+            programAccessDraft.monitoringErrorEnabled !==
+                programAccessSaved.monitoringErrorEnabled ||
+            programAccessDraft.kontribusiOmsetEnabled !==
+                programAccessSaved.kontribusiOmsetEnabled)
+
     // =====================================================
     // LOADING STORE
     // =====================================================
@@ -1005,6 +1294,187 @@ export function StoreFirebaseDetail({
                         </p>
                     </div>
                 </div>
+            </div>
+
+            {/* PENGATURAN AKSES PROGRAM KERJA */}
+
+            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                            Pengaturan Akses Program Kerja
+                        </h3>
+
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Target Penjualan Parfum mengikuti pengaturan Target Penjualan.
+                        </p>
+                    </div>
+                </div>
+
+                {programAccessLoading ? (
+                    <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+                        Memuat pengaturan akses program...
+                    </div>
+                ) : programAccessError ? (
+                    <div className="space-y-3">
+                        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+                            {programAccessError}
+                        </div>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={loadProgramAccess}
+                            disabled={programAccessLoading}
+                        >
+                            Coba Lagi
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {programAccessConflict && (
+                            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+                                {programAccessConflict}
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
+                            {(
+                                [
+                                    {
+                                        key: "targetPenjualanEnabled",
+                                        label: "Target Penjualan",
+                                    },
+                                    {
+                                        key: "monitoringErrorEnabled",
+                                        label: "Monitoring Error",
+                                    },
+                                    {
+                                        key: "kontribusiOmsetEnabled",
+                                        label: "Kontribusi Omset",
+                                    },
+                                ] as const
+                            ).map((item) => {
+                                const enabled =
+                                    programAccessDraft[
+                                        item.key
+                                    ]
+
+                                return (
+                                    <div
+                                        key={item.key}
+                                        className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 px-4 py-3"
+                                    >
+                                        <span className="text-sm font-medium">
+                                            {item.label}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={enabled}
+                                            disabled={
+                                                programAccessReadOnly ||
+                                                programAccessSaving
+                                            }
+                                            onClick={() => {
+                                                if (
+                                                    programAccessReadOnly
+                                                ) {
+                                                    return
+                                                }
+
+                                                setProgramAccessDraft(
+                                                    (prev) => ({
+                                                        ...prev,
+                                                        [item.key]:
+                                                            !prev[
+                                                                item.key
+                                                            ],
+                                                    }),
+                                                )
+                                            }}
+                                            className={cn(
+                                                "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all duration-200",
+                                                enabled
+                                                    ? "border-[#168BFF] bg-[#168BFF] shadow-[0_0_12px_rgba(22,139,255,0.5)]"
+                                                    : "border-[#168BFF] bg-muted shadow-[0_0_6px_rgba(22,139,255,0.25)]",
+                                                programAccessReadOnly
+                                                    ? "cursor-not-allowed opacity-60"
+                                                    : "cursor-pointer hover:shadow-[0_0_14px_rgba(22,139,255,0.45)]",
+                                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#168BFF] focus-visible:ring-offset-2",
+                                            )}
+                                        >
+                                            <span
+                                                className={cn(
+                                                    "inline-block size-5 rounded-full bg-white shadow transition-transform duration-200",
+                                                    enabled
+                                                        ? "translate-x-5"
+                                                        : "translate-x-0.5",
+                                                )}
+                                            />
+                                        </button>
+                                    </div>
+                                )
+                            })}
+                        </div>
+
+                        {programAccessSaved && (
+                            <div className="rounded-lg border border-border bg-muted/40 p-4 text-xs text-muted-foreground">
+                                <div>
+                                    Versi:{" "}
+                                    {programAccessSaved.version}
+                                </div>
+
+                                <div>
+                                    Terakhir diubah:{" "}
+                                    {programAccessSaved.updatedAt
+                                        ? new Date(
+                                              programAccessSaved.updatedAt,
+                                          ).toLocaleString()
+                                        : "-"}
+                                </div>
+
+                                <div>
+                                    Oleh:{" "}
+                                    {programAccessSaved.updatedByName ||
+                                        "-"}
+                                    {programAccessSaved.updatedByRole
+                                        ? ` (${programAccessSaved.updatedByRole})`
+                                        : ""}
+                                </div>
+
+                                <div>
+                                    Sumber:{" "}
+                                    {programAccessSaved.source}
+                                </div>
+
+                                <div className="mt-2 text-muted-foreground/80">
+                                    Riwayat lengkap belum ditampilkan karena endpoint riwayat belum tersedia.
+                                </div>
+                            </div>
+                        )}
+
+                        {programAccessCanSave && (
+                            <div className="flex justify-end">
+                                <Button
+                                    type="button"
+                                    onClick={
+                                        saveProgramAccess
+                                    }
+                                    disabled={
+                                        programAccessSaving ||
+                                        !programAccessHasChanges
+                                    }
+                                >
+                                    {programAccessSaving
+                                        ? "Menyimpan..."
+                                        : "Simpan"}
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* ERROR KARYAWAN */}

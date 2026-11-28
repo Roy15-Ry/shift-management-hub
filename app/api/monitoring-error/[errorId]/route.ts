@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 import {
   isMonitoringErrorJenis,
   isMonitoringErrorKeteranganValid,
@@ -323,6 +324,24 @@ export async function PATCH(
       )
     }
 
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "monitoringError",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "monitoringError",
+          message:
+            "Fitur Monitoring Error sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      )
+    }
+
     const { errorId } = await context.params
 
     const loaded = await loadOwnedDoc(errorId, storeId)
@@ -475,6 +494,24 @@ export async function DELETE(
     if (!storeId) {
       return forbidden(
         "Akun Store belum memiliki data toko yang valid.",
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "monitoringError",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "monitoringError",
+          message:
+            "Fitur Monitoring Error sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
       )
     }
 

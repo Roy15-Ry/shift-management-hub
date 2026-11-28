@@ -5,6 +5,8 @@ import {
 } from "firebase-admin/app"
 
 import { getAuth } from "firebase-admin/auth"
+import fs from "node:fs"
+import path from "node:path"
 import { getFirestore } from "firebase-admin/firestore"
 
 type ServiceAccount = {
@@ -32,12 +34,6 @@ function loadServiceAccount(): ServiceAccount {
     process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_FILE
 
   if (serviceAccountFile) {
-    const runtimeRequire = (
-      globalThis as { require?: (id: string) => any }
-    ).require || (0, eval)("require")
-    const fs = runtimeRequire("fs")
-    const path = runtimeRequire("path")
-
     const serviceAccountPath = path.join(
       process.cwd(),
       serviceAccountFile,

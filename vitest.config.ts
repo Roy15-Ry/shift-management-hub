@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       "app/api/store/schedule/route.test.ts",
       "app/api/kontribusi-omset/target/route.test.ts",
+      "app/api/admin/store-program-access/route.test.ts",
       "components/pages/buat-jadwal.test.tsx",
       "components/pages/dashboard-shift-notes.test.tsx",
       "lib/pdf-shift.test.ts",
@@ -22,6 +23,8 @@ export default defineConfig({
       "lib/kontribusi-omset/parse-rupiah.test.ts",
       "lib/kontribusi-omset/target-harian.test.ts",
       "lib/kontribusi-omset/cabang.test.ts",
+      "lib/store-program-access/config.test.ts",
+      "lib/store-program-access/server.test.ts",
     ],
     clearMocks: true,
     restoreMocks: true,

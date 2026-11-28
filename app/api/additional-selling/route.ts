@@ -7,6 +7,9 @@ import {
   adminAuth,
   adminDb,
 } from "@/lib/firebase-admin"
+import {
+  isStoreProgramEnabled,
+} from "@/lib/store-program-access/server"
 
 // ============================================================
 // TARGET PENJUALAN — REALISASI & DASHBOARD
@@ -1264,10 +1267,50 @@ export async function GET(request: Request) {
     const {
       scope: scopeLevel,
       mode,
-      storeIds,
+      storeIds: rawStoreIds,
       storeNames,
       cabangId: scopeCabangId,
     } = scope
+
+    let storeIds = rawStoreIds
+
+    // Feature gate: Target Penjualan
+    if (storeParam) {
+      const targetStoreId = storeIds[0] ?? storeParam
+      const enabled = await isStoreProgramEnabled(
+        targetStoreId,
+        "targetPenjualan",
+      )
+
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "PROGRAM_DISABLED",
+            program: "targetPenjualan",
+            message:
+              "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+          },
+          { status: 403 },
+        )
+      }
+    } else {
+      const filtered: string[] = []
+
+      for (const sid of storeIds) {
+        const enabled =
+          await isStoreProgramEnabled(
+            sid,
+            "targetPenjualan",
+          )
+
+        if (enabled) {
+          filtered.push(sid)
+        }
+      }
+
+      storeIds = filtered
+    }
 
     // =====================================================
     // MODE REKAP CENTRAL (aggregate, tanpa store)
@@ -1568,6 +1611,24 @@ export async function POST(request: Request) {
       )
     }
 
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "targetPenjualan",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message:
+            "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      )
+    }
+
     let body: Record<string, unknown>
     try {
       body = (await request.json()) as Record<string, unknown>
@@ -1687,6 +1748,24 @@ export async function PATCH(request: Request) {
           success: false,
           message:
             "Akun Store belum memiliki data toko/cabang yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "targetPenjualan",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message:
+            "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
         },
         { status: 403 },
       )
@@ -1836,6 +1915,24 @@ export async function DELETE(request: Request) {
           success: false,
           message:
             "Akun Store belum memiliki data toko yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "targetPenjualan",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message:
+            "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
         },
         { status: 403 },
       )

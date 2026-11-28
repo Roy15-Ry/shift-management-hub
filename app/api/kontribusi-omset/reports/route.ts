@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 import { getKontribusiOmsetReportId } from "@/lib/kontribusi-omset/types"
 import { getTodayJakarta } from "@/lib/kontribusi-omset/target-harian"
 
@@ -672,6 +673,46 @@ export async function GET(
         ? [storeParam]
         : scope.storeIds
 
+    // Feature gate: Kontribusi Omset
+    if (storeParam) {
+      const enabled = await isStoreProgramEnabled(
+        storeParam,
+        "kontribusiOmset",
+      )
+
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "PROGRAM_DISABLED",
+            program: "kontribusiOmset",
+            message:
+              "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
+          },
+          { status: 403 },
+        )
+      }
+    } else {
+      const filtered: string[] = []
+
+      for (const sid of targetStoreIds) {
+        const enabled = await isStoreProgramEnabled(
+          sid,
+          "kontribusiOmset",
+        )
+
+        if (enabled) {
+          filtered.push(sid)
+        }
+      }
+
+      targetStoreIds.splice(
+        0,
+        targetStoreIds.length,
+        ...filtered,
+      )
+    }
+
     const reports: ReturnType<
       typeof toReportRow
     >[] = []
@@ -805,6 +846,24 @@ export async function POST(
           success: false,
           message:
             "Akun Store belum memiliki data toko/cabang yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "kontribusiOmset",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "kontribusiOmset",
+          message:
+            "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
         },
         { status: 403 },
       )
@@ -1157,6 +1216,24 @@ export async function PATCH(
           success: false,
           message:
             "Akun Store belum memiliki data toko/cabang yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "kontribusiOmset",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "kontribusiOmset",
+          message:
+            "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
         },
         { status: 403 },
       )
@@ -1540,6 +1617,24 @@ export async function DELETE(
           success: false,
           message:
             "Akun Store belum memiliki data toko/cabang yang valid.",
+        },
+        { status: 403 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "kontribusiOmset",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "kontribusiOmset",
+          message:
+            "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
         },
         { status: 403 },
       )

@@ -32,6 +32,7 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
+import { useProgramAccess, ProgramLockedMessage } from "@/components/program-access-gate"
 import { MonitoringErrorNotes } from "@/components/monitoring-error-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
 import { exportMonitoringErrorHistory } from "@/lib/export-excel"
@@ -1381,6 +1382,15 @@ export function MonitoringErrorPage() {
 
   const [storeFilter, setStoreFilter] = React.useState("")
 
+  const gateStoreId = isStore
+    ? (profile?.storeId ?? "")
+    : storeFilter
+
+  const programAccess = useProgramAccess(
+    gateStoreId || null,
+    "monitoringError",
+  )
+
   // Nama toko pada header mode detail. Diisi saat Central
   // mengklik kartu toko pada rekap, dan dikuatkan lagi dari
   // response detail. HANYA untuk teks tampilan.
@@ -1516,13 +1526,22 @@ export function MonitoringErrorPage() {
 
     const authedUser = user
 
+    let cancelled = false
+
     const dedupKey = `${user.uid}|${role}|${cabangFilter}|${storeFilter}|${period.year}-${period.month}|${reloadKey}|${pusatLocked}|${storeLocked}`
     const inFlight = monitoringErrorInFlightRef.current.get(dedupKey)
     if (inFlight) {
-      return () => {}
+      inFlight.finally(() => {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      })
+
+      return () => {
+        cancelled = true
+      }
     }
 
-    let cancelled = false
     setLoading(true)
     setError("")
 
@@ -2262,6 +2281,26 @@ export function MonitoringErrorPage() {
     setAggregate(null)
     aggregateReadyRef.current = false
     aggregateCacheRef.current = null
+  }
+
+  if (programAccess.loading && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        Memuat pengaturan akses program...
+      </div>
+    )
+  }
+
+  if (programAccess.error && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-destructive">
+        {programAccess.error}
+      </div>
+    )
+  }
+
+  if (!programAccess.enabled && gateStoreId) {
+    return <ProgramLockedMessage />
   }
 
   return (

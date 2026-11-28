@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { CalendarClock, ChevronDown, FolderOpen, X } from "lucide-react"
+import { CalendarClock, ChevronDown, FolderOpen, Lock, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/components/app-context"
 import { useAuth } from "@/components/auth-context"
+import { useProgramAccess } from "@/components/program-access-gate"
 import {
   CENTRAL_NAV_ITEMS,
   PROGRAM_KERJA_GROUP,
@@ -30,6 +31,32 @@ function SidebarContent({
    * =====================================================
    */
   const role = profile?.role ?? ""
+
+  const storeId = role === "store" ? (profile?.storeId ?? null) : null
+
+  const targetAccess = useProgramAccess(storeId, "targetPenjualan")
+  const monitoringAccess = useProgramAccess(storeId, "monitoringError")
+  const kontribusiAccess = useProgramAccess(storeId, "kontribusiOmset")
+
+  function isProgramLocked(key: string): boolean {
+    if (role !== "store") {
+      return false
+    }
+
+    if (key === "additional-selling") {
+      return !targetAccess.enabled && !targetAccess.loading
+    }
+
+    if (key === "monitoring-error") {
+      return !monitoringAccess.enabled && !monitoringAccess.loading
+    }
+
+    if (key === "kontribusi-omset") {
+      return !kontribusiAccess.enabled && !kontribusiAccess.loading
+    }
+
+    return false
+  }
 
   /*
    * =====================================================
@@ -209,6 +236,10 @@ function SidebarContent({
                     <span className="flex-1 text-left">
                       {item.label}
                     </span>
+
+                    {isProgramLocked(item.key) && (
+                      <Lock className="size-4 shrink-0 text-sidebar-foreground/60" />
+                    )}
                   </button>
                 )
               })}

@@ -5,6 +5,7 @@ import {
 } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 
 // ============================================================
 // MONITORING ERROR — UBAH / HAPUS 1 CATATAN
@@ -290,6 +291,26 @@ async function loadScopedNote(
   if (!master.found) {
     return {
       error: notFound("Toko tidak ditemukan."),
+    }
+  }
+
+  const programEnabled = await isStoreProgramEnabled(
+    noteStoreId,
+    "monitoringError",
+  )
+
+  if (!programEnabled) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "monitoringError",
+          message:
+            "Fitur Monitoring Error sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      ),
     }
   }
 

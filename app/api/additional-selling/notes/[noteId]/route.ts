@@ -5,6 +5,7 @@ import {
 } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 
 // ============================================================
 // TARGET PENJUALAN — UBAH / HAPUS 1 CATATAN
@@ -285,6 +286,26 @@ async function loadScopedNote(
   if (!master.found) {
     return {
       error: notFound("Toko tidak ditemukan."),
+    }
+  }
+
+  const programEnabled = await isStoreProgramEnabled(
+    noteStoreId,
+    "targetPenjualan",
+  )
+
+  if (!programEnabled) {
+    return {
+      error: NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message:
+            "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      ),
     }
   }
 

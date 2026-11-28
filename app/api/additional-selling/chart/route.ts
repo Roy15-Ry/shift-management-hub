@@ -4,6 +4,9 @@ import {
   adminAuth,
   adminDb,
 } from "@/lib/firebase-admin"
+import {
+  isStoreProgramEnabled,
+} from "@/lib/store-program-access/server"
 
 // ============================================================
 // GRAFIK PENCAPAIAN PROGRAM — ENDPOINT KHUSUS CHART
@@ -636,15 +639,25 @@ export async function GET(request: Request) {
     const stores =
       await getChartStores(scopeCabangId)
 
+    const enabledStores = []
+
+    for (const store of stores) {
+      const enabled = await isStoreProgramEnabled(
+        store.storeId,
+        "targetPenjualan",
+      )
+
+      if (enabled) {
+        enabledStores.push(store)
+      }
+    }
+
     // =====================================================
     // AGREGASI PER TOKO
     // =====================================================
-    //
-    // Dua query per toko, dijalankan bersama agar tidak
-    // menumpuk latency. Jumlah read tetap 2N + 2.
 
     const rows = await Promise.all(
-      stores.map(async (store) => {
+      enabledStores.map(async (store) => {
         const [transactions, targets] =
           await Promise.all([
             readStoreTransactions(

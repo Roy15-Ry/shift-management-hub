@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 
 // ============================================================
 // MONITORING ERROR — CATATAN (REKAP / ERROR / VALID / KOSONG)
@@ -503,6 +504,24 @@ export async function GET(request: Request) {
       return scope.error
     }
 
+    const programEnabled = await isStoreProgramEnabled(
+      scope.storeId,
+      "monitoringError",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "monitoringError",
+          message:
+            "Fitur Monitoring Error sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      )
+    }
+
     const snapshot = await adminDb
       .collection(COLLECTION)
       .where("storeId", "==", scope.storeId)
@@ -579,6 +598,24 @@ export async function POST(request: Request) {
 
     if ("error" in scope) {
       return scope.error
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      scope.storeId,
+      "monitoringError",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "monitoringError",
+          message:
+            "Fitur Monitoring Error sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
+      )
     }
 
     // ----------------------------------------------------------

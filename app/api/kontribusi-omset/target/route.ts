@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { isStoreProgramEnabled } from "@/lib/store-program-access/server"
 import {
   KontribusiOmsetTargetRow,
   getKontribusiOmsetTargetId,
@@ -548,6 +549,45 @@ export async function GET(
         ? [storeParam]
         : scope.storeIds
 
+    if (storeParam) {
+      const enabled = await isStoreProgramEnabled(
+        storeParam,
+        "kontribusiOmset",
+      )
+
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "PROGRAM_DISABLED",
+            program: "kontribusiOmset",
+            message:
+              "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
+          },
+          { status: 403 },
+        )
+      }
+    } else {
+      const filtered: string[] = []
+
+      for (const sid of targetStoreIds) {
+        const enabled = await isStoreProgramEnabled(
+          sid,
+          "kontribusiOmset",
+        )
+
+        if (enabled) {
+          filtered.push(sid)
+        }
+      }
+
+      targetStoreIds.splice(
+        0,
+        targetStoreIds.length,
+        ...filtered,
+      )
+    }
+
     const targets: KontribusiOmsetTargetRow[] =
       []
 
@@ -715,6 +755,24 @@ export async function POST(
           message: "Toko wajib diisi.",
         },
         { status: 400 },
+      )
+    }
+
+    const programEnabled = await isStoreProgramEnabled(
+      storeId,
+      "kontribusiOmset",
+    )
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "kontribusiOmset",
+          message:
+            "Fitur Kontribusi Omset sedang dinonaktifkan untuk toko ini.",
+        },
+        { status: 403 },
       )
     }
 

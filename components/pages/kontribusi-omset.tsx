@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/components/auth-context"
+import { useProgramAccess, ProgramLockedMessage } from "@/components/program-access-gate"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -694,6 +695,15 @@ export function KontribusiOmsetPage() {
 
   const [selectedBranch, setSelectedBranch] = React.useState("")
   const [selectedStore, setSelectedStore] = React.useState("")
+
+  const gateStoreId = isStore
+    ? (profile?.storeId ?? "")
+    : selectedStore
+
+  const programAccess = useProgramAccess(
+    gateStoreId || null,
+    "kontribusiOmset",
+  )
 
   const [branches, setBranches] = React.useState<BranchOption[]>([])
   const [branchesLoading, setBranchesLoading] = React.useState(false)
@@ -1849,6 +1859,26 @@ export function KontribusiOmsetPage() {
     )
   }
 
+  if (programAccess.loading && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        Memuat pengaturan akses program...
+      </div>
+    )
+  }
+
+  if (programAccess.error && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-destructive">
+        {programAccess.error}
+      </div>
+    )
+  }
+
+  if (!programAccess.enabled && gateStoreId) {
+    return <ProgramLockedMessage />
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -2116,11 +2146,11 @@ export function KontribusiOmsetPage() {
                     <table className="w-full min-w-full text-sm table-fixed">
                       <colgroup>
                         <col className="w-16" />
-                        {activeEmployees.map(() => (
-                          <>
+                        {activeEmployees.map((emp) => (
+                          <React.Fragment key={emp.id}>
                             <col className="w-32" />
                             <col className="w-24" />
-                          </>
+                          </React.Fragment>
                         ))}
                         <col className="w-40" />
                         <col className="w-40" />

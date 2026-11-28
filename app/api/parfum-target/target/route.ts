@@ -8,6 +8,9 @@ import {
   adminAuth,
   adminDb,
 } from "@/lib/firebase-admin";
+import {
+  isStoreProgramEnabled,
+} from "@/lib/store-program-access/server";
 
 import type {
   ParfumUser,
@@ -283,7 +286,51 @@ export async function GET(request: Request) {
           { status: 400 },
         );
       }
+
+      // Validasi cabang untuk CENTRAL CABANG
+      if (role === "central_cabang") {
+        const storeDoc = await adminDb
+          .collection("stores")
+          .doc(requestedStoreId)
+          .get();
+
+        const storeCabangId = String(
+          storeDoc.data()?.cabangId ?? "",
+        ).trim();
+
+        if (
+          !storeDoc.exists ||
+          storeCabangId.toUpperCase() !==
+            user.cabangId.toUpperCase()
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "Toko tidak berada dalam cabang Anda.",
+            },
+            { status: 403 },
+          );
+        }
+      }
+
       storeIds = [requestedStoreId];
+    }
+
+    // Feature gate: Target Penjualan (parfum mengikuti)
+    for (const sid of storeIds) {
+      const enabled = await isStoreProgramEnabled(sid, "targetPenjualan");
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "PROGRAM_DISABLED",
+            program: "targetPenjualan",
+            message: "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+          },
+          { status: 403 },
+        );
+      }
     }
 
     const results: Record<string, unknown>[] = [];
@@ -351,6 +398,20 @@ export async function POST(request: Request) {
     if (!storeId || !cabangId) {
       return NextResponse.json(
         { success: false, message: "Akun Store belum memiliki data toko/cabang yang valid." },
+        { status: 403 },
+      );
+    }
+
+    const programEnabled = await isStoreProgramEnabled(storeId, "targetPenjualan");
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message: "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+        },
         { status: 403 },
       );
     }
@@ -508,6 +569,20 @@ export async function DELETE(request: Request) {
     if (!storeId || !cabangId) {
       return NextResponse.json(
         { success: false, message: "Akun Store belum memiliki data toko/cabang yang valid." },
+        { status: 403 },
+      );
+    }
+
+    const programEnabled = await isStoreProgramEnabled(storeId, "targetPenjualan");
+
+    if (!programEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PROGRAM_DISABLED",
+          program: "targetPenjualan",
+          message: "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+        },
         { status: 403 },
       );
     }

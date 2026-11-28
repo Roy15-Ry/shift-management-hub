@@ -4,6 +4,9 @@ import {
   adminAuth,
   adminDb,
 } from "@/lib/firebase-admin";
+import {
+  isStoreProgramEnabled,
+} from "@/lib/store-program-access/server";
 
 const COLLECTION_ALLOCATIONS = "target_penjualan_parfum_allocations";
 const COLLECTION_USERS = "users";
@@ -119,7 +122,53 @@ export async function GET(request: Request) {
           { status: 400 },
         );
       }
+
+      if (role === "central_cabang") {
+        const storeDoc = await adminDb
+          .collection("stores")
+          .doc(requestedStoreId)
+          .get();
+
+        const storeCabangId = String(
+          storeDoc.data()?.cabangId ?? "",
+        ).trim();
+
+        if (
+          !storeDoc.exists ||
+          storeCabangId.toUpperCase() !==
+            user.cabangId.toUpperCase()
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Toko tidak berada dalam cabang Anda.",
+            },
+            { status: 403 },
+          );
+        }
+      }
+
       storeIds = [requestedStoreId];
+    }
+
+    for (const sid of storeIds) {
+      const enabled = await isStoreProgramEnabled(
+        sid,
+        "targetPenjualan",
+      );
+
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "PROGRAM_DISABLED",
+            program: "targetPenjualan",
+            message:
+              "Fitur Target Penjualan sedang dinonaktifkan untuk toko ini.",
+          },
+          { status: 403 },
+        );
+      }
     }
 
     const results: Record<string, unknown>[] = [];

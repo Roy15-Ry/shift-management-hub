@@ -35,6 +35,7 @@ import {
 } from "@/components/controls"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-context"
+import { useProgramAccess, ProgramLockedMessage } from "@/components/program-access-gate"
 import { AdditionalSellingNotes } from "@/components/additional-selling-notes"
 import { getFirestoreEmployees } from "@/lib/firestore-data"
 import { exportTargetPenjualanHistory } from "@/lib/export-excel"
@@ -811,6 +812,15 @@ export function AdditionalSellingPage() {
 
   const [storeFilter, setStoreFilter] = React.useState("")
 
+  const gateStoreId = isStore
+    ? (profile?.storeId ?? "")
+    : storeFilter
+
+  const programAccess = useProgramAccess(
+    gateStoreId || null,
+    "targetPenjualan",
+  )
+
   // ----------------------------------------------------------
   // CENTRAL — NAMA TOKO UNTUK JUDUL DASHBOARD DETAIL
   //
@@ -933,13 +943,22 @@ export function AdditionalSellingPage() {
 
     const authedUser = user
 
+    let cancelled = false
+
     const dedupKey = `${user.uid}|${role}|${cabangFilter}|${storeFilter}|${period.year}-${period.month}|${reloadKey}|${pusatLocked}|${storeLocked}`
     const inFlight = additionalSellingInFlightRef.current.get(dedupKey)
     if (inFlight) {
-      return () => {}
+      inFlight.finally(() => {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      })
+
+      return () => {
+        cancelled = true
+      }
     }
 
-    let cancelled = false
     setLoading(true)
     setError("")
 
@@ -1966,6 +1985,26 @@ export function AdditionalSellingPage() {
   const notesStoreLabel = isStore
     ? profile?.namaStore || profile?.storeId || "Toko"
     : detailStoreName.trim() || "Toko"
+
+  if (programAccess.loading && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        Memuat pengaturan akses program...
+      </div>
+    )
+  }
+
+  if (programAccess.error && gateStoreId) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-destructive">
+        {programAccess.error}
+      </div>
+    )
+  }
+
+  if (!programAccess.enabled && gateStoreId) {
+    return <ProgramLockedMessage />
+  }
 
   return (
     <div className="space-y-5">

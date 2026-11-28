@@ -24,10 +24,11 @@ import { JadwalLiburPage } from "@/components/pages/jadwal-libur"
 import { AdditionalSellingPage } from "@/components/pages/additional-selling"
 import { MonitoringErrorPage } from "@/components/pages/monitoring-error"
 import { KontribusiOmsetPage } from "@/components/pages/kontribusi-omset"
+import { ProgramAccessGate } from "@/components/program-access-gate"
 
 function PageContent() {
   const { page, setPage } = useApp()
-  const { profile } = useAuth()
+  const { profile, loading: authLoading } = useAuth()
 
   const role = profile?.role ?? ""
 
@@ -53,6 +54,19 @@ function PageContent() {
     "monitoring-error",
     "kontribusi-omset",
   ]
+
+  if (
+    authLoading &&
+    (page === "additional-selling" ||
+      page === "monitoring-error" ||
+      page === "kontribusi-omset")
+  ) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+        Memuat profil...
+      </div>
+    )
+  }
 
   if (
     role === "store" &&
@@ -114,13 +128,40 @@ function PageContent() {
       return <JadwalLiburPage />
 
     case "additional-selling":
-      return <AdditionalSellingPage />
+      return role === "store" && profile?.storeId ? (
+        <ProgramAccessGate
+          program="targetPenjualan"
+          storeId={profile.storeId}
+        >
+          <AdditionalSellingPage />
+        </ProgramAccessGate>
+      ) : (
+        <AdditionalSellingPage />
+      )
 
     case "monitoring-error":
-      return <MonitoringErrorPage />
+      return role === "store" && profile?.storeId ? (
+        <ProgramAccessGate
+          program="monitoringError"
+          storeId={profile.storeId}
+        >
+          <MonitoringErrorPage />
+        </ProgramAccessGate>
+      ) : (
+        <MonitoringErrorPage />
+      )
 
     case "kontribusi-omset":
-      return <KontribusiOmsetPage />
+      return role === "store" && profile?.storeId ? (
+        <ProgramAccessGate
+          program="kontribusiOmset"
+          storeId={profile.storeId}
+        >
+          <KontribusiOmsetPage />
+        </ProgramAccessGate>
+      ) : (
+        <KontribusiOmsetPage />
+      )
 
     default:
       return null
